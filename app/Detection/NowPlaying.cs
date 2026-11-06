@@ -67,7 +67,10 @@ public sealed class NowPlayingWatcher
 
     static string FriendlyApp(string appId)
     {
-        var name = appId.Split('!').Last(); name = Path.GetFileNameWithoutExtension(name.Split('\\').Last());
+        // "chrome", "MSEdge", a full exe path, "Publisher.App_hash!App" or "velopack.AppName": the app's own name
+        var name = appId.Split('!').Last().Split('\\').Last();
+        if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
+        else if (name.Contains('.')) name = name.Split('.').Last();
         return name switch { "msedge" or "MSEdge" => "Edge", "chrome" or "Chrome" => "Chrome", "firefox" or "308046B0AF4A39CB" => "Firefox", "" => "App", _ => name };
     }
 

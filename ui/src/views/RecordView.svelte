@@ -85,7 +85,7 @@
   {#if app.levels.clipped > 0}<p class="warn">The input reached full scale. Turn the source down a little to avoid clipping.</p>{/if}
 
   <h3>Now playing</h3>
-  <p class="now">{#if current?.title}<strong>{current.title}</strong>{#if current.artist} · {current.artist}{/if}<span class="quiet"> · {current.label}</span>{:else}<span class="quiet">Nothing named yet. {source === 'none' ? 'Tracks will be split on gaps.' : 'Play something in a browser or app; gaps split tracks when there are no names.'}</span>{/if}</p>
+  <p class="now">{#if current?.title}<strong>{current.title}</strong>{#if current.artist}{' · '}{current.artist}{/if}<span class="quiet">{' · '}{current.label}</span>{:else}<span class="quiet">Nothing named yet. {source === 'none' ? 'Tracks will be split on gaps.' : 'Play something in a browser or app; gaps split tracks when there are no names.'}</span>{/if}</p>
 
   {#if recording}
     <canvas class="live" bind:this={liveCanvas} bind:clientWidth={liveWidth}></canvas>
