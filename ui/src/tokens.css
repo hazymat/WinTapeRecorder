@@ -1,0 +1,61 @@
+/* Skin tokens (from WinSqueeze): html[data-skin] picks dark or light; "auto" follows Windows */
+:root, :root[data-skin="dark"] {
+  --bg: #0e1015; --bg-gradient: radial-gradient(1200px 700px at 15% -10%, #1c2a3d 0%, transparent 60%), radial-gradient(900px 600px at 110% 110%, #2a1d33 0%, transparent 55%);
+  --panel: rgba(255, 255, 255, 0.06); --panel-strong: rgba(255, 255, 255, 0.1); --panel-solid: #1a1d24; --glass: rgba(22, 25, 32, 0.62); --blur: 22px;
+  --line: rgba(255, 255, 255, 0.08); --hover: rgba(255, 255, 255, 0.07); --track: rgba(255, 255, 255, 0.14); --shadow: rgba(0, 0, 0, 0.45);
+  --fg: #eceef3; --fg-quiet: #8e94a0; --accent: #5ccfff; --accent-soft: rgba(92, 207, 255, 0.15); --on-accent: #06202c; --warn: #ffb74d; --danger: #ff5a4a;
+  --wave: #5ccfff; --wave-rms: rgba(92, 207, 255, 0.35); --track-shade: rgba(92, 207, 255, 0.08); --track-shade-on: rgba(92, 207, 255, 0.16); --start: #4cd964; --end: #ff7a6b; --playhead: #ffffff;
+  --readout: #5ee7ff; --readout-glow: rgba(94, 231, 255, 0.45);
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; --font-display: "Cascadia Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+:root[data-skin="light"] {
+  --bg: #eef1f6; --bg-gradient: radial-gradient(1200px 700px at 15% -10%, #dbe8f7 0%, transparent 60%), radial-gradient(900px 600px at 110% 110%, #efe0f2 0%, transparent 55%);
+  --panel: rgba(0, 0, 0, 0.04); --panel-strong: rgba(0, 0, 0, 0.08); --panel-solid: #ffffff; --glass: rgba(255, 255, 255, 0.62);
+  --line: rgba(0, 0, 0, 0.09); --hover: rgba(0, 0, 0, 0.05); --track: rgba(0, 0, 0, 0.12); --shadow: rgba(30, 40, 60, 0.18);
+  --fg: #1b1e24; --fg-quiet: #646b78; --accent: #0a84c6; --accent-soft: rgba(10, 132, 198, 0.12); --on-accent: #ffffff; --danger: #d93a2b;
+  --wave: #0a84c6; --wave-rms: rgba(10, 132, 198, 0.35); --track-shade: rgba(10, 132, 198, 0.07); --track-shade-on: rgba(10, 132, 198, 0.15); --start: #1f9e3a; --end: #d9473a; --playhead: #111111;
+  --readout: #0a7aa8; --readout-glow: rgba(10, 122, 168, 0.18); color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-skin="auto"] {
+    --bg: #eef1f6; --bg-gradient: radial-gradient(1200px 700px at 15% -10%, #dbe8f7 0%, transparent 60%), radial-gradient(900px 600px at 110% 110%, #efe0f2 0%, transparent 55%);
+    --panel: rgba(0, 0, 0, 0.04); --panel-strong: rgba(0, 0, 0, 0.08); --panel-solid: #ffffff; --glass: rgba(255, 255, 255, 0.62);
+    --line: rgba(0, 0, 0, 0.09); --hover: rgba(0, 0, 0, 0.05); --track: rgba(0, 0, 0, 0.12); --shadow: rgba(30, 40, 60, 0.18);
+    --fg: #1b1e24; --fg-quiet: #646b78; --accent: #0a84c6; --accent-soft: rgba(10, 132, 198, 0.12); --on-accent: #ffffff; --danger: #d93a2b;
+    --wave: #0a84c6; --wave-rms: rgba(10, 132, 198, 0.35); --track-shade: rgba(10, 132, 198, 0.07); --track-shade-on: rgba(10, 132, 198, 0.15); --start: #1f9e3a; --end: #d9473a; --playhead: #111111;
+    --readout: #0a7aa8; --readout-glow: rgba(10, 122, 168, 0.18); color-scheme: light;
+  }
+}
+/* Glass: Windows paints a frosted (acrylic) copy of the desktop behind the page; the page only tints it */
+:root.glass { --glass-tint: rgba(12, 14, 19, 0.38); --glass: rgba(255, 255, 255, 0.035); --panel: rgba(255, 255, 255, 0.07); --panel-strong: rgba(255, 255, 255, 0.12); --panel-solid: rgba(28, 31, 38, 0.94); }
+:root.glass[data-skin="light"] { --glass-tint: rgba(242, 245, 250, 0.42); --glass: rgba(255, 255, 255, 0.3); --panel: rgba(255, 255, 255, 0.35); --panel-strong: rgba(255, 255, 255, 0.5); --panel-solid: rgba(255, 255, 255, 0.96); }
+@media (prefers-color-scheme: light) { :root.glass[data-skin="auto"] { --glass-tint: rgba(242, 245, 250, 0.42); --glass: rgba(255, 255, 255, 0.3); --panel: rgba(255, 255, 255, 0.35); --panel-strong: rgba(255, 255, 255, 0.5); --panel-solid: rgba(255, 255, 255, 0.96); } }
+:root.glass, :root.glass body { background: transparent; background-image: none; }
+:root.glass body { background: var(--glass-tint); }
+html, body { margin: 0; height: 100%; background: var(--bg); background-image: var(--bg-gradient); background-attachment: fixed; color: var(--fg); font-family: var(--font-ui); font-size: 14px; overflow: hidden; }
+* { scrollbar-width: thin; scrollbar-color: var(--track) transparent; }
+h2 { font-size: 22px; margin: 4px 0 10px; }
+h3 { font-size: 13px; margin: 16px 0 6px; color: var(--fg-quiet); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.quiet { color: var(--fg-quiet); }
+.primary { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 8px; padding: 6px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+.primary:hover { filter: brightness(1.08); }
+.primary:disabled, .ghost:disabled { opacity: 0.45; cursor: default; }
+.ghost { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; font: inherit; cursor: pointer; white-space: nowrap; }
+.ghost:hover:not(:disabled) { background: var(--hover); }
+.ghost.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.ghost.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+kbd { font-family: var(--font-ui); font-size: 10px; color: var(--fg-quiet); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+input[type="text"], input:not([type]) { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; outline: none; }
+input[type="text"]:focus, input:not([type]):focus { border-color: var(--accent); }
+select option { background: var(--panel-solid); color: var(--fg); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Chosen rows (lib/selectable.svelte.ts) */
+[data-select-key] { -webkit-user-select: none; user-select: none; }
+[data-select-key].pressing { background: var(--hover); transition: background 450ms; }
+[data-select-key]:focus-visible { outline: none; }
+[data-select-key].selected { --edge: color-mix(in srgb, var(--accent) 50%, transparent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--edge); }
+:where([data-row-list]) [data-select-key].selected:has(+ .selected) { box-shadow: inset 1px 0 0 var(--edge), inset -1px 0 0 var(--edge), inset 0 1px 0 var(--edge); }
+:where([data-row-list]) .selected + [data-select-key].selected { box-shadow: inset 1px 0 0 var(--edge), inset -1px 0 0 var(--edge), inset 0 -1px 0 var(--edge); }
+:where([data-row-list]) .selected + [data-select-key].selected:has(+ .selected) { box-shadow: inset 1px 0 0 var(--edge), inset -1px 0 0 var(--edge); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 1ms; animation-iteration-count: 1; transition-duration: 1ms; scroll-behavior: auto; } }

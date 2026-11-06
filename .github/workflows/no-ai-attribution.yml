@@ -1,0 +1,17 @@
+name: No AI attribution
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Fail on Claude/Anthropic authors or trailers
+        run: |
+          # PRs: check the PR's own commits (GitHub's squash merge turns their authors into Co-authored-by trailers). Push: check the pushed commits.
+          if [ "${{ github.event_name }}" = pull_request ]; then range="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"; else range="${{ github.event.before }}..${{ github.sha }}"; git cat-file -e "${{ github.event.before }}" 2>/dev/null || range="${{ github.sha }}~1..${{ github.sha }}"; fi
+          bad=$(git log "$range" --format='%h author: %an <%ae>%n%h committer: %cn <%ce>%n%b' | grep -iE '(author|committer): .*(claude|anthropic)|co-authored-by:.*(claude|anthropic)|generated with.*claude|claude\.ai/code' || true)
+          if [ -n "$bad" ]; then echo "$bad"; echo "::error::Commits credit Claude/Anthropic. Set git config user.name hazymat and user.email 7063284+hazymat@users.noreply.github.com, then amend/rebase the commits (git rebase -r <base> --exec 'git commit --amend --no-edit --reset-author')."; exit 1; fi
