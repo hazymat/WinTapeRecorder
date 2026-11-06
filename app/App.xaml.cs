@@ -36,8 +36,10 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs startupArgs)
     {
-        singleInstanceMutex = new Mutex(true, "WinTapeRecorder.SingleInstance", out var isFirstInstance);
-        showWindowSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "WinTapeRecorder.ShowWindow");
+        // One copy per data folder: a portable copy runs beside the installed one
+        var instanceName = "WinTapeRecorder" + (AppPaths.IsPortable ? "." + Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(AppPaths.DataFolder.ToLowerInvariant())))[..12] : "");
+        singleInstanceMutex = new Mutex(true, instanceName + ".SingleInstance", out var isFirstInstance);
+        showWindowSignal = new EventWaitHandle(false, EventResetMode.AutoReset, instanceName + ".ShowWindow");
         if (!isFirstInstance) { showWindowSignal.Set(); Shutdown(); return; } // a second launch brings the running one forward
         ThreadPool.RegisterWaitForSingleObject(showWindowSignal, (state, timedOut) => Dispatcher.BeginInvoke(ShowMainWindow), null, -1, false);
         if (AppPaths.IsPortable) AppUpdater.CleanUpAfterPortableUpdate();

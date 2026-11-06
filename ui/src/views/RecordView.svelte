@@ -28,13 +28,13 @@
     if (result?.sessionId) { nav.view = 'session'; nav.sessionId = result.sessionId; writeSetting('session', result.sessionId); toast('Recording saved. Check the tracks, then export.') }
   }
 
-  // The last minute of the recording, drawn from the peaks as they're written
+  // The recording so far (the last minute once longer), drawn from the peaks as they are written
   let liveCanvas = $state<HTMLCanvasElement>(), liveWidth = $state(600)
   let liveTimer = 0
   async function drawLive() {
     const status = app.status
     if (!liveCanvas || !status?.recording || !status.sampleRate) return
-    const totalFrames = app.levels.seconds * status.sampleRate, span = 60 * status.sampleRate
+    const totalFrames = app.levels.seconds * status.sampleRate, span = Math.min(60, Math.max(10, app.levels.seconds)) * status.sampleRate // fills the width from the start, then scrolls the last minute
     const start = Math.max(0, totalFrames - span)
     try {
       const data = await request<{ mode: string; channels: number[][] }>({ type: 'peaks', id: status.sessionId, start, end: start + span, columns: Math.round(liveWidth) })
@@ -88,11 +88,11 @@
   <p class="now">{#if current?.title}<strong>{current.title}</strong>{#if current.artist}{' · '}{current.artist}{/if}<span class="quiet">{' · '}{current.label}</span>{:else}<span class="quiet">Nothing named yet. {source === 'none' ? 'Tracks will be split on gaps.' : 'Play something in a browser or app; gaps split tracks when there are no names.'}</span>{/if}</p>
 
   {#if recording}
-    <canvas class="live" bind:this={liveCanvas} bind:clientWidth={liveWidth}></canvas>
+    <canvas class="live-wave" bind:this={liveCanvas} bind:clientWidth={liveWidth}></canvas>
     <h3>Tracks marked so far</h3>
     <ol class="changes">
       {#each app.status?.changes ?? [] as change}
-        <li><span class="time">{formatTime(change.frame, app.status?.sampleRate ?? 48000, false)}</span>{change.title || (change.manual ? 'Marked by hand' : 'Untitled')}{#if change.artist}<span class="quiet"> · {change.artist}</span>{/if}</li>
+        <li><span class="time">{formatTime(change.frame, app.status?.sampleRate ?? 48000, false)}</span>{change.title || (change.manual ? 'Marked by hand' : 'Untitled')}{#if change.artist}<span class="quiet">{' · '}{change.artist}</span>{/if}</li>
       {:else}<li class="quiet">None yet.</li>{/each}
     </ol>
   {/if}
@@ -102,7 +102,7 @@
   .record { max-width: 860px; padding-bottom: 20px; }
   .settings-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .device { margin: 8px 0 14px; font-size: 12.5px; }
-  .deck { display: flex; align-items: center; gap: 18px; padding: 16px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
+  .deck { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding: 16px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
   .deck.live { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); }
   .record-button { flex: none; width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; border: 2px solid color-mix(in srgb, var(--danger) 60%, transparent); background: var(--panel-strong); color: var(--danger); cursor: pointer; transition: transform 120ms, background 120ms; }
   .record-button:hover { transform: scale(1.04); }
@@ -114,7 +114,7 @@
   .marker { flex: none; }
   .warn { color: var(--danger); font-size: 12.5px; margin: 8px 0 0; }
   .now { margin: 0; }
-  .live { display: block; width: 100%; height: 90px; margin-top: 14px; border-radius: 8px; background: var(--panel); }
+  .live-wave { display: block; width: 100%; height: 90px; margin-top: 14px; border-radius: 8px; background: var(--panel); }
   .changes { margin: 0; padding-left: 22px; max-height: 260px; overflow-y: auto; }
   .changes li { padding: 2px 0; }
   .time { display: inline-block; min-width: 64px; font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
