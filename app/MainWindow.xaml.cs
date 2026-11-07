@@ -306,6 +306,13 @@ public partial class MainWindow : Window
                         App.NotifySessionsChanged();
                     }
                     break;
+                case "openOutputFolder":
+                    {
+                        var profile = App.Settings.OutputProfileOrActive(Text(message, "profileId"));
+                        var outputFolder = profile.Folder.Trim() == "" ? AppPaths.DefaultOutputFolder : profile.Folder.Trim();
+                        Directory.CreateDirectory(outputFolder); Process.Start("explorer.exe", $"\"{outputFolder}\"");
+                    }
+                    break;
                 case "artData":
                     if (App.TryGetOpen(Text(message, "id"), out var droppedOn))
                     {

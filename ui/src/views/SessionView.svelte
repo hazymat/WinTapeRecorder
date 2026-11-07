@@ -964,7 +964,7 @@
   {:else if step === 'export'}
     <!-- Export report (SPEC.md › Export): one page, album by album, every tag that will be written, editable to the last minute -->
     <div class="tags-page export-page">
-      <p class="export-total"><strong>{exportable.length} track{exportable.length === 1 ? '' : 's'} in {listAlbums.length} album{listAlbums.length === 1 ? '' : 's'}</strong>{' · '}≈ {sizeText(estimateBytes(exportable))} in all{' · '}albums without their own profile use {app.outputProfiles.find(profile => profile.id === outputProfileId)?.name ?? 'the default'}</p>
+      <p class="export-total"><strong>{exportable.length} track{exportable.length === 1 ? '' : 's'} in {listAlbums.length} album{listAlbums.length === 1 ? '' : 's'}</strong>{' · '}≈ {sizeText(estimateBytes(exportable))} in all <button class="ghost small-button" onclick={() => sendToShell({ type: 'openOutputFolder', profileId: outputProfileId })} title="Open the output profile's folder, where all the album folders go">📂 Open output folder</button></p>
       {#each listAlbums as group (group.key + group.first)}
         {@const list = tracks.filter(track => group.ids.includes(track.id))}
         {@const own = commonOf(list, 'outputProfileId')}
@@ -974,13 +974,13 @@
           <header class="report-head">
             <input type="checkbox" class="tick" checked={allTicked} indeterminate={!allTicked && group.ids.some(id => selectedIds.includes(id))} onchange={() => { const next = allTicked ? selectedIds.filter(id => !group.ids.includes(id)) : Array.from(new Set(selectedIds.concat(group.ids))); if (next.length) selectKeys(scope, tracks.filter(track => next.includes(track.id)).map(track => track.id), actions, 'track'); else clearSelection() }} title="Tick every track in this album" aria-label="Select this album's tracks" />
             <span class="report-title" title="The folder this album is written to, inside the output profile's folder">📁 <strong>{folders.length ? folders.join('  ·  ') || '(the output folder itself)' : (group.album || 'No album')}</strong></span>
+            {#if list.some(track => track.exported && track.exportedPath)}<button class="ghost small-button" onclick={() => sendToShell({ type: 'openFolder', path: list.find(track => track.exported && track.exportedPath)?.exportedPath ?? '' })} title="Open this album's folder in Explorer">📂 Open folder</button>{/if}
+            <span class="plan-size">≈ {sizeText(estimateBytes(list))}</span><span class="head-spacer"></span>
             <select class="report-profile" value={own ? own : '__session'} onchange={(event) => setAlbumProfile(group, (event.target as HTMLSelectElement).value)} title="This album's output profile">
               <option value="__session">{app.outputProfiles.find(profile => profile.id === outputProfileId)?.name ?? 'Default'} (session)</option>
               {#each app.outputProfiles as profile (profile.id)}<option value={profile.id}>{profile.name}</option>{/each}
               <option value="__manage">Manage output profiles…</option>
             </select>
-            {#if list.some(track => track.exported && track.exportedPath)}<button class="ghost small-button" onclick={() => sendToShell({ type: 'openFolder', path: list.find(track => track.exported && track.exportedPath)?.exportedPath ?? '' })} title="Open this album's folder in Explorer">📂 Open folder</button>{/if}
-            <span class="plan-size">≈ {sizeText(estimateBytes(list))}</span>
             <button class="ghost small-button" disabled={exportingHere || queued} onclick={() => exportTracks(group.ids.filter(id => !tracks.find(track => track.id === id)?.skip))}>Export album</button>
           </header>
           <table class="tag-table report">
@@ -1278,7 +1278,7 @@
   .export-total strong { color: var(--fg); }
   .report-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 4px 8px 6px; }
   .report-head { display: flex; align-items: center; gap: 10px; padding: 0 0 2px; font-size: 12.5px; }
-  .report-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+  .report-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
   .report-profile { width: auto; max-width: 200px; padding: 2px 6px; font-size: 12.5px; }
   .tag-table.report { font-size: 11.5px; }
   .tag-table.report th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; padding: 1px 4px 1px 0; }
@@ -1301,6 +1301,7 @@
   .plan-size { font-family: var(--font-display); font-size: 12.5px; text-align: right; }
   .plan-total td { border-top: 1px solid var(--line); padding-top: 4px; }
   .danger-button { background: var(--danger) !important; border-color: transparent !important; }
+  .head-spacer { flex: 1; }
   .export-size { font-family: var(--font-display); font-size: 13px; color: var(--fg-quiet); white-space: nowrap; }
   .check { flex-direction: row !important; align-items: center; gap: 8px; font-size: 13px; color: var(--fg) !important; }
   .captured-preview { font-size: 12px; margin: 0; }
