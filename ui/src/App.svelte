@@ -126,6 +126,7 @@
           <span class="session-name">{session.name}{#if session.recording}<span class="badge live">REC</span>{:else if session.crashed}<span class="badge">!</span>{/if}</span>
           <span class="session-more" role="button" tabindex="-1" title="Show files, open or close this session (also on right-click)" onclick={(event) => { event.stopPropagation(); const box = (event.currentTarget as HTMLElement).getBoundingClientRect(); sessionMenu = { session, left: Math.min(box.left, innerWidth - 220), top: Math.min(box.bottom + 4, innerHeight - 110) } }} onkeydown={() => { }}>⋯</span>
           <span class="session-facts">{dateLabel(session.created)} · {formatDuration(session.seconds)} · {#if app.status?.exportingSession === session.id}<span class="exporting">exporting {app.status.exportDone}/{app.status.exportTotal}…</span>{:else}{session.exported}/{session.tracks} exported{session.exported && session.verified === session.exported ? ' ✓' : ''}{/if}</span>
+          {#if nav.view === 'session' && nav.sessionId === session.id && !session.recording}<span class="session-tools"><span class="session-tool" role="button" tabindex="-1" title="Show this session's files in Explorer" onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: session.id + '\audio.wav' }) }} onkeydown={() => { }}><Icon name="folder" size={14} />Files</span><span class="session-tool danger" role="button" tabindex="-1" title="Close this session (deletes its recording; exported files stay)" onclick={(event) => { event.stopPropagation(); closing = session }} onkeydown={() => { }}><Icon name="trash" size={14} />Close…</span></span>{/if}
         </button>
       {:else}
         <p class="no-sessions">Recordings you make appear here until you close them.</p>
@@ -172,6 +173,10 @@
   .heading { margin: 16px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-quiet); }
   .sessions { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }
   .session { position: relative; }
+  .session-tools { display: flex; gap: 4px; margin-top: 4px; }
+  .session-tool { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11.5px; color: var(--fg-quiet); background: var(--panel); border: 1px solid var(--line); }
+  .session-tool:hover { color: var(--fg); background: var(--panel-strong); }
+  .session-tool.danger:hover { color: var(--danger); }
   .session-more { position: absolute; right: 6px; top: 6px; width: 24px; height: 20px; display: grid; place-items: center; border-radius: 5px; color: var(--fg-quiet); opacity: 0; font-size: 15px; line-height: 1; }
   .session:hover .session-more, .session.on .session-more { opacity: 1; }
   .session-more:hover { background: var(--panel-strong); color: var(--fg); }
