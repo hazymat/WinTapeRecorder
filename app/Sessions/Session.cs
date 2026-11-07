@@ -22,6 +22,13 @@ public class Dropout
     public int Ms { get; set; }
 }
 
+// Where the spectrum stopped at one moment of the recording (SPEC.md › Recording › Source quality); Hz 0 = too quiet to tell
+public class QualitySample
+{
+    public long Frame { get; set; }
+    public int Hz { get; set; }
+}
+
 public class Track
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
@@ -61,12 +68,14 @@ public class Session
     public int ClippedSamples { get; set; }
     public List<NameChange> Changes { get; set; } = new();
     public List<Dropout> Dropouts { get; set; } = new();
+    public List<QualitySample> Quality { get; set; } = new();
     public List<Track> Tracks { get; set; } = new();
 
     [JsonIgnore] public string Folder { get; set; } = "";
     [JsonIgnore] public string Id => Folder;
     [JsonIgnore] public string AudioPath => Path.Combine(Folder, "audio.wav");
     [JsonIgnore] public string PeaksPath => Path.Combine(Folder, "peaks.bin");
+    [JsonIgnore] public string HistoryPath => Path.Combine(Folder, "history.json");
     [JsonIgnore] string JsonPath => Path.Combine(Folder, "session.json");
 
     public static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };

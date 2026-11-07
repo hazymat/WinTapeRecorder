@@ -51,6 +51,11 @@ public sealed class Recorder : IDisposable
     readonly Stopwatch wallClock = new();
     double lastWallSeconds; double shortfallFrames; bool detecting;
     public List<Dropout> Dropouts { get; } = new();
+    // Source quality: every two seconds the latest window of audio goes to a worker for its spectral cutoff
+    readonly float[] qualityWindow = new float[SpectralCutoff.WindowFrames * 8]; int qualityFill; long nextQualityFrame; bool qualityBusy;
+    public List<QualitySample> Quality { get; } = new();
+    public int? CurrentCutoffHz { get; private set; }
+    public event Action? QualityMeasured;
 
     public bool Capturing => capture != null;
 
@@ -64,6 +69,7 @@ public sealed class Recorder : IDisposable
         captureFloat = captureFormat.Encoding == WaveFormatEncoding.IeeeFloat || (captureFormat is WaveFormatExtensible extensible && extensible.SubFormat == NAudio.Dmo.AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT);
         bitDepth = profile.BitDepth is 16 or 24 or 32 ? profile.BitDepth : 24;
         heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; Problem = ""; Dropouts.Clear(); shortfallFrames = 0; detecting = false;
+        Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null;
         DeviceName = device.FriendlyName;
         try { DeviceVolume = profile.Loopback ? device.AudioEndpointVolume.MasterVolumeLevelScalar : -1; } catch { DeviceVolume = -1; }
         if (session != null)
@@ -84,7 +90,7 @@ public sealed class Recorder : IDisposable
         }
         capture.DataAvailable += OnData;
         capture.RecordingStopped += (sender, args) => { if (args.Exception != null && capture != null) { Problem = args.Exception.Message; Stop(); Stopped?.Invoke(); } };
-        wallClock.Restart(); lastWallSeconds = 0;
+        wallClock.Restart(); lastWallSeconds = 0; framesSeen = 0;
         capture.StartRecording();
     }
 
@@ -119,6 +125,7 @@ public sealed class Recorder : IDisposable
             }
         }
         NoteTiming(frames);
+        GatherQuality(samples, frames);
         var queue = writeQueue;
         if (queue == null || queue.IsAddingCompleted) return; // level check only, or stopping
         var byteCount = sampleCount * (bitDepth / 8);
@@ -127,6 +134,35 @@ public sealed class Recorder : IDisposable
         Peaks!.Add(samples);
         Interlocked.Add(ref framesWritten, frames);
         try { queue.Add((bytes, byteCount)); } catch (InvalidOperationException) { ArrayPool<byte>.Shared.Return(bytes); }
+    }
+
+    // Keeps the most recent window; when two seconds have passed since the last measurement, hands a copy to a worker
+    long framesSeen;
+    void GatherQuality(ReadOnlySpan<float> samples, int frames)
+    {
+        var needed = SpectralCutoff.WindowFrames * channels;
+        if (samples.Length >= needed) { samples[^needed..].CopyTo(qualityWindow); qualityFill = needed; }
+        else
+        {
+            var keep = Math.Min(qualityFill, needed - samples.Length);
+            if (keep > 0) Array.Copy(qualityWindow, qualityFill - keep, qualityWindow, 0, keep);
+            samples.CopyTo(qualityWindow.AsSpan(keep)); qualityFill = keep + samples.Length;
+        }
+        framesSeen += frames;
+        if (framesSeen < nextQualityFrame || qualityFill < needed || qualityBusy) return;
+        nextQualityFrame = framesSeen + sampleRate * 2; qualityBusy = true;
+        var copy = qualityWindow.AsSpan(0, needed).ToArray(); var at = FramesWritten; var rate = sampleRate; var channelCount = channels;
+        Task.Run(() =>
+        {
+            try
+            {
+                var cutoff = SpectralCutoff.Measure(copy, channelCount, rate);
+                CurrentCutoffHz = cutoff;
+                if (Session != null) { lock (Quality) Quality.Add(new QualitySample { Frame = at, Hz = cutoff ?? 0 }); }
+                QualityMeasured?.Invoke();
+            }
+            finally { qualityBusy = false; }
+        });
     }
 
     // Each callback: wall-clock time passed against audio delivered. Normal jitter cancels out; a loss shows as a shortfall that never comes back.
@@ -199,6 +235,7 @@ public sealed class Recorder : IDisposable
         peaks?.Finish();
         session.TotalFrames = FramesWritten; session.Recording = false; session.ClippedSamples = (int)Math.Min(int.MaxValue, ClippedSamples);
         lock (Dropouts) session.Dropouts = Dropouts.ToList();
+        lock (Quality) session.Quality = Quality.ToList();
         try { peaks?.Save(session.PeaksPath); } catch { }
         session.Save();
         return session;

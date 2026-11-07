@@ -7,8 +7,8 @@
   import { request } from '../bridge'
   import { formatTime, type Track, type NameChange } from '../state.svelte'
   // The session's waveform (SPEC.md › Editing): an overview of the whole session, and a detail view that zooms with the wheel down to single samples
-  let { sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onPickTrack, onZoomTrack }: {
-    sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; dropouts?: { frame: number; ms: number }[]; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
+  let { sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onPickTrack, onZoomTrack }: {
+    sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; dropouts?: { frame: number; ms: number }[]; mode?: 'wave' | 'spectrogram'; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
     view: WaveView; onCursor: (frame: number) => void; onEdge: (grab: NonNullable<Grab>, frame: number) => void; onEdgeDone: (grab: NonNullable<Grab>) => void; onPickTrack: (trackId: string, additive: boolean) => void; onZoomTrack: (trackId: string) => void
   } = $props()
 
@@ -50,6 +50,42 @@
     if (wanted && wanted !== '') fetchDetail()
   }
   $effect(() => { sessionId; view.start; view.framesPerPixel; width; fetchDetail() })
+  // Spectrogram (SPEC.md › Editing): fetched for the visible range in the same way, drawn through a colour map
+  type SpectroData = { columns: number; rows: number; start: number; end: number; nyquist: number; data: string }
+  let spectroData = $state<SpectroData | null>(null), spectroImage: HTMLCanvasElement | null = null
+  let spectroBusy = false, spectroWanted = false
+  async function fetchSpectrogram() {
+    if (mode !== 'spectrogram') return
+    if (spectroBusy) { spectroWanted = true; return }
+    spectroBusy = true; spectroWanted = false
+    try {
+      const data = await request<SpectroData>({ type: 'spectrogram', id: sessionId, start: view.start, end: view.start + width * view.framesPerPixel, columns: Math.min(2000, Math.ceil(width)), rows: 256 })
+      if (data?.rows) { spectroData = data; spectroImage = paintSpectrogram(data) }
+    } catch { }
+    spectroBusy = false
+    if (spectroWanted) fetchSpectrogram()
+  }
+  $effect(() => { sessionId; view.start; view.framesPerPixel; width; mode; fetchSpectrogram() })
+  // Colour map: near-black, then blue, then warm, then white at full scale
+  const palette = (() => { const table: [number, number, number][] = []; for (let value = 0; value < 256; value++) { const t = value / 255; const mix = (from: number[], to: number[], at: number) => from.map((start, index) => Math.round(start + (to[index] - start) * at)) as [number, number, number]; table.push(t < 0.45 ? mix([10, 12, 24], [28, 110, 200], t / 0.45) : t < 0.8 ? mix([28, 110, 200], [250, 205, 60], (t - 0.45) / 0.35) : mix([250, 205, 60], [255, 255, 255], (t - 0.8) / 0.2)) } return table })()
+  function paintSpectrogram(data: SpectroData) {
+    const bytes = Uint8Array.from(atob(data.data), character => character.charCodeAt(0))
+    const image = document.createElement('canvas'); image.width = data.columns; image.height = data.rows
+    const context = image.getContext('2d')!, pixels = context.createImageData(data.columns, data.rows)
+    for (let column = 0; column < data.columns; column++) for (let row = 0; row < data.rows; row++) { const [red, green, blue] = palette[bytes[column * data.rows + row]]; const offset = (row * data.columns + column) * 4; pixels.data[offset] = red; pixels.data[offset + 1] = green; pixels.data[offset + 2] = blue; pixels.data[offset + 3] = 255 }
+    context.putImageData(pixels, 0, 0)
+    return image
+  }
+  function drawSpectrogram(context: CanvasRenderingContext2D, top: number, height: number) {
+    if (!spectroData || !spectroImage) { context.fillStyle = css.quiet; context.font = '12px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.fillText('Computing the spectrogram…', 12, top + 20); return }
+    const left = frameToX(spectroData.start), right = frameToX(spectroData.end)
+    context.imageSmoothingEnabled = true
+    context.drawImage(spectroImage, left, top, right - left, height)
+    // Frequency scale down the right edge
+    context.font = '10px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'middle'; context.textAlign = 'right'
+    for (let kilohertz = 0; kilohertz <= spectroData.nyquist / 1000; kilohertz += 5) { const y = top + height - kilohertz * 1000 / spectroData.nyquist * height; context.fillStyle = 'rgba(0,0,0,0.5)'; context.fillRect(width - 34, y - 7, 32, 14); context.fillStyle = '#fff'; context.fillText(`${kilohertz} kHz`, width - 4, y) }
+    context.textAlign = 'left'
+  }
   $effect(() => { sessionId; totalFrames; width; request<PeakData>({ type: 'peaks', id: sessionId, start: 0, end: Math.max(1, totalFrames), columns: Math.min(4000, Math.ceil(width * devicePixelRatio)) }).then(data => { if (data?.mode === 'peaks') overviewData = data }).catch(() => { }) })
 
   // ---- Drawing ----
@@ -110,7 +146,7 @@
       const left = frameToX(track.start), right = frameToX(track.end)
       if (right < 0 || left > width) return
       const on = selectedIds.includes(track.id) || track.id === currentId
-      context.fillStyle = on ? css.shadeOn : css.shade; context.fillRect(left, waveTop, right - left, waveHeight)
+      if (mode !== 'spectrogram') { context.fillStyle = on ? css.shadeOn : css.shade; context.fillRect(left, waveTop, right - left, waveHeight) }
       context.font = '11px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'middle'
       const label = `${index + 1}${track.title ? '  ' + track.title : ''}`
       context.save(); context.beginPath(); context.rect(Math.max(0, left), 0, Math.max(0, Math.min(width, right) - Math.max(0, left)), flagHeight); context.clip()
@@ -139,7 +175,8 @@
     // Lane dividers and the audio
     context.fillStyle = css.line
     for (let lane = 1; lane < laneCount; lane++) context.fillRect(0, waveTop + lane * laneHeight, width, 1)
-    if (detailData?.mode === 'samples' && view.framesPerPixel < 1.5) drawSamples(context, detailData, waveTop, laneHeight)
+    if (mode === 'spectrogram') drawSpectrogram(context, waveTop, waveHeight)
+    else if (detailData?.mode === 'samples' && view.framesPerPixel < 1.5) drawSamples(context, detailData, waveTop, laneHeight)
     else if (detailData) drawPeaks(context, detailData.mode === 'samples' ? toPeaks(detailData) : detailData, waveTop, laneHeight, frameToX, css.wave, verticalScale)
     if (verticalScale > 1) { context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'; context.fillStyle = css.quiet; context.fillText(`Height ×${verticalScale < 10 ? verticalScale.toFixed(1) : Math.round(verticalScale)} (wheel resets)`, width - 160, waveTop + 4) }
     // Ruler, with any dropouts (samples lost while recording) as red marks on it
@@ -183,7 +220,7 @@
     if (playhead >= 0) { context.fillStyle = css.playhead; context.fillRect(toX(playhead) - 0.5, 0, 1, overviewHeight) }
   }
 
-  $effect(() => { detailData; tracks; changes; dropouts; selectedIds; currentId; cursor; playhead; grab; view.start; view.framesPerPixel; width; detailHeight; css; channels; verticalScale; requestAnimationFrame(drawDetail) })
+  $effect(() => { detailData; spectroData; mode; tracks; changes; dropouts; selectedIds; currentId; cursor; playhead; grab; view.start; view.framesPerPixel; width; detailHeight; css; channels; verticalScale; requestAnimationFrame(drawDetail) })
   $effect(() => { overviewData; tracks; selectedIds; currentId; playhead; view.start; view.framesPerPixel; width; css; requestAnimationFrame(drawOverview) })
 
   // ---- Mouse ----

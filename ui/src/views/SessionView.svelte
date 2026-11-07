@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { request, sendToShell, onShellMessage } from '../bridge'
-  import { app, nav, toast, formatTime, formatDuration, writeSetting, readSetting, type SessionDetail, type Track } from '../state.svelte'
+  import { app, nav, toast, formatTime, formatDuration, writeSetting, readSetting, describeCutoff, shortCutoff, medianCutoff, type SessionDetail, type Track } from '../state.svelte'
   import { selection, selectKeys, clearSelection, type SelectionAction } from '../lib/selection.svelte'
   import { selectable } from '../lib/selectable.svelte'
   import Waveform, { type WaveView, type Grab } from '../parts/Waveform.svelte'
@@ -21,6 +21,9 @@
   let cursor = $state(0), currentId = $state(''), grab = $state<Grab>(null)
   let snapToZero = $state(readFlag('snapZero'))
   let hearStyle = $state(readSetting('hearStyle', 'pills'))
+  let waveMode = $state<'wave' | 'spectrogram'>(readSetting('waveMode', 'wave') === 'spectrogram' ? 'spectrogram' : 'wave')
+  function setWaveMode(mode: 'wave' | 'spectrogram') { waveMode = mode; writeSetting('waveMode', mode) }
+  const sessionCutoff = $derived(session ? medianCutoff(session.quality ?? [], 0, session.totalFrames) : null)
   let exportStatus = $state('')
   let waveform = $state<ReturnType<typeof Waveform>>()
   const scope = $derived('tracks:' + sessionId)
@@ -37,6 +40,7 @@
     try {
       const detail = await request<SessionDetail>({ type: 'openSession', id: sessionId })
       session = detail; tracks = detail.tracks; currentId = detail.tracks[0]?.id ?? ''; cursor = detail.tracks[0]?.start ?? 0
+      sendToShell({ type: 'snapshot', id: sessionId, label: 'Opened', tracks: $state.snapshot(tracks) }) // the first snapshot is the state as detected
       view = { start: 0, framesPerPixel: Math.max(1, detail.totalFrames / 1000) } // the waveform fits it once it knows its width
       requestAnimationFrame(() => fit())
     } catch (error) { loadError = (error as Error).message }
@@ -44,13 +48,21 @@
   $effect(() => { sessionId; untrack(load) })
 
   // ---- Edits: every change is undoable and saved straight away ----
-  let past: string[] = [], future: string[] = []
+  let past = $state<string[]>([]), future = $state<string[]>([])
   let saveTimer = 0
   function save() { clearTimeout(saveTimer); saveTimer = window.setTimeout(() => sendToShell({ type: 'saveSession', id: sessionId, tracks: $state.snapshot(tracks) }), 250) }
   function commit(next: Track[], label: string) {
     past = past.concat([JSON.stringify($state.snapshot(tracks))]).slice(-200); future = []
     tracks = next.slice().sort((first, second) => first.start - second.start); save()
+    sendToShell({ type: 'snapshot', id: sessionId, label, tracks: $state.snapshot(tracks) }) // the history survives closing the app
     toast(label, { undo })
+  }
+  const canUndo = $derived(past.length > 0), canRedo = $derived(future.length > 0)
+  let historyOpen = $state(false), snapshots = $state<{ index: number; at: string; label: string; tracks: number }[]>([])
+  async function openHistory() { snapshots = await request({ type: 'history', id: sessionId }); historyOpen = true }
+  async function restoreSnapshot(index: number, label: string) {
+    try { const restored = await request<Track[]>({ type: 'restoreSnapshot', id: sessionId, index }); historyOpen = false; commit(restored, `Restored: ${label}`); clearSelection() }
+    catch (error) { toast('Could not restore: ' + (error as Error).message) }
   }
   function undo() { const previous = past.pop(); if (!previous) return; future.push(JSON.stringify($state.snapshot(tracks))); tracks = JSON.parse(previous); save(); toast('Undone', { ms: 2000 }) }
   function redo() { const next = future.pop(); if (!next) return; past.push(JSON.stringify($state.snapshot(tracks))); tracks = JSON.parse(next); save(); toast('Redone', { undo, ms: 4000 }) }
@@ -326,6 +338,7 @@
     <input class="name" value={session.name} onchange={(event) => { const name = (event.target as HTMLInputElement).value.trim(); if (name && session) { session.name = name; sendToShell({ type: 'saveSession', id: sessionId, name }) } }} aria-label="Session name" />
     <span class="facts">{new Date(session.created).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} · {formatDuration(session.totalFrames / rate)} · {session.device || 'Unknown device'} · {rate / 1000} kHz {session.bitDepth === 32 ? 'float' : session.bitDepth + '-bit'} · {tracks.length} tracks{exportedCount ? `, ${exportedCount} exported` : ''}</span>
     {#if session.clippedSamples > 0}<span class="clip-warning" title="Samples recorded at full scale">{session.clippedSamples} clipped samples</span>{/if}
+    {#if sessionCutoff}<span class="source-chip" title={describeCutoff(sessionCutoff)}>Source: spectrum stops at {(sessionCutoff / 1000).toFixed(1)} kHz, {describeCutoff(sessionCutoff)}</span>{/if}
     {#if session.dropouts?.length}<span class="clip-warning" title={session.dropouts.map(dropout => `${formatTime(dropout.frame, rate, false)}: ${dropout.ms} ms lost`).join('\n')}>{session.dropouts.length} dropout{session.dropouts.length === 1 ? '' : 's'} (marked in red on the ruler)</span>{/if}
     <span class="header-actions">
       <button class="ghost" onclick={() => sendToShell({ type: 'openFolder', path: session!.folder + '\\audio.wav' })} title="Open the session's folder in Explorer, with the WAV selected"><Icon name="folder" size={15} />Show files</button>
@@ -353,6 +366,15 @@
       <button class="ghost" class:on={snapToZero} onclick={() => { snapToZero = !snapToZero; writeSetting('snapZero', snapToZero ? '1' : '') }} title="Edges land on the nearest zero crossing">Snap to zero</button>
     </div>
     <div class="group">
+      <button class="ghost icon" onclick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={16} /></button>
+      <button class="ghost icon" onclick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"><Icon name="redo" size={16} /></button>
+      <button class="ghost" onclick={openHistory} title="Every earlier state of this track list, to go back to">History…</button>
+    </div>
+    <div class="group">
+      <button class="ghost" class:on={waveMode === 'wave'} onclick={() => setWaveMode('wave')} title="Waveform: levels, starts and ends">Wave</button>
+      <button class="ghost" class:on={waveMode === 'spectrogram'} onclick={() => setWaveMode('spectrogram')} title="Spectrogram: frequency over time. A flat top edge means a lossy source; a vertical gap is a dropout">Spectrogram</button>
+    </div>
+    <div class="group">
       <button class="ghost icon" onclick={splitAtCursor} title="Split at the playhead (X)"><Icon name="split" size={16} /></button>
       <button class="ghost icon" onclick={() => dialog = { kind: 'redetect' }} title="Find the tracks again with the recording profile's gap settings"><Icon name="redetect" size={16} /></button>
     </div>
@@ -364,14 +386,15 @@
 
   <Hint id="waveform-basics" text="Wheel zooms (down to single samples), Ctrl+wheel makes the wave taller, Shift+wheel scrolls. Drag a green start or red end line to move it. Click to place the playhead; S and E set the current track's start and end there." />
   <div class="wave-host" bind:this={waveHost}>
-    <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
+    <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
       onCursor={(frame) => { cursor = frame; grab = null; if (playing) playFrom(frame) }} {onEdge} {onEdgeDone} onPickTrack={(trackId, additive) => { currentId = trackId; if (additive) selectKeys(scope, Array.from(new Set(selectedIds.concat([trackId]))), actions, 'track'); scrollRowIntoView(trackId) }} onZoomTrack={zoomToTrack} />
   </div>
   <div class="readout"><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
 
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }}>
-    <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span class="hear-head">Hear <select class="hear-style no-hold" value={hearStyle} onchange={(event) => { hearStyle = (event.target as HTMLSelectElement).value; writeSetting('hearStyle', hearStyle) }} title="Try the button styles (temporary, while you choose)"><option value="pills">A</option><option value="split">B</option><option value="coloured">C</option></select></span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Title</span><span>Album</span><span>Year</span><span>Genre</span><span>Fades</span><span></span></div>
+    <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span class="hear-head">Hear <select class="hear-style no-hold" value={hearStyle} onchange={(event) => { hearStyle = (event.target as HTMLSelectElement).value; writeSetting('hearStyle', hearStyle) }} title="Try the button styles (temporary, while you choose)"><option value="pills">A</option><option value="split">B</option><option value="coloured">C</option></select></span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Title</span><span>Album</span><span>Year</span><span>Genre</span><span>Source</span><span>Fades</span><span></span></div>
     {#each tracks as track, index (track.id)}
+      {@const cutoff = medianCutoff(session.quality ?? [], track.start, track.end)}
       <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
         <span class="hear no-hold {hearStyle}"><button class="hear-start" onclick={(event) => { event.stopPropagation(); hearEdge('start', track.id) }} title="Hear this track's start" aria-label="Hear start"><Icon name="play" size={11} /><span>Start</span></button><button class="hear-end" onclick={(event) => { event.stopPropagation(); hearEdge('end', track.id) }} title="Hear this track's end" aria-label="Hear end"><span>End</span><Icon name="play" size={11} /></button></span>
@@ -383,6 +406,7 @@
         <input class="no-hold" value={track.album} placeholder="Album" onchange={(event) => editField(track, 'album', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.year ?? ''} placeholder="Year" onchange={(event) => editField(track, 'year', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.genre ?? ''} placeholder="Genre" onchange={(event) => editField(track, 'genre', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
+        <span class="source-cell" title={cutoff ? `Spectrum stops at ${(cutoff / 1000).toFixed(1)} kHz: ${describeCutoff(cutoff)}` : 'Too little sound to tell'}>{shortCutoff(cutoff)}</span>
         <span class="fades">{track.fadeInMs || track.fadeOutMs ? `${track.fadeInMs}/${track.fadeOutMs} ms` : ''}</span>
         <span class="status">{#if track.exported}<button class="exported no-hold" title={track.exportedPath} onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: track.exportedPath }) }}>Exported</button>{/if}</span>
       </div>
@@ -401,6 +425,13 @@
 {#if lookingUp}
   {@const lookupKeys = lookingUp.keys}
   <LookupDialog {sessionId} trackCount={lookupKeys.length} artist={lookingUp.artist} title={lookingUp.title} album={lookingUp.album} onapply={(match, take, artPath, artThumb) => applyMatch(lookupKeys, match, take, artPath, artThumb)} oncancel={() => lookingUp = null} />
+{/if}
+{#if historyOpen}
+  <Dialog wide title="History" text="Every state this track list has been in, newest first. Restoring is itself a change, so it can be undone." confirmLabel="Close" onconfirm={() => historyOpen = false} oncancel={() => historyOpen = false}>
+    <div class="history">
+      {#each snapshots as snapshot (snapshot.index)}<div class="snapshot"><span class="when">{new Date(snapshot.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><span class="label">{snapshot.label}</span><span class="quiet">{snapshot.tracks} track{snapshot.tracks === 1 ? '' : 's'}</span><button class="ghost" onclick={() => restoreSnapshot(snapshot.index, snapshot.label)}>Restore</button></div>{:else}<p class="quiet">Nothing yet.</p>{/each}
+    </div>
+  </Dialog>
 {/if}
 {#if exportCheck}
   {@const check = exportCheck}
@@ -425,6 +456,8 @@
   .name:hover { border-color: var(--line); }
   .facts { color: var(--fg-quiet); font-size: 12.5px; }
   .clip-warning { color: var(--danger); font-size: 12px; font-weight: 600; }
+  .source-chip { font-size: 12px; color: var(--fg-quiet); }
+  .source-cell { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
   .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .group { display: flex; align-items: center; gap: 4px; }
   .ghost.icon { padding: 5px 7px; }
@@ -440,7 +473,7 @@
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
   .list { flex: 1 1 38%; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: 52px 140px 70px 64px 30px minmax(80px, 1fr) minmax(120px, 1.5fr) minmax(80px, 1fr) 56px minmax(60px, 0.6fr) 76px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
+  .row { display: grid; grid-template-columns: 52px 140px 70px 64px 30px minmax(80px, 1fr) minmax(120px, 1.5fr) minmax(80px, 1fr) 56px minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
@@ -471,4 +504,9 @@
   .header-actions { margin-left: auto; display: flex; gap: 6px; }
   .tick { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-quiet); }
+  .history { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .snapshot { display: grid; grid-template-columns: 70px 1fr auto auto; gap: 10px; align-items: center; padding: 3px 6px; border-radius: 6px; font-size: 13px; }
+  .snapshot:hover { background: var(--hover); }
+  .when { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
+  .label { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

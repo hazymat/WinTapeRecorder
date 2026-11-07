@@ -2,12 +2,12 @@
 export type Track = { id: string; start: number; end: number; artist: string; title: string; album: string; albumArtist?: string; genre?: string; year?: string; composer?: string; comment?: string; trackNumber?: number; trackCount?: number; artPath?: string; fadeInMs: number; fadeOutMs: number; exported: boolean; exportedPath: string }
 export type NameChange = { frame: number; artist: string; title: string; album: string; source: string; manual: boolean }
 export type SessionSummary = { id: string; name: string; created: string; seconds: number; tracks: number; exported: number; recording: boolean; crashed: boolean }
-export type SessionDetail = { id: string; name: string; created: string; device: string; loopback: boolean; sampleRate: number; channels: number; bitDepth: number; totalFrames: number; recordingProfileId: string; outputProfileId: string; clippedSamples: number; changes: NameChange[]; dropouts: { frame: number; ms: number }[]; tracks: Track[]; folder: string }
+export type SessionDetail = { id: string; name: string; created: string; device: string; loopback: boolean; sampleRate: number; channels: number; bitDepth: number; totalFrames: number; recordingProfileId: string; outputProfileId: string; clippedSamples: number; changes: NameChange[]; dropouts: { frame: number; ms: number }[]; quality: { frame: number; hz: number }[]; tracks: Track[]; folder: string }
 export type Profile = { id: string; name: string; loopback?: boolean; deviceName?: string; bitDepth?: number; format?: string; template?: string }
 export type NameSource = { key: string; kind: string; label: string; artist: string; title: string; playing: boolean; rule: string }
 
 export const app = $state({
-  status: null as null | { recording: boolean; capturing: boolean; sessionId: string; sessionName: string; device: string; deviceVolume: number; dropouts: number; sampleRate: number; changes: { frame: number; artist: string; title: string; album: string; manual: boolean }[]; current: null | { label: string; artist: string; title: string }; source: string; playing: boolean; playingSession: string; exporting: boolean; version: string; updateReady: string },
+  status: null as null | { recording: boolean; capturing: boolean; sessionId: string; sessionName: string; device: string; deviceVolume: number; dropouts: number; cutoffHz: number | null; cutoffText: string; sampleRate: number; changes: { frame: number; artist: string; title: string; album: string; manual: boolean }[]; current: null | { label: string; artist: string; title: string }; source: string; playing: boolean; playingSession: string; exporting: boolean; version: string; updateReady: string },
   levels: { peaks: [] as number[], clipped: 0, seconds: 0, bytes: 0, minutesLeft: -1 },
   hints: { hidden: false, dismissed: [] as string[] },
   recordingProfiles: [] as Profile[], outputProfiles: [] as Profile[], activeRecording: '', activeOutput: '', auditionSeconds: 5,
@@ -40,5 +40,16 @@ export function formatTime(frames: number, rate: number, withMs = true) {
   const hours = Math.floor(totalMs / 3600000), minutes = Math.floor(totalMs / 60000) % 60, seconds = Math.floor(totalMs / 1000) % 60, ms = totalMs % 1000
   const base = (hours ? `${hours}:${String(minutes).padStart(2, '0')}` : `${minutes}`) + `:${String(seconds).padStart(2, '0')}`
   return withMs ? `${base}.${String(ms).padStart(3, '0')}` : base
+}
+// Source quality (SPEC.md › Recording): what a spectral cutoff usually means (the same bands as the shell's SpectralCutoff.Describe)
+export function describeCutoff(hz: number | null | undefined) {
+  if (!hz) return ''
+  return hz >= 20500 ? 'full bandwidth: lossless, or a very high bitrate' : hz >= 19000 ? 'about 256–320 kbps, or lossless with a gentle top end' : hz >= 16500 ? 'about 192 kbps' : hz >= 14000 ? 'about 128 kbps' : hz >= 11000 ? 'about 96 kbps' : '64 kbps or lower'
+}
+export const shortCutoff = (hz: number | null | undefined) => hz ? `${(hz / 1000).toFixed(1)}k` : ''
+// The typical cutoff over a stretch of readings: the median of the ones that heard anything
+export function medianCutoff(samples: { frame: number; hz: number }[], start: number, end: number) {
+  const heard = samples.filter(sample => sample.frame >= start && sample.frame < end && sample.hz > 0).map(sample => sample.hz).sort((first, second) => first - second)
+  return heard.length ? heard[Math.floor(heard.length / 2)] : null
 }
 export function formatDuration(seconds: number) { const whole = Math.round(seconds), hours = Math.floor(whole / 3600), minutes = Math.floor(whole / 60) % 60; return hours ? `${hours} h ${minutes} min` : `${minutes}:${String(whole % 60).padStart(2, '0')}` }

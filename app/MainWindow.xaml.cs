@@ -133,6 +133,23 @@ public partial class MainWindow : Window
                         Reply(message, rebuilt);
                     }
                     break;
+                case "spectrogram":
+                    if (App.TryGetOpen(Text(message, "id"), out var spectro)) Reply(message, await Task.Run(() => Spectrogram(spectro.audio, Number(message, "start"), Number(message, "end"), (int)Number(message, "columns", 800), (int)Number(message, "rows", 256))));
+                    else Reply(message, new { rows = 0 });
+                    break;
+                // ---- Undo history (SPEC.md › Editing): snapshots of the track list in the session folder ----
+                case "snapshot":
+                    if (App.TryGetOpen(Text(message, "id"), out var snapping))
+                    {
+                        var history = LoadHistory(snapping.session);
+                        var tracksJson = message.GetProperty("tracks").GetRawText();
+                        if (history.Count == 0 || history[^1].TracksJson != tracksJson) { history.Add(new Snapshot { At = DateTime.Now, Label = Text(message, "label"), TracksJson = tracksJson }); if (history.Count > 80) history.RemoveRange(0, history.Count - 80); SaveHistory(snapping.session, history); }
+                    }
+                    break;
+                case "history": Reply(message, App.TryGetOpen(Text(message, "id"), out var listing) ? LoadHistory(listing.session).Select((snapshot, index) => new { index, at = snapshot.At, label = snapshot.Label, tracks = JsonDocument.Parse(snapshot.TracksJson).RootElement.GetArrayLength() }).Reverse().ToList() : new()); break;
+                case "restoreSnapshot":
+                    if (App.TryGetOpen(Text(message, "id"), out var restoring) && LoadHistory(restoring.session) is { } snapshots && (int)Number(message, "index", -1) is var snapshotIndex && snapshotIndex >= 0 && snapshotIndex < snapshots.Count) ReplyRawJson(message, snapshots[snapshotIndex].TracksJson); else Reply(message, new { error = "That snapshot is gone." });
+                    break;
                 case "nearestZero":
                     if (App.TryGetOpen(Text(message, "id"), out var zeroing)) Reply(message, await Task.Run(() => NearestZeroCrossing(zeroing.audio, (long)Number(message, "frame"), (int)Number(message, "radius", 2000))));
                     break;
@@ -221,7 +238,7 @@ public partial class MainWindow : Window
     static object SessionDetail(Session session) => new
     {
         id = session.Id, name = session.Name, created = session.Created, device = session.Device, loopback = session.Loopback, sampleRate = session.SampleRate, channels = session.Channels, bitDepth = session.BitDepth,
-        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, tracks = session.Tracks, folder = session.Folder,
+        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, quality = session.Quality, tracks = session.Tracks, folder = session.Folder,
     };
 
     // Waveform data for [start, end) in columns: min/max per column for each channel, or the samples themselves when zoomed in that far
@@ -261,6 +278,26 @@ public partial class MainWindow : Window
             }
         }
         return new { mode = "peaks", start, end, channels = result.Select(Round) };
+    }
+
+    record Snapshot { public DateTime At { get; set; } public string Label { get; set; } = ""; public string TracksJson { get; set; } = "[]"; }
+    static List<Snapshot> LoadHistory(Session session) { try { return File.Exists(session.HistoryPath) ? JsonSerializer.Deserialize<List<Snapshot>>(File.ReadAllText(session.HistoryPath)) ?? new() : new(); } catch { return new(); } }
+    static void SaveHistory(Session session, List<Snapshot> history) { try { File.WriteAllText(session.HistoryPath, JsonSerializer.Serialize(history)); } catch { } }
+    void ReplyRawJson(JsonElement message, string dataJson) { if (message.TryGetProperty("requestId", out var requestId)) Push($"{{\"type\":\"result\",\"id\":{requestId.GetInt64()},\"data\":{dataJson}}}"); }
+
+    // The spectrogram of [start, end): one short-window spectrum per column, rows from Nyquist (top) to 0 Hz, as a base64 string of bytes
+    static object Spectrogram(SessionAudio audio, double start, double end, int columns, int rows)
+    {
+        columns = Math.Clamp(columns, 1, 4000); rows = Math.Clamp(rows, 16, 512);
+        var bytes = new byte[columns * rows]; var window = new float[SpectralCutoff.SpectrogramWindow * audio.Channels]; var framesPerColumn = (end - start) / columns;
+        for (var column = 0; column < columns; column++)
+        {
+            var centre = (long)(start + (column + 0.5) * framesPerColumn); var first = Math.Max(0, centre - SpectralCutoff.SpectrogramWindow / 2);
+            Array.Clear(window);
+            var read = audio.Read(first, SpectralCutoff.SpectrogramWindow, window);
+            if (read > 0) SpectralCutoff.Column(window, audio.Channels, bytes.AsSpan(column * rows, rows));
+        }
+        return new { columns, rows, start, end, nyquist = audio.SampleRate / 2, data = Convert.ToBase64String(bytes) };
     }
 
     static double[] Round(float[] values) => values.Select(value => Math.Round(value, 5)).ToArray();

@@ -101,6 +101,8 @@
   <LevelMeter />
   {#if app.levels.clipped > 0}<p class="warn">The input reached full scale. Turn the source down a little to avoid clipping.</p>{/if}
 
+  <h3>Source quality</h3>
+  <p class="source">{#if app.status?.cutoffHz}<strong>Spectrum stops at {(app.status.cutoffHz / 1000).toFixed(1)} kHz</strong><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">{app.status?.capturing ? 'Measuring: needs a couple of seconds of sound.' : 'Measured from the sound as it arrives.'}</span>{/if}</p>
   <h3>Now playing</h3>
   <p class="now">{#if current?.title}<strong>{current.title}</strong>{#if current.artist}{' · '}{current.artist}{/if}<span class="quiet">{' · '}{current.label}</span>{:else}<span class="quiet">Nothing named yet. {source === 'none' ? 'Tracks will be split on gaps.' : 'Play something in a browser or app; gaps split tracks when there are no names.'}</span>{/if}</p>
 
@@ -141,7 +143,7 @@
   .session-name { font-size: 16px; padding: 6px 10px; max-width: 360px; }
   .marker { flex: none; }
   .warn { color: var(--danger); font-size: 12.5px; margin: 8px 0 0; }
-  .now { margin: 0; }
+  .now, .source { margin: 0; }
   .live-wave { display: block; width: 100%; height: 90px; margin-top: 14px; border-radius: 8px; background: var(--panel); }
   .changes { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
   .change { display: grid; grid-template-columns: 24px auto 76px auto minmax(90px, 1fr) minmax(120px, 1.4fr) minmax(90px, 1fr) 28px; gap: 6px; align-items: center; }

@@ -48,6 +48,7 @@ public partial class App : Application
         Settings = AppSettings.Load();
         Watcher = new NowPlayingWatcher(() => Settings);
         Watcher.Updated += () => Dispatcher.BeginInvoke(OnNamesUpdated);
+        Recorder.QualityMeasured += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
         Recorder.DropoutFound += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
         Recorder.Stopped += () => Dispatcher.BeginInvoke(() => { var problem = Recorder.Problem; FinishRecording(); if (problem != "") ShowTip("Recording stopped", problem); });
         Player.Finished += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
@@ -184,12 +185,25 @@ public partial class App : Application
             var peaks = Peaks.Load(session.PeaksPath, audio.TotalFrames);
             if (peaks == null) { peaks = Peaks.Build(audio, progress); try { peaks.Save(session.PeaksPath); } catch { } }
             if (session.Tracks.Count == 0 && session.TotalFrames > 0) session.Tracks = TrackBuilder.Build(session, peaks, Settings.RecordingProfileOrActive(session.RecordingProfileId));
+            if (session.Quality.Count == 0 && session.TotalFrames > audio.SampleRate * 2) session.Quality = MeasureQuality(audio); // recorded before this was measured live
             session.Save();
             return (session, audio, peaks);
         });
         foreach (var stale in openSessions.Keys.Where(key => key != sessionId).ToList()) CloseOpen(stale); // one at a time keeps memory down
         openSessions[sessionId] = opened;
         return opened;
+    }
+
+    // A cutoff reading every two seconds through the file (a 2 s window at each)
+    static List<QualitySample> MeasureQuality(SessionAudio audio)
+    {
+        var samples = new List<QualitySample>(); var buffer = new float[SpectralCutoff.WindowFrames * audio.Channels];
+        for (long frame = audio.SampleRate * 2; frame + SpectralCutoff.WindowFrames <= audio.TotalFrames; frame += audio.SampleRate * 2)
+        {
+            if (audio.Read(frame - SpectralCutoff.WindowFrames, SpectralCutoff.WindowFrames, buffer) < SpectralCutoff.WindowFrames) break;
+            samples.Add(new QualitySample { Frame = frame, Hz = SpectralCutoff.Measure(buffer, audio.Channels, audio.SampleRate) ?? 0 });
+        }
+        return samples;
     }
 
     public bool TryGetOpen(string sessionId, out (Session session, SessionAudio audio, Peaks peaks) open) => openSessions.TryGetValue(sessionId, out open);
@@ -224,6 +238,8 @@ public partial class App : Application
         device = Recorder.DeviceName,
         deviceVolume = Recorder.DeviceVolume,
         dropouts = Recorder.Dropouts.Count,
+        cutoffHz = Recorder.CurrentCutoffHz,
+        cutoffText = SpectralCutoff.Describe(Recorder.CurrentCutoffHz),
         sampleRate = Recorder.Session?.SampleRate ?? 0,
         changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Manual }) ?? Enumerable.Empty<object>(),
         current = CurrentName == null ? null : new { CurrentName.Label, CurrentName.Artist, CurrentName.Title },
