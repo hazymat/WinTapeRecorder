@@ -58,7 +58,7 @@ The session view is a step bar that says what is left and what to do next: **1 C
 
 - Flags: above the wave each start has a green flag sticking out to the right of its line and each end a red flag to the left, so where an end meets the next start either can be grabbed by its own flag.
 - A row's Start or End shows which edge you last heard (a bar under it) and which line is selected on the wave (an outline in the line's colour); hearing an edge doesn't select it. Lines are selected by hand on the wave.
-- Confirming cuts: click a row's Start or End to hear it (zoomed in); press and hold it to confirm it: it fills, then turns green with a ✓. Hold again to undo. Y confirms or undoes the start or end you're on, without moving. Moving an edge doesn't confirm it. Export points out unconfirmed starts and ends but can always go ahead.
+- Confirming cuts: click a row's Start or End to hear it (zoomed in). The ✓ after them confirms that track's start and end together (the Start and End halves turn green); click again to undo. Y does the same for the current track. Moving an edge doesn't confirm it. Export points out unconfirmed starts and ends but can always go ahead.
 
 ## Auditioning
 - Only one audition plays at a time: starting one silences the previous at once. Space plays and stops from anywhere and never also presses the button last clicked.

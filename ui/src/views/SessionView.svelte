@@ -59,7 +59,7 @@
     tracks = next; save()
   }
   // Y: confirm (or undo) the start or end you're on, without moving anywhere
-  function confirmFocused() { const target = grab ? { trackId: grab.trackId, edge: grab.edge } : focused; const track = target ? tracks.find(candidate => candidate.id === target.trackId) : null; if (!track || !target) { toast('Pick a start or end first: click Start or End on a track'); return } toggleChecked(track, target.edge) }
+  function confirmFocused() { const track = current; if (!track) { toast('Click a track first'); return } confirmTrack(track) }
   // Between tracks (SPEC.md › Export): trimmed to a short roll (the default), or kept as recorded
   const trimSilence = $derived(app.recordingProfiles.find(profile => profile.id === session?.recordingProfileId)?.trimSilence ?? true)
   const endsMeet = $derived(app.recordingProfiles.find(profile => profile.id === session?.recordingProfileId)?.endsMeet ?? true)
@@ -361,14 +361,13 @@
   // Tags worth having on every file before it goes out (SPEC.md › Export): the dialog offers to fill them in first
   const wanted: [keyof Track, string][] = [['artist', 'artist'], ['album', 'album'], ['albumArtist', 'album artist'], ['genre', 'genre']]
   let exportCheck = $state<null | { keys: string[]; missing: string; unconfirmed: number }>(null)
-  // Hold a row's Start or End to confirm it (it fills, then turns green); hold again to undo. A plain click hears it
-  let holding = $state<{ trackId: string; edge: 'start' | 'end' } | null>(null), holdTimer = 0, held = false
-  function holdDown(track: Track, edge: 'start' | 'end', event: PointerEvent) {
-    if (event.button !== 0) return
-    held = false; holding = { trackId: track.id, edge }; clearTimeout(holdTimer)
-    holdTimer = window.setTimeout(() => { held = true; holding = null; toggleChecked(track, edge) }, 550)
+  // One ✓ per track confirms its start and end together (SPEC.md › Editing); click again to undo
+  function confirmTrack(track: Track) {
+    const both = !!track.startChecked && !!track.endChecked
+    const next = copy(), edited = next.find(candidate => candidate.id === track.id)!
+    edited.startChecked = !both; edited.endChecked = !both
+    commit(next, `Track ${tracks.indexOf(track) + 1} ${both ? 'not confirmed' : 'confirmed'}`)
   }
-  function holdUp() { clearTimeout(holdTimer); holding = null }
   // A start or end confirmed by hand: green once the user is happy with it
   function toggleChecked(track: Track, edge: 'start' | 'end') {
     const next = copy(), edited = next.find(candidate => candidate.id === track.id)!
@@ -655,12 +654,12 @@
     </div>
   {/if}
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }}>
-    <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span>Hear (hold: ✓)</span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Album</span><span>Year</span><span>Title</span><span>Genre</span><span>Source</span><span>Fades</span><span></span></div>
+    <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span>Hear · ✓</span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Album</span><span>Year</span><span>Title</span><span>Genre</span><span>Source</span><span>Fades</span><span></span></div>
     {#each tracks as track, index (track.id)}
       {@const cutoff = medianCutoff(session.quality ?? [], track.start, track.end)}
       <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
-        <span class="hear no-hold"><button class="hear-start" class:checked={track.startChecked} class:heard={focused?.trackId === track.id && focused.edge === 'start'} class:grabbed={grab?.trackId === track.id && grab.edge === 'start'} class:holding={holding?.trackId === track.id && holding.edge === 'start'} onpointerdown={(event) => holdDown(track, 'start', event)} onpointerup={holdUp} onpointerleave={holdUp} onclick={(event) => { event.stopPropagation(); if (held) { held = false; return } focusEdge({ trackId: track.id, edge: 'start' }) }} title={`Click: hear this track's start, zoomed in. Hold: ${track.startChecked ? 'undo the ✓' : 'confirm it (✓, green)'}`} aria-label="Hear start"><Icon name="play" size={11} /><span>Start</span></button><button class="hear-end" class:checked={track.endChecked} class:heard={focused?.trackId === track.id && focused.edge === 'end'} class:grabbed={grab?.trackId === track.id && grab.edge === 'end'} class:holding={holding?.trackId === track.id && holding.edge === 'end'} onpointerdown={(event) => holdDown(track, 'end', event)} onpointerup={holdUp} onpointerleave={holdUp} onclick={(event) => { event.stopPropagation(); if (held) { held = false; return } focusEdge({ trackId: track.id, edge: 'end' }) }} title={`Click: hear this track's end, zoomed in. Hold: ${track.endChecked ? 'undo the ✓' : 'confirm it (✓, green)'}`} aria-label="Hear end"><span>End</span><Icon name="play" size={11} /></button></span>
+        <span class="hear no-hold"><button class="hear-start" class:checked={track.startChecked} class:heard={focused?.trackId === track.id && focused.edge === 'start'} class:grabbed={grab?.trackId === track.id && grab.edge === 'start'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }} title="Hear this track's start, zoomed in" aria-label="Hear start"><Icon name="play" size={11} /><span>Start</span></button><button class="hear-end" class:checked={track.endChecked} class:heard={focused?.trackId === track.id && focused.edge === 'end'} class:grabbed={grab?.trackId === track.id && grab.edge === 'end'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }} title="Hear this track's end, zoomed in" aria-label="Hear end"><span>End</span><Icon name="play" size={11} /></button><button class="ok" class:on={track.startChecked && track.endChecked} class:half={!!track.startChecked !== !!track.endChecked} onclick={(event) => { event.stopPropagation(); confirmTrack(track) }} title={track.startChecked && track.endChecked ? 'Start and end confirmed. Click to undo (Y)' : 'Happy with this start and end? Click to confirm both (Y)'} aria-label="Confirm this track's start and end">✓</button></span>
         <span class="edge-cell"><button class="time edge no-hold" class:doubt={!track.startSure && !track.startChecked} class:checked={track.startChecked} title={`${track.startNote || 'Start'}${track.startChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }}>{formatTime(track.start, rate, false)}</button>{#if track.detectedStart != null && track.detectedStart >= 0 && track.start !== track.detectedStart}<button class="revert no-hold" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'start') }} title={`Back to where it was detected (${formatTime(track.detectedStart, rate, false)})`}>↺</button>{/if}</span>
         <span class="edge-cell"><button class="time edge no-hold" class:doubt={!track.endSure && !track.endChecked} class:checked={track.endChecked} title={`${track.endNote || 'End'}${track.endChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }}>{formatDuration((track.end - track.start) / rate)}</button>{#if track.detectedEnd != null && track.detectedEnd >= 0 && track.end !== track.detectedEnd}<button class="revert no-hold" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'end') }} title={`End back to where it was detected (${formatTime(track.detectedEnd, rate, false)})`}>↺</button>{/if}</span>
         <button class="art-cell no-hold" onclick={(event) => { event.stopPropagation(); tagging = selectedIds.includes(track.id) ? selectedIds.slice() : [track.id] }} title="Edit tags and picture">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="" />{:else}<span>♪</span>{/if}</button>
@@ -743,7 +742,7 @@
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
   .list { flex: 1 1 38%; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: 52px 150px 88px 82px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
+  .row { display: grid; grid-template-columns: 52px 160px 88px 82px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
@@ -789,6 +788,7 @@
   @keyframes hold-fill-end { from { box-shadow: inset 0 0 0 0 rgba(62, 207, 110, 0.85); } to { box-shadow: inset -90px 0 0 0 rgba(62, 207, 110, 0.85); } }
   .hear .ok { width: 24px; padding: 0; margin: 0 4px; border-radius: 7px; background: var(--panel); color: var(--fg-quiet); border: 1px solid var(--line); font-weight: 700; }
   .hear .ok.on { background: #3ecf6e; color: #fff; border-color: transparent; }
+  .hear .ok.half { background: color-mix(in srgb, #3ecf6e 35%, var(--panel)); color: var(--fg); }
   .hear .ok:hover { background: color-mix(in srgb, #3ecf6e 40%, var(--panel)); color: var(--fg); }
   .exported { background: none; border: 0; color: #3ecf6e; font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
   .failed { background: none; border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent); border-radius: 999px; padding: 1px 8px; font: inherit; font-size: 11px; cursor: pointer; color: var(--danger); }
