@@ -123,6 +123,15 @@
     context.strokeStyle = css.warn; context.setLineDash([2, 4]); context.lineWidth = 1
     for (const change of changes) { const x = frameToX(change.frame); if (x >= 0 && x <= width) { context.beginPath(); context.moveTo(x, waveTop); context.lineTo(x, waveTop + waveHeight); context.stroke() } }
     context.setLineDash([])
+    // …each labelled with the name that started there, where there's room
+    context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'bottom'; context.fillStyle = css.warn
+    let labelEnd = -Infinity
+    for (const change of changes) {
+      const x = frameToX(change.frame); if (x < -200 || x > width) continue
+      const label = '♪ ' + (change.title || (change.manual ? 'marked by hand' : 'name changed'))
+      if (x + 4 < labelEnd) continue
+      context.fillText(label, x + 4, waveTop + waveHeight - 3); labelEnd = x + 4 + context.measureText(label).width + 12
+    }
     // Lane dividers and the audio
     context.fillStyle = css.line
     for (let lane = 1; lane < laneCount; lane++) context.fillRect(0, waveTop + lane * laneHeight, width, 1)
@@ -186,7 +195,9 @@
     return best
   }
   let drag: null | { kind: 'edge'; grab: NonNullable<Grab> } | { kind: 'pan'; startX: number; startView: number; moved: boolean } = null
-  let hoverCursor = $state('default')
+  let hoverCursor = $state('default'), hoverTitle = $state('')
+  // Hovering a dotted line says what it is
+  function changeTitle(x: number) { const change = changes.find(candidate => Math.abs(frameToX(candidate.frame) - x) < 5); return change ? `Where the playing name changed while recording${change.title ? ` to “${change.title}”${change.artist ? ` by ${change.artist}` : ''}` : ''}. The track's green start snaps to the quietest point near it.` : '' }
   function onDown(event: PointerEvent) {
     if (event.button !== 0) return
     detailCanvas?.setPointerCapture(event.pointerId)
@@ -195,7 +206,7 @@
     drag = { kind: 'pan', startX: event.offsetX, startView: view.start, moved: false }
   }
   function onMove(event: PointerEvent) {
-    if (!drag) { hoverCursor = handleAt(event.offsetX, event.offsetY) ? 'ew-resize' : 'text'; return }
+    if (!drag) { const handle = handleAt(event.offsetX, event.offsetY); hoverCursor = handle ? 'ew-resize' : 'text'; hoverTitle = handle ? (handle.edge === 'start' ? 'Track start: drag to move' : 'Track end: drag to move') : changeTitle(event.offsetX); return }
     if (drag.kind === 'edge') { onEdge(drag.grab, Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX))))); return }
     if (Math.abs(event.offsetX - drag.startX) > 3) drag.moved = true
     if (drag.moved) { hoverCursor = 'grabbing'; view = clampView({ start: drag.startView - (event.offsetX - drag.startX) * view.framesPerPixel, framesPerPixel: view.framesPerPixel }) }
@@ -222,7 +233,7 @@
 <div class="waveform" bind:clientWidth={width}>
   <canvas class="overview" bind:this={overviewCanvas} style:height="{overviewHeight}px" onpointerdown={(event) => { overviewDragging = true; overviewCanvas?.setPointerCapture(event.pointerId); centreOn(event) }} onpointermove={(event) => { if (overviewDragging) centreOn(event) }} onpointerup={() => overviewDragging = false} onwheel={onWheel}></canvas>
   <div class="detail" bind:clientHeight={detailHeight}>
-    <canvas bind:this={detailCanvas} style:cursor={hoverCursor} onwheel={onWheel} onpointerdown={onDown} onpointermove={onMove} onpointerup={onUp} ondblclick={onDoubleClick}></canvas>
+    <canvas bind:this={detailCanvas} style:cursor={hoverCursor} title={hoverTitle} onwheel={onWheel} onpointerdown={onDown} onpointermove={onMove} onpointerup={onUp} ondblclick={onDoubleClick}></canvas>
   </div>
 </div>
 

@@ -8,15 +8,17 @@ public sealed class AuditionPlayer : IDisposable
 {
     WasapiOut? output;
     SegmentReader? reader;
+    SessionAudio? ownAudio; // its own file handle: the waveform's reads never hold up playback
     double outputToSourceRatio = 1;
     int outputBlockAlign = 1;
     public string SessionId { get; private set; } = "";
     public bool Playing => output?.PlaybackState == PlaybackState.Playing;
     public event Action? Finished;
 
-    public void Play(SessionAudio audio, string sessionId, List<(long start, long end)> segments, Func<long, float>? gainAt, string deviceId)
+    public void Play(string audioPath, string sessionId, List<(long start, long end)> segments, Func<long, float>? gainAt, string deviceId)
     {
         Stop();
+        var audio = ownAudio = SessionAudio.Open(audioPath);
         var device = AudioDevices.Find(deviceId, "", true) ?? AudioDevices.Find("", "", true) ?? throw new InvalidOperationException("No output device for auditioning.");
         var mixFormat = device.AudioClient.MixFormat;
         reader = new SegmentReader(audio, segments, gainAt);
@@ -26,7 +28,7 @@ public sealed class AuditionPlayer : IDisposable
         if (source.WaveFormat.SampleRate != mixFormat.SampleRate) source = new WdlResamplingSampleProvider(source, mixFormat.SampleRate);
         outputToSourceRatio = (double)audio.SampleRate / source.WaveFormat.SampleRate;
         outputBlockAlign = source.WaveFormat.BlockAlign;
-        output = new WasapiOut(device, AudioClientShareMode.Shared, true, 80);
+        output = new WasapiOut(device, AudioClientShareMode.Shared, true, 150);
         output.Init(source);
         var playingOutput = output;
         output.PlaybackStopped += (sender, args) => { if (playingOutput == output) Finished?.Invoke(); };
@@ -47,9 +49,9 @@ public sealed class AuditionPlayer : IDisposable
 
     public void Stop()
     {
-        var stopping = output; output = null; reader = null;
+        var stopping = output; var stoppingAudio = ownAudio; output = null; reader = null; ownAudio = null;
         try { stopping?.Stop(); } catch { }
-        stopping?.Dispose();
+        stopping?.Dispose(); stoppingAudio?.Dispose();
         SessionId = "";
     }
 
@@ -62,7 +64,7 @@ sealed class SegmentReader : ISampleProvider
     readonly SessionAudio audio;
     readonly List<(long start, long end)> segments;
     readonly Func<long, float>? gainAt;
-    readonly int pauseFrames;
+    readonly int pauseFrames, edgeFrames; // a few ms of fade at each cut, so jumps don't click
     int segmentIndex; long sourceFrame; long pauseLeft; long outputFrames;
     readonly List<(long outputFrame, long sourceFrame, bool pause)> checkpoints = new();
     readonly object checkpointLock = new();
@@ -73,7 +75,7 @@ sealed class SegmentReader : ISampleProvider
     {
         this.audio = audio; this.segments = segments.Where(segment => segment.end > segment.start).ToList(); this.gainAt = gainAt;
         WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(audio.SampleRate, audio.Channels);
-        pauseFrames = audio.SampleRate * 2 / 5;
+        pauseFrames = audio.SampleRate * 2 / 5; edgeFrames = Math.Max(1, audio.SampleRate / 200);
         if (this.segments.Count > 0) sourceFrame = this.segments[0].start;
     }
 
@@ -104,7 +106,8 @@ sealed class SegmentReader : ISampleProvider
             if (read <= 0) { segmentIndex = segments.Count; break; }
             for (var frame = 0; frame < read; frame++)
             {
-                var gain = gainAt?.Invoke(sourceFrame + frame) ?? 1f;
+                var at = sourceFrame + frame;
+                var gain = (gainAt?.Invoke(at) ?? 1f) * Math.Min(1f, Math.Min((at - segment.start + 1) / (float)edgeFrames, (segment.end - at) / (float)edgeFrames));
                 for (var channel = 0; channel < channels; channel++) buffer[offset + (framesDone + frame) * channels + channel] = readBuffer[frame * channels + channel] * gain;
             }
             sourceFrame += read; framesDone += read; outputFrames += read;

@@ -274,7 +274,7 @@
         <TextBlock Text="Editing" FontWeight="SemiBold" Margin="0,14,0,0" />
         <TextBlock Style="{StaticResource Quiet}" Text="S set the track's start at the playhead · E set its end · X split here · Left/Right nudge the playhead or a grabbed edge (Shift: 10×, Ctrl: one sample) · [ and ] previous/next track · Del delete selected tracks · Ctrl+Z undo · Ctrl+Y or Ctrl+Shift+Z redo" />
         <TextBlock Text="Listening" FontWeight="SemiBold" Margin="0,14,0,0" />
-        <TextBlock Style="{StaticResource Quiet}" Text="Space play/stop from the playhead · A audition starts and ends · Ctrl+E export · Esc clear selection" />
+        <TextBlock Style="{StaticResource Quiet}" Text="Space play/stop from the playhead · , hear this track's start · . hear its end · Enter hear a grabbed edge · A run through every start and end · Ctrl+E export · Esc clear selection" />
         <TextBlock Text="App" FontWeight="SemiBold" Margin="0,14,0,0" />
         <TextBlock Style="{StaticResource Quiet}" Text="Ctrl+, settings · Ctrl+Q quit" />
       </StackPanel>

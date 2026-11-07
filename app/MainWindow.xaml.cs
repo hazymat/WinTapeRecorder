@@ -141,8 +141,14 @@ public partial class MainWindow : Window
                     {
                         var segments = message.GetProperty("segments").EnumerateArray().Select(segment => (segment[0].GetInt64(), segment[1].GetInt64())).ToList();
                         var tracks = playing.session.Tracks.ToList(); var rate = playing.session.SampleRate;
-                        Func<long, float> gain = frame => { var track = tracks.FirstOrDefault(candidate => frame >= candidate.Start && frame < candidate.End); return track == null || (track.FadeInMs == 0 && track.FadeOutMs == 0) ? 1f : Exporter.FadeGain(frame, track, (long)track.FadeInMs * rate / 1000, (long)track.FadeOutMs * rate / 1000); };
-                        App.Player.Play(playing.audio, playing.session.Id, segments, gain, App.Settings.Audio.AuditionDeviceId);
+                        Track? lastTrack = null; // looked up once per track, not per sample (this runs on the audio thread)
+                        Func<long, float> gain = frame =>
+                        {
+                            if (lastTrack == null || frame < lastTrack.Start || frame >= lastTrack.End) lastTrack = tracks.FirstOrDefault(candidate => frame >= candidate.Start && frame < candidate.End);
+                            var track = lastTrack;
+                            return track == null || (track.FadeInMs == 0 && track.FadeOutMs == 0) ? 1f : Exporter.FadeGain(frame, track, (long)track.FadeInMs * rate / 1000, (long)track.FadeOutMs * rate / 1000);
+                        };
+                        App.Player.Play(playing.session.AudioPath, playing.session.Id, segments, gain, App.Settings.Audio.AuditionDeviceId);
                         playheadTimer.Start(); Push(App.StatusJson());
                     }
                     break;
