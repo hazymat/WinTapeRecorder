@@ -44,6 +44,9 @@ public sealed class Recorder : IDisposable
     public double DeviceVolume { get; private set; } = -1; // the Windows volume of a loopback device (0..1), -1 when unknown: loopback may record at that level
     public event Action? Stopped; // by itself: device gone, disk full, size limit
     public event Action? DropoutFound;
+    public event Action? ClipFound;
+    public List<ClipEvent> Clips { get; } = new();
+    long clipBurstFrame = -1; int clipBurstSamples;
     DateTime lastHeaderUpdate;
     const long SizeLimit = uint.MaxValue - (64L << 20); // stop with room to spare under the WAV format's 4 GB
 
@@ -69,7 +72,7 @@ public sealed class Recorder : IDisposable
         captureFloat = captureFormat.Encoding == WaveFormatEncoding.IeeeFloat || (captureFormat is WaveFormatExtensible extensible && extensible.SubFormat == NAudio.Dmo.AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT);
         bitDepth = profile.BitDepth is 16 or 24 or 32 ? profile.BitDepth : 24;
         heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; Problem = ""; Dropouts.Clear(); shortfallFrames = 0; detecting = false;
-        Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null;
+        Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null; Clips.Clear(); clipBurstFrame = -1;
         DeviceName = device.FriendlyName;
         try { DeviceVolume = profile.Loopback ? device.AudioEndpointVolume.MasterVolumeLevelScalar : -1; } catch { DeviceVolume = -1; }
         if (session != null)
@@ -115,15 +118,17 @@ public sealed class Recorder : IDisposable
         if (floatBuffer.Length < sampleCount) floatBuffer = new float[sampleCount];
         var samples = floatBuffer.AsSpan(0, sampleCount);
         SampleConvert.ToFloat(args.Buffer.AsSpan(0, args.BytesRecorded), samples, captureBits, captureFloat);
+        var clippedNow = 0;
         lock (meterLock)
         {
             for (var index = 0; index < sampleCount; index++)
             {
                 var level = Math.Abs(samples[index]); var channel = index % channels;
                 if (level > heldPeaks[channel]) heldPeaks[channel] = level;
-                if (level >= 0.9999f) clippedSamples++;
+                if (level >= 0.9999f) { clippedSamples++; clippedNow++; }
             }
         }
+        if (clippedNow > 0 && Session != null) NoteClipping(clippedNow);
         NoteTiming(frames);
         GatherQuality(samples, frames);
         var queue = writeQueue;
@@ -134,6 +139,18 @@ public sealed class Recorder : IDisposable
         Peaks!.Add(samples);
         Interlocked.Add(ref framesWritten, frames);
         try { queue.Add((bytes, byteCount)); } catch (InvalidOperationException) { ArrayPool<byte>.Shared.Return(bytes); }
+    }
+
+    // Clipped samples within two seconds of each other are one burst, logged once (the user can then replay that track)
+    void NoteClipping(int count)
+    {
+        var at = FramesWritten;
+        lock (Clips)
+        {
+            if (clipBurstFrame >= 0 && at - clipBurstFrame < sampleRate * 2) { clipBurstSamples += count; Clips[^1].Samples = clipBurstSamples; return; }
+            clipBurstFrame = at; clipBurstSamples = count; Clips.Add(new ClipEvent { Frame = at, Samples = count });
+        }
+        ClipFound?.Invoke();
     }
 
     // Keeps the most recent window; when two seconds have passed since the last measurement, hands a copy to a worker
@@ -236,6 +253,7 @@ public sealed class Recorder : IDisposable
         session.TotalFrames = FramesWritten; session.Recording = false; session.ClippedSamples = (int)Math.Min(int.MaxValue, ClippedSamples);
         lock (Dropouts) session.Dropouts = Dropouts.ToList();
         lock (Quality) session.Quality = Quality.ToList();
+        lock (Clips) session.Clips = Clips.ToList();
         try { peaks?.Save(session.PeaksPath); } catch { }
         session.Save();
         return session;

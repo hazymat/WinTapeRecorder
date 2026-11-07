@@ -61,6 +61,7 @@ public static class TrackBuilder
             foreach (var change in changes)
             {
                 if (change.Manual) { boundaries.Add((change.Frame, change, "marker")); continue; }
+                if (change.Frame < rate / 2) { boundaries.Add((0, change, "session")); continue; } // the name that was already playing when recording started
                 var (snapped, inGap) = SnapToGap(change.Frame, gaps, peaks, snapFrames, rate, totalFrames);
                 boundaries.Add((snapped, change, inGap ? "gap" : "hard"));
             }
@@ -99,7 +100,18 @@ public static class TrackBuilder
                 "marker" => ("Where you marked the next track", false),
                 _ => ("No silence here: a hard cut where the next track starts (crossfade or gapless?)", false),
             };
+            track.SkipReason = name?.Problem ?? "";
             tracks.Add(track);
+        }
+        // Retakes (SPEC.md › Recording › Issues): a take with a problem is left out when the same title and artist were recorded again later
+        for (var index = 0; index < tracks.Count; index++)
+        {
+            var track = tracks[index];
+            if (track.SkipReason == "" || track.Title == "") continue;
+            var again = tracks.Skip(index + 1).Any(later => string.Equals(later.Title, track.Title, StringComparison.OrdinalIgnoreCase) && string.Equals(later.Artist, track.Artist, StringComparison.OrdinalIgnoreCase));
+            track.Skip = again;
+            track.SkipReason = again ? track.SkipReason switch { "dropout" => "Dropout during this take; recorded again later", "clipping" => "Clipping during this take; recorded again later", _ => "Marked for a retake; recorded again later" }
+                : track.SkipReason switch { "dropout" => "A dropout happened during this take", "clipping" => "Clipping during this take", _ => "Marked for a retake, but not recorded again" };
         }
         return tracks;
     }
@@ -115,8 +127,9 @@ public static class TrackBuilder
             if (distance <= snapFrames && distance < bestDistance) { bestDistance = distance; best = (gapStart + gapEnd) / 2; }
         }
         if (best >= 0) return (best, true);
-        var windowBlocks = Math.Max(1, rate / 20 / Peaks.BlockFrames);
-        long fromBlock = Math.Max(0, (frame - snapFrames) / Peaks.BlockFrames), toBlock = Math.Min(peaks.BlockCount - windowBlocks, (frame + snapFrames) / Peaks.BlockFrames);
+        // No gap: the quietest 50 ms close by (within 1.5 s, not the whole snap window: a hard cut shouldn't wander far from the name change)
+        var windowBlocks = Math.Max(1, rate / 20 / Peaks.BlockFrames); var nearFrames = Math.Min(snapFrames, rate * 3 / 2);
+        long fromBlock = Math.Max(0, (frame - nearFrames) / Peaks.BlockFrames), toBlock = Math.Min(peaks.BlockCount - windowBlocks, (frame + nearFrames) / Peaks.BlockFrames);
         var quietest = frame / Peaks.BlockFrames; var quietestLevel = float.MaxValue;
         for (var block = fromBlock; block <= toBlock; block++)
         {

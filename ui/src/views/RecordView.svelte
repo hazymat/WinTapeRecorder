@@ -114,6 +114,22 @@
     const seconds = parts.reduce((total, part) => total * 60 + part, 0)
     sendToShell({ type: 'editChange', index, frame: Math.round(seconds * rate) })
   }
+  // Issues while recording (SPEC.md › Recording › Issues): each one names the track it hit and what to do about it
+  type Issue = { kind: 'dropout' | 'clipping' | 'noname' | 'retake'; frame: number; index: number; text: string; action: string }
+  const issues = $derived.by<Issue[]>(() => {
+    const status = app.status; if (!status?.recording) return []
+    const rate = status.sampleRate || 48000, recorded = app.levels.seconds * rate
+    const trackAt = (frame: number) => { let found = -1; status.changes.forEach((change, index) => { if (change.frame <= frame) found = index }); return found }
+    const name = (index: number) => { const change = status.changes[index]; return change?.title ? `“${change.title}”` : index >= 0 ? `track ${index + 1}` : 'the recording' }
+    const list: Issue[] = []
+    for (const dropout of status.dropoutList ?? []) { const index = trackAt(dropout.frame); list.push({ kind: 'dropout', frame: dropout.frame, index, text: `Dropout at ${formatTime(dropout.frame, rate, false)} in ${name(index)}: about ${dropout.ms} ms lost.`, action: 'Play that track again; the new take replaces this one.' }) }
+    for (const clip of status.clips ?? []) { const index = trackAt(clip.frame); list.push({ kind: 'clipping', frame: clip.frame, index, text: `Clipping at ${formatTime(clip.frame, rate, false)} in ${name(index)}: ${clip.samples} samples at full scale.`, action: 'Turn the source down a little and play that track again.' }) }
+    status.changes.forEach((change, index) => {
+      if (!change.title && recorded - change.frame > 10 * rate && !change.problem) list.push({ kind: 'noname', frame: change.frame, index, text: `Track ${index + 1} (from ${formatTime(change.frame, rate, false)}) has no name.`, action: 'Type its artist and title in the list below.' })
+      if (change.problem === 'retake' && !list.some(issue => issue.index === index)) list.push({ kind: 'retake', frame: change.frame, index, text: `Track ${index + 1} ${name(index)} is marked for a retake.`, action: 'Play it again; the new take replaces this one.' })
+    })
+    return list.sort((first, second) => second.frame - first.frame)
+  })
   const sizeText = $derived(app.levels.bytes > 1e9 ? `${(app.levels.bytes / 1e9).toFixed(2)} GB` : `${(app.levels.bytes / 1e6).toFixed(0)} MB`)
   const current = $derived(app.status?.current)
 </script>
@@ -144,6 +160,18 @@
     {#if recording}<button class="ghost marker" onclick={() => sendToShell({ type: 'marker' })} title="Mark a new track here (M)"><Icon name="marker" size={16} />New track here<kbd>M</kbd></button>{/if}
   </div>
 
+  {#if issues.length}
+    <h3>Issues</h3>
+    <div class="issues">
+      {#each issues as issue (issue.kind + issue.frame)}
+        <div class="issue" class:soft={issue.kind === 'noname' || issue.kind === 'retake'}>
+          <span class="issue-text"><strong>{issue.text}</strong> {issue.action}</span>
+          {#if issue.kind !== 'noname' && issue.kind !== 'retake' && issue.index >= 0 && !app.status?.changes[issue.index]?.problem}<button class="ghost" onclick={() => sendToShell({ type: 'setProblem', index: issue.index, problem: issue.kind })}>Replace with a retake</button>{/if}
+          {#if issue.index >= 0 && app.status?.changes[issue.index]?.problem}<span class="quiet">Will be replaced by a later take of the same track</span><button class="ghost" onclick={() => sendToShell({ type: 'setProblem', index: issue.index, problem: '' })}>Keep this take</button>{/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
   <h3>Input level</h3>
   <LevelMeter />
   {#if app.levels.clipped > 0}<p class="warn">The input reached full scale. Turn the source down a little to avoid clipping.</p>{/if}
@@ -172,6 +200,7 @@
           <input value={change.artist} placeholder="Artist" onchange={(event) => sendToShell({ type: 'editChange', index, artist: (event.target as HTMLInputElement).value.trim() })} />
           <input value={change.title} placeholder={change.manual ? 'Title (marked by hand)' : 'Title'} onchange={(event) => sendToShell({ type: 'editChange', index, title: (event.target as HTMLInputElement).value.trim() })} />
           <input value={change.album} placeholder="Album" onchange={(event) => sendToShell({ type: 'editChange', index, album: (event.target as HTMLInputElement).value.trim() })} />
+          <button class="retake" class:on={!!change.problem} onclick={() => sendToShell({ type: 'setProblem', index, problem: change.problem ? '' : 'retake' })} title={change.problem ? `${change.problem === 'dropout' ? 'Dropout' : change.problem === 'clipping' ? 'Clipping' : 'Marked for a retake'}: a later take of the same track replaces this one. Click to keep this take.` : 'Something went wrong with this take: mark it for a retake, then play the track again'}>{change.problem ? 'Retake' : '↻'}</button>
           <button class="remove" onclick={() => sendToShell({ type: 'removeChange', index })} title="Remove this marker (the audio stays)" aria-label="Remove marker">✕</button>
         </div>
       {:else}<p class="quiet">None yet. Press M to mark where a track starts.</p>{/each}
@@ -198,7 +227,13 @@
   .live-wave { display: block; width: 100%; height: 110px; border-radius: 8px; background: var(--panel); outline: none; }
   .live-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 4px; font-size: 12px; }
   .changes { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
-  .change { display: grid; grid-template-columns: 30px auto 76px auto minmax(90px, 1fr) minmax(120px, 1.4fr) minmax(90px, 1fr) 28px; gap: 6px; align-items: center; }
+  .change { display: grid; grid-template-columns: 30px auto 76px auto minmax(90px, 1fr) minmax(120px, 1.4fr) minmax(90px, 1fr) auto 28px; gap: 6px; align-items: center; }
+  .retake { height: 26px; padding: 0 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; color: var(--fg-quiet); font: inherit; font-size: 12px; cursor: pointer; }
+  .retake:hover { background: var(--hover); } .retake.on { background: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--fg); border-color: transparent; }
+  .issues { display: flex; flex-direction: column; gap: 6px; }
+  .issue { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--danger) 12%, transparent); border-left: 3px solid var(--danger); font-size: 13px; }
+  .issue.soft { background: color-mix(in srgb, var(--warn) 14%, transparent); border-left-color: var(--warn); }
+  .issue-text { flex: 1; min-width: 200px; }
   .number { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); text-align: center; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; height: 26px; padding: 0; cursor: pointer; }
   .number:hover { background: var(--hover); } .number.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
   .nudge { display: flex; gap: 2px; }

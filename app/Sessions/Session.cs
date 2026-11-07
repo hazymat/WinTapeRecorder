@@ -13,6 +13,14 @@ public class NameChange
     public string Album { get; set; } = "";
     public string Source { get; set; } = "";
     public bool Manual { get; set; } // M pressed while recording
+    public string Problem { get; set; } = ""; // "dropout", "clipping" or "retake": this take is damaged or unwanted; a later take with the same name replaces it
+}
+
+// Samples at full scale (SPEC.md › Recording): where, and how many in that burst
+public class ClipEvent
+{
+    public long Frame { get; set; }
+    public int Samples { get; set; }
 }
 
 // Samples the audio engine threw away while recording (the PC was too busy): where, and how much
@@ -78,6 +86,7 @@ public class Session
     public int ClippedSamples { get; set; }
     public List<NameChange> Changes { get; set; } = new();
     public List<Dropout> Dropouts { get; set; } = new();
+    public List<ClipEvent> Clips { get; set; } = new();
     public List<QualitySample> Quality { get; set; } = new();
     public List<Track> Tracks { get; set; } = new();
 

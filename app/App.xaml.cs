@@ -49,7 +49,8 @@ public partial class App : Application
         Watcher = new NowPlayingWatcher(() => Settings);
         Watcher.Updated += () => Dispatcher.BeginInvoke(OnNamesUpdated);
         Recorder.QualityMeasured += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
-        Recorder.DropoutFound += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
+        Recorder.DropoutFound += () => Dispatcher.BeginInvoke(() => { NoteProblem("dropout"); StatusChanged?.Invoke(); });
+        Recorder.ClipFound += () => Dispatcher.BeginInvoke(() => { NoteProblem("clipping"); StatusChanged?.Invoke(); });
         Recorder.Stopped += () => Dispatcher.BeginInvoke(() => { var problem = Recorder.Problem; FinishRecording(); if (problem != "") ShowTip("Recording stopped", problem); });
         Player.Finished += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
         mainWindow = new MainWindow();
@@ -120,6 +121,21 @@ public partial class App : Application
 
     // M while recording: a marker here, named by whatever is playing
     // Live editing while recording (SPEC.md › Recording): the markers and names noted so far can be moved, retyped or removed; capture carries on untouched
+    // A dropout or clipping burst marks the track playing at the time as damaged (SPEC.md › Recording › Issues); a later take with the same name replaces it
+    void NoteProblem(string kind)
+    {
+        if (Recorder.Session is not { } session) return;
+        var at = Recorder.FramesWritten;
+        var change = session.Changes.Where(candidate => candidate.Frame <= at).OrderByDescending(candidate => candidate.Frame).FirstOrDefault();
+        if (change == null || change.Problem != "") return;
+        change.Problem = kind; session.Save();
+    }
+    public void SetProblem(int index, string problem)
+    {
+        if (Recorder.Session is not { } session || index < 0 || index >= session.Changes.Count) return;
+        session.Changes[index].Problem = problem; session.Save(); StatusChanged?.Invoke();
+    }
+
     public void EditChange(int index, long? frame, string? artist, string? title, string? album)
     {
         if (Recorder.Session is not { } session || index < 0 || index >= session.Changes.Count) return;
@@ -241,7 +257,9 @@ public partial class App : Application
         cutoffHz = Recorder.CurrentCutoffHz,
         cutoffText = SpectralCutoff.Describe(Recorder.CurrentCutoffHz),
         sampleRate = Recorder.Session?.SampleRate ?? 0,
-        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Manual }) ?? Enumerable.Empty<object>(),
+        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Manual, change.Problem }) ?? Enumerable.Empty<object>(),
+        dropoutList = Recorder.Dropouts.Select(dropout => new { dropout.Frame, dropout.Ms }),
+        clips = Recorder.Clips.Select(clip => new { clip.Frame, clip.Samples }),
         current = CurrentName == null ? null : new { CurrentName.Label, CurrentName.Artist, CurrentName.Title },
         source = RecordingSource,
         playing = Player.Playing,

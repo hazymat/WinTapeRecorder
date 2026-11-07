@@ -100,6 +100,7 @@ public partial class MainWindow : Window
                 case "marker": App.AddMarker(); break;
                 case "editChange": App.EditChange((int)Number(message, "index", -1), message.TryGetProperty("frame", out var frameValue) && frameValue.ValueKind == JsonValueKind.Number ? (long)frameValue.GetDouble() : null, message.TryGetProperty("artist", out _) ? Text(message, "artist") : null, message.TryGetProperty("title", out _) ? Text(message, "title") : null, message.TryGetProperty("album", out _) ? Text(message, "album") : null); break;
                 case "removeChange": App.RemoveChange((int)Number(message, "index", -1)); break;
+                case "setProblem": App.SetProblem((int)Number(message, "index", -1), Text(message, "problem")); break;
                 case "setSource": App.MonitorSource = Text(message, "source") is { Length: > 0 } chosenSource ? chosenSource : "auto"; App.RaiseNamesUpdated(); break;
                 case "setActiveProfile":
                     if (Text(message, "kind") == "recording") App.Settings.ActiveRecordingProfileId = Text(message, "profileId"); else App.Settings.ActiveOutputProfileId = Text(message, "profileId");
@@ -239,7 +240,7 @@ public partial class MainWindow : Window
     static object SessionDetail(Session session) => new
     {
         id = session.Id, name = session.Name, created = session.Created, device = session.Device, loopback = session.Loopback, sampleRate = session.SampleRate, channels = session.Channels, bitDepth = session.BitDepth,
-        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, quality = session.Quality, tracks = session.Tracks, folder = session.Folder,
+        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, clips = session.Clips, quality = session.Quality, tracks = session.Tracks, folder = session.Folder,
     };
 
     // Waveform data for [start, end) in columns: min/max per column for each channel, or the samples themselves when zoomed in that far

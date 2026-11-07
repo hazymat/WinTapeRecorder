@@ -177,6 +177,7 @@
     commit(next.filter(track => track.id === first.id || track.end <= first.start || track.start >= last.end), `Merged ${chosen.length} tracks`)
     clearSelection(); currentId = first.id
   }
+  function setSkip(track: Track, skip: boolean) { const next = copy(); const edited = next.find(candidate => candidate.id === track.id)!; edited.skip = skip; commit(next, skip ? `Track ${tracks.indexOf(track) + 1} left out of the export` : `Track ${tracks.indexOf(track) + 1} back in`) }
   function editField(track: Track, field: 'artist' | 'title' | 'album' | 'year' | 'genre', value: string) {
     if ((track[field] ?? '') === value) return
     const next = copy(); const edited = next.find(candidate => candidate.id === track.id)!; edited[field] = value; edited.exported = edited.exported && false
@@ -469,7 +470,7 @@
         <input class="no-hold" value={track.genre ?? ''} placeholder="Genre" onchange={(event) => editField(track, 'genre', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <span class="source-cell" title={cutoff ? `Spectrum stops at ${(cutoff / 1000).toFixed(1)} kHz: ${describeCutoff(cutoff)}` : 'Too little sound to tell'}>{shortCutoff(cutoff)}</span>
         <span class="fades">{track.fadeInMs || track.fadeOutMs ? `${track.fadeInMs}/${track.fadeOutMs} ms` : ''}</span>
-        <span class="status">{#if track.exported}<button class="exported no-hold" title={track.exportedPath} onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: track.exportedPath }) }}>Exported</button>{/if}</span>
+        <span class="status">{#if track.skip}<button class="skipped no-hold" title={`${track.skipReason}. Click to use this take after all.`} onclick={(event) => { event.stopPropagation(); setSkip(track, false) }}>Skipped</button>{:else if track.skipReason}<button class="damaged no-hold" title={`${track.skipReason}. Click to leave it out of the export.`} onclick={(event) => { event.stopPropagation(); setSkip(track, true) }}>Damaged?</button>{:else if track.exported}<button class="exported no-hold" title={track.exportedPath} onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: track.exportedPath }) }}>Exported</button>{/if}</span>
       </div>
     {:else}
       <div class="none quiet">No tracks found. Place the playhead and press N to add one, or use Redetect.</div>
@@ -575,6 +576,9 @@
   .hear-head { display: flex; align-items: center; gap: 6px; }
   .hear-style { font: inherit; font-size: 10.5px; padding: 0 2px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
   .exported { background: none; border: 0; color: #3ecf6e; font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
+  .skipped, .damaged { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font: inherit; font-size: 11px; cursor: pointer; color: var(--fg-quiet); }
+  .damaged { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+  .row:has(.skipped) { opacity: 0.55; }
   .exported:hover { text-decoration: underline; }
   .none { padding: 16px 8px; }
   .header-actions { margin-left: auto; display: flex; gap: 6px; }
