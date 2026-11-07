@@ -270,6 +270,42 @@ public partial class MainWindow : Window
                         Reply(message, new { path = chosenArt, thumb = TagLookup.Thumbnail(chosenArt) });
                     }
                     break;
+                // Files already there from an earlier export (SPEC.md › Export): which tracks have one, and taking them as exported after a check
+                case "existingExports":
+                    {
+                        var existingSession = Session.Load(Text(message, "id"));
+                        if (existingSession == null) { Reply(message, new List<object>()); break; }
+                        var askIds = message.GetProperty("trackIds").EnumerateArray().Select(element => element.GetString() ?? "").ToHashSet();
+                        var sessionProfile = App.Settings.OutputProfileOrActive(Text(message, "profileId"));
+                        var numbersForExisting = Exporter.AlbumNumbers(existingSession);
+                        var found = new List<object>();
+                        foreach (var track in existingSession.Tracks.Where(track => askIds.Contains(track.Id) && !track.Skip))
+                        {
+                            var profile = track.OutputProfileId != "" && App.Settings.OutputProfiles.FirstOrDefault(candidate => candidate.Id == track.OutputProfileId) is { } own ? own : sessionProfile;
+                            var rootFolder = profile.Folder.Trim() == "" ? AppPaths.DefaultOutputFolder : profile.Folder.Trim();
+                            var full = Path.Combine(rootFolder, Exporter.RelativePath(existingSession, track, profile, numbersForExisting));
+                            if (File.Exists(full)) found.Add(new { trackId = track.Id, path = full });
+                        }
+                        Reply(message, found);
+                    }
+                    break;
+                case "adoptExports":
+                    if (App.TryGetOpen(Text(message, "id"), out var adopting))
+                    {
+                        var adopted = 0; var failed = new List<string>();
+                        foreach (var element in message.GetProperty("files").EnumerateArray())
+                        {
+                            var trackId = Text(element, "trackId"); var filePath = Text(element, "path");
+                            if (adopting.session.Tracks.FirstOrDefault(track => track.Id == trackId) is not { } track) continue;
+                            var problem = await Task.Run(() => Verifier.Check(filePath, track, adopting.session.SampleRate));
+                            track.ExportedPath = filePath; track.Exported = problem == ""; track.Verified = problem == ""; track.VerifyError = problem;
+                            if (problem == "") adopted++; else failed.Add(track.Title);
+                        }
+                        adopting.session.Save();
+                        Reply(message, new { adopted, failed, tracks = adopting.session.Tracks });
+                        App.NotifySessionsChanged();
+                    }
+                    break;
                 case "artData":
                     if (App.TryGetOpen(Text(message, "id"), out var droppedOn))
                     {

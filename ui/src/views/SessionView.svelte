@@ -625,9 +625,24 @@
     if (edge === 'start') edited.startChecked = on; else edited.endChecked = on
     commit(next, `Track ${tracks.indexOf(track) + 1} ${edge} ${on ? 'confirmed' : 'not confirmed'}`)
   }
-  async function exportTracks(keys?: string[], checked = false) {
+  // Files already in place from an earlier export: keep them (checked first) or write them again
+  let existing = $state<null | { keys: string[]; files: { trackId: string; path: string }[] }>(null)
+  async function useExisting() {
+    const job = existing; existing = null; if (!job) return
+    const result = await request<{ adopted: number; failed: string[]; tracks: Track[] }>({ type: 'adoptExports', id: sessionId, files: job.files })
+    tracks = result.tracks
+    toast(`${result.adopted} existing file${result.adopted === 1 ? '' : 's'} kept${result.failed.length ? `; ${result.failed.length} failed the check and will be written again` : ''}`, { ms: 8000 })
+    const rest = job.keys.filter(key => !tracks.find(track => track.id === key)?.exported)
+    if (rest.length) exportTracks(rest, true, true)
+  }
+  async function exportTracks(keys?: string[], checked = false, existingChecked = false) {
     const chosen = targets(keys)
     if (!chosen.length) return
+    if (!existingChecked) {
+      clearTimeout(saveTimer); sendToShell({ type: 'saveSession', id: sessionId, tracks: $state.snapshot(tracks) })
+      const files = await request<{ trackId: string; path: string }[]>({ type: 'existingExports', id: sessionId, profileId: outputProfileId, trackIds: chosen.filter(track => !track.exported).map(track => track.id) }).catch(() => [])
+      if (files.length) { existing = { keys: chosen.map(track => track.id), files }; return }
+    }
     if (!checked) {
       // Empty tags and unconfirmed cuts are pointed out once; exporting anyway is always possible
       const missing = wanted.filter(([field]) => chosen.some(track => !(track[field] as string | undefined))).map(([, label]) => label)
@@ -816,7 +831,7 @@
         {#if exportStatus}<span class="export-status">{exportStatus}</span>{/if}
         {#if outputChoices.length}<Dropdown label="Output profile" value={outputProfileId} options={outputChoices} onchange={(value) => { if (value === '__manage') { sendToShell({ type: 'openSettings', tab: 'Output profiles' }); return } if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
         <span class="export-size" title="Estimated size of everything this session exports, with each album's profile (FLAC from the usual ratio, MP3 and AAC from the bitrate)">≈ {sizeText(estimateBytes(exportable))}</span>
-        {#if queued}<button class="primary" onclick={() => sendToShell({ type: 'unqueueExport', id: sessionId })} title="Another session is exporting; this one starts after it. Click to take it out of the queue">Export queued: click to unqueue</button>{:else}        <button class="primary" disabled={exportingHere || !exportable.length} onclick={() => exportTracks(selectedIds.length ? selectedIds : unexported.length ? unexported.map(track => track.id) : undefined)} title="Ctrl+E"><Icon name="export" size={16} />{selectedIds.length ? `Export ${selectedIds.length} selected` : unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>{/if}
+        {#if exportingHere}<button class="primary danger-button" onclick={() => sendToShell({ type: 'cancelExport' })} title="Stop after the track being written (it's finished or removed, never left half-written)">Cancel export ({app.status?.exportDone}/{app.status?.exportTotal})</button>{:else if queued}<button class="primary" onclick={() => sendToShell({ type: 'unqueueExport', id: sessionId })} title="Another session is exporting; this one starts after it. Click to take it out of the queue">Export queued: click to unqueue</button>{:else}        <button class="primary" disabled={!exportable.length} onclick={() => exportTracks(selectedIds.length ? selectedIds : unexported.length ? unexported.map(track => track.id) : undefined)} title="Ctrl+E"><Icon name="export" size={16} />{selectedIds.length ? `Export ${selectedIds.length} selected` : unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>{/if}
       {/if}
     </div>
   </nav>
@@ -1082,6 +1097,11 @@
     <p class="quiet captured-preview">{preview.join(' · ')}{job.keys.length > 4 ? ' …' : ''}</p>
   </Dialog>
 {/if}
+{#if existing}
+  {@const job = existing}
+  <Dialog title="Some files are already there" wide text={`${job.files.length} of these track${job.files.length === 1 ? '' : 's'} already have a file in the output folder, probably from an earlier export that was interrupted. Keep them (each is checked: it must play, be the right length and carry the right title), or write them all again?`}
+    confirmLabel="Keep them, export the rest" altLabel="Write them again" onconfirm={useExisting} onalt={() => { const keys = job.keys; existing = null; exportTracks(keys, false, true) }} oncancel={() => existing = null} />
+{/if}
 {#if exportCheck}
   {@const check = exportCheck}
   <Dialog title={check.missing ? 'Some tags are empty' : 'Some cuts aren’t confirmed'} text={[check.missing ? `${check.keys.length === 1 ? 'This track has' : 'Some of these tracks have'} no ${check.missing}. Players and libraries sort by these, so it's worth filling them in first.` : '', check.unconfirmed ? `${check.unconfirmed} start${check.unconfirmed === 1 ? '' : 's'} or end${check.unconfirmed === 1 ? '' : 's'} haven't been confirmed with ✓ yet. That may be fine.` : ''].filter(Boolean).join(' ')}
@@ -1281,6 +1301,7 @@
   .plan-album { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .plan-size { font-family: var(--font-display); font-size: 12.5px; text-align: right; }
   .plan-total td { border-top: 1px solid var(--line); padding-top: 4px; }
+  .danger-button { background: var(--danger) !important; border-color: transparent !important; }
   .export-size { font-family: var(--font-display); font-size: 13px; color: var(--fg-quiet); white-space: nowrap; }
   .check { flex-direction: row !important; align-items: center; gap: 8px; font-size: 13px; color: var(--fg) !important; }
   .captured-preview { font-size: 12px; margin: 0; }
