@@ -248,7 +248,22 @@ public partial class App : Application
         if (Recorder.Session is not { } session) return;
         var profile = Settings.RecordingProfileOrActive(session.RecordingProfileId);
         CurrentName = Watcher.Current(RecordingSource, Snapshot(profile));
-        if (CurrentName is not { HasName: true } name || name.NameKey == lastNameKey) return;
+        if (CurrentName is not { HasName: true } name) return;
+        if (name.NameKey == lastNameKey)
+        {
+            // Players send the album and such a moment after the title: fill what the marker still lacks, never what was typed
+            if (session.Changes.LastOrDefault() is { } latest && string.Equals(latest.Title, name.Title, StringComparison.OrdinalIgnoreCase))
+            {
+                var filled = false;
+                if (latest.Album == "" && name.Album != "") { latest.Album = name.Album; filled = true; }
+                if (latest.AlbumArtist == "" && name.AlbumArtist != "") { latest.AlbumArtist = name.AlbumArtist; filled = true; }
+                if (latest.TrackNumber == 0 && name.TrackNumber > 0) { latest.TrackNumber = name.TrackNumber; filled = true; }
+                if (latest.Artist == "" && name.Artist != "") { latest.Artist = name.Artist; filled = true; }
+                if (latest.ArtPath == "" && name.Picture) _ = SavePlayerArtAsync(session, latest, name.Key);
+                if (filled) { session.Save(); StatusChanged?.Invoke(); }
+            }
+            return;
+        }
         lastNameKey = name.NameKey;
         var frame = Math.Max(0, Recorder.FramesWritten - (long)profile.LatencyMs * session.SampleRate / 1000);
         // Players can flicker between tracks (the same title with a placeholder artist, then the real one): the same title again
@@ -257,7 +272,9 @@ public partial class App : Application
         {
             int Filled(string artist, string album, string albumArtist, int number) => (artist != "" ? 1 : 0) + (album != "" ? 1 : 0) + (albumArtist != "" ? 1 : 0) + (number > 0 ? 1 : 0);
             if (Filled(name.Artist, name.Album, name.AlbumArtist, name.TrackNumber) > Filled(last.Artist, last.Album, last.AlbumArtist, last.TrackNumber)) { last.Artist = name.Artist; last.Album = name.Album; last.AlbumArtist = name.AlbumArtist; last.TrackNumber = name.TrackNumber; last.Source = name.Label; session.Save(); StatusChanged?.Invoke(); }
+            else if ((last.Album == "" && name.Album != "") || (last.AlbumArtist == "" && name.AlbumArtist != "")) { if (last.Album == "") last.Album = name.Album; if (last.AlbumArtist == "") last.AlbumArtist = name.AlbumArtist; session.Save(); StatusChanged?.Invoke(); }
             if (last.ArtPath == "" && name.Picture) _ = SavePlayerArtAsync(session, last, name.Key);
+            lastNameKey = name.NameKey;
             return;
         }
         var change = new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, AlbumArtist = name.AlbumArtist, TrackNumber = name.TrackNumber, Source = name.Label };
