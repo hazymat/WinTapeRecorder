@@ -276,6 +276,8 @@ public partial class SettingsWindow : Window
     {
         showHintsBox.IsChecked = !Settings.General.HideHints;
         showHintsBox.Click += (sender, args) => { Settings.General.HideHints = showHintsBox.IsChecked != true; Settings.Save(); App.NotifyHintsChanged(); };
+        discogsTokenBox.Password = Settings.General.DiscogsToken;
+        discogsTokenBox.PasswordChanged += (sender, args) => { Settings.General.DiscogsToken = discogsTokenBox.Password.Trim(); Settings.Save(); };
         resetHintsButton.Click += (sender, args) => { Settings.General.DismissedHints.Clear(); Settings.General.HideHints = false; showHintsBox.IsChecked = true; Settings.Save(); App.NotifyHintsChanged(); };
         exportSettingsButton.Click += (sender, args) =>
         {

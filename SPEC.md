@@ -47,6 +47,13 @@ A change of now-playing text drops a marker at that moment (minus a latency offs
 - Dotted lines mark where the playing name changed while recording; hovering a line says what it is.
 - Output device for auditioning chosen in Settings › Audio (default: Windows default).
 
+## Tags
+
+- Tick boxes on every track and a select-all box; the selection bar acts on the ticked tracks.
+- Tags per track: title, artist, album, album artist, genre, year, composer, track number and count, comment, cover picture. Several tracks can be tagged at once (empty fields stay as each track has them).
+- Online lookup: MusicBrainz (covers from the Cover Art Archive) and iTunes need no account; Discogs uses the user's own token (Settings › General). Amazon has no public catalogue API. Pick a result and choose which fields to take.
+- Cover pictures are fetched or chosen from disk, kept in the session folder and embedded on export.
+
 ## Export
 
 - One click exports all (or the selected) tracks using an output profile.
@@ -59,7 +66,7 @@ A change of now-playing text drops a marker at that moment (minus a latency offs
 ## Sessions
 
 - Sessions list in the sidebar (name, date, length, tracks, exported count).
-- Rename a session. **Close session**: after a confirmation (warning if any tracks are not exported), deletes the session folder including the WAV. Exported files are never touched.
+- Rename a session. Right-click a session: Show session files (Explorer, WAV selected), Open, Close session. **Close session**: after a confirmation (warning if any tracks are not exported), deletes the session folder including the WAV. Exported files are never touched.
 
 ## Profiles (Settings)
 

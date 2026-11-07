@@ -239,6 +239,10 @@
           <Button x:Name="importSettingsButton" Content="Import settings…" />
         </StackPanel>
         <TextBlock x:Name="settingsFileText" Style="{StaticResource Quiet}" Text="Profiles, rules and look, as a JSON file you can keep or copy to another PC." />
+        <TextBlock Style="{StaticResource Heading}" Text="Online tag lookup" />
+        <TextBlock Style="{StaticResource Quiet}" Text="MusicBrainz (with Cover Art Archive pictures) and iTunes work without an account. Discogs needs your own free token: discogs.com › Settings › Developers › Generate new token. Amazon has no public catalogue to search." />
+        <TextBlock Style="{StaticResource Label}" Text="Discogs token" />
+        <PasswordBox x:Name="discogsTokenBox" Width="360" HorizontalAlignment="Left" />
         <TextBlock Style="{StaticResource Quiet}" Margin="0,18,0,0" Text="Close (X) quits WinTapeRecorder. It warns first if a recording or export is running." />
       </StackPanel>
       </ScrollViewer>

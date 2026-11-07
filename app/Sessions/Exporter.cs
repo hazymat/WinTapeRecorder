@@ -19,11 +19,11 @@ public static class NameTemplate
             ["artist"] = track.Artist == "" ? "Unknown artist" : track.Artist,
             ["title"] = track.Title == "" ? $"Track {trackNumber}" : track.Title,
             ["album"] = track.Album,
-            ["albumartist"] = "",
-            ["track"] = trackNumber.ToString(),
-            ["tracks"] = trackCount.ToString(),
-            ["genre"] = "",
-            ["year"] = session.Created.Year.ToString(),
+            ["albumartist"] = track.AlbumArtist,
+            ["track"] = (track.TrackNumber > 0 ? track.TrackNumber : trackNumber).ToString(),
+            ["tracks"] = (track.TrackCount > 0 ? track.TrackCount : trackCount).ToString(),
+            ["genre"] = track.Genre,
+            ["year"] = track.Year != "" ? track.Year : session.Created.Year.ToString(),
             ["date"] = session.Created.ToString("yyyy-MM-dd"),
             ["session"] = session.Name,
             ["source"] = session.Device,
@@ -164,10 +164,14 @@ public static class Exporter
         if (track.Artist != "") tag.Performers = new[] { track.Artist };
         var album = track.Album != "" ? track.Album : Expand(profile.Album);
         if (album != "") tag.Album = album;
-        var albumArtist = Expand(profile.AlbumArtist); if (albumArtist != "") tag.AlbumArtists = new[] { albumArtist };
-        var genre = Expand(profile.Genre); if (genre != "") tag.Genres = new[] { genre };
-        var comment = Expand(profile.Comment); if (comment != "") tag.Comment = comment;
-        tag.Track = (uint)number; tag.TrackCount = (uint)count; tag.Year = (uint)session.Created.Year;
+        // The track's own tags win; the output profile fills what's left
+        var albumArtist = track.AlbumArtist != "" ? track.AlbumArtist : Expand(profile.AlbumArtist); if (albumArtist != "") tag.AlbumArtists = new[] { albumArtist };
+        var genre = track.Genre != "" ? track.Genre : Expand(profile.Genre); if (genre != "") tag.Genres = new[] { genre };
+        var comment = track.Comment != "" ? track.Comment : Expand(profile.Comment); if (comment != "") tag.Comment = comment;
+        if (track.Composer != "") tag.Composers = new[] { track.Composer };
+        tag.Track = (uint)(track.TrackNumber > 0 ? track.TrackNumber : number); tag.TrackCount = (uint)(track.TrackCount > 0 ? track.TrackCount : count);
+        tag.Year = uint.TryParse(track.Year, out var year) && year > 0 ? year : (uint)session.Created.Year;
+        if (track.ArtPath != "" && File.Exists(track.ArtPath)) tag.Pictures = new TagLib.IPicture[] { new TagLib.Picture(track.ArtPath) { Type = TagLib.PictureType.FrontCover, Description = "Cover" } };
         tagFile.Save();
     }
 }

@@ -9,6 +9,8 @@
   import Hint from '../parts/Hint.svelte'
   import Dropdown from '../parts/Dropdown.svelte'
   import Dialog from '../parts/Dialog.svelte'
+  import TagEditor, { type TagFields } from '../parts/TagEditor.svelte'
+  import LookupDialog, { type TagMatch } from '../parts/LookupDialog.svelte'
   // One session (SPEC.md › Editing, Auditioning, Export): waveform, track list, auditions and export
   let { sessionId }: { sessionId: string } = $props()
 
@@ -120,19 +122,56 @@
     commit(next.filter(track => track.id === first.id || track.end <= first.start || track.start >= last.end), `Merged ${chosen.length} tracks`)
     clearSelection(); currentId = first.id
   }
-  function editField(track: Track, field: 'artist' | 'title' | 'album', value: string) {
-    if (track[field] === value) return
+  function editField(track: Track, field: 'artist' | 'title' | 'album' | 'year' | 'genre', value: string) {
+    if ((track[field] ?? '') === value) return
     const next = copy(); const edited = next.find(candidate => candidate.id === track.id)!; edited[field] = value; edited.exported = edited.exported && false
     commit(next, `Track ${tracks.indexOf(track) + 1}: ${field} changed`)
   }
 
   // ---- Bulk dialogs: tags and fades for the selected tracks ----
-  let dialog = $state<null | { kind: 'tags'; keys: string[]; artist: string; album: string } | { kind: 'fades'; keys: string[]; fadeIn: string; fadeOut: string } | { kind: 'close' } | { kind: 'redetect' }>(null)
+  let dialog = $state<null | { kind: 'fades'; keys: string[]; fadeIn: string; fadeOut: string } | { kind: 'close' } | { kind: 'redetect' }>(null)
+  // Tags (SPEC.md › Tags): the editor for the chosen tracks, and the online lookup it can open
+  let tagging = $state<string[] | null>(null)
+  let lookingUp = $state<null | { keys: string[]; artist: string; title: string; album: string }>(null)
+  let thumbs = $state<Record<string, string>>({})
+  $effect(() => {
+    const missing = Array.from(new Set(tracks.map(track => track.artPath ?? '').filter(path => path && !(path in thumbs))))
+    if (missing.length) untrack(() => request<Record<string, string>>({ type: 'thumbs', paths: missing }).then(found => { thumbs = Object.assign({}, thumbs, found) }).catch(() => { }))
+  })
+  function applyTags(keys: string[], fields: Partial<TagFields>, single: boolean) {
+    const next = copy()
+    for (const track of next) {
+      if (!keys.includes(track.id)) continue
+      for (const [name, value] of Object.entries(fields) as [keyof TagFields, string][]) {
+        if (name === 'trackNumber' || name === 'trackCount') track[name] = Number(value) || 0
+        else (track as any)[name] = value
+      }
+      track.exported = false
+    }
+    commit(next, `Tags set on ${keys.length} track${keys.length === 1 ? '' : 's'}${single ? '' : ''}`)
+  }
+  function applyMatch(keys: string[], match: TagMatch, take: Record<string, boolean>, artPath: string, artThumb: string) {
+    const fields: Partial<TagFields> = {}
+    if (take.title && match.title) fields.title = match.title
+    if (take.artist && match.artist) fields.artist = match.artist
+    if (take.album && match.album) fields.album = match.album
+    if (take.albumArtist && match.albumArtist) fields.albumArtist = match.albumArtist
+    if (take.year && match.year) fields.year = match.year
+    if (take.genre && match.genre) fields.genre = match.genre
+    if (take.trackNumber && match.trackNumber) { fields.trackNumber = String(match.trackNumber); if (match.trackCount) fields.trackCount = String(match.trackCount) }
+    if (artPath) { fields.artPath = artPath; thumbs = Object.assign({}, thumbs, { [artPath]: artThumb }) }
+    applyTags(keys, fields, keys.length === 1)
+    lookingUp = null
+  }
+  function openLookup(keys: string[], fields?: TagFields) {
+    const first = tracks.find(track => keys.includes(track.id))
+    lookingUp = { keys, artist: fields?.artist || first?.artist || '', title: fields?.title || first?.title || '', album: fields?.album || first?.album || '' }
+    tagging = null
+  }
   function applyDialog() {
     const open = dialog; dialog = null
     if (!open) return
-    if (open.kind === 'tags') { const next = copy(); for (const track of next) if (open.keys.includes(track.id)) { if (open.artist.trim()) track.artist = open.artist.trim(); if (open.album.trim()) track.album = open.album.trim() } commit(next, `Tags set on ${open.keys.length} track${open.keys.length === 1 ? '' : 's'}`) }
-    else if (open.kind === 'fades') { const fadeIn = Math.max(0, Number(open.fadeIn) || 0), fadeOut = Math.max(0, Number(open.fadeOut) || 0); const next = copy(); for (const track of next) if (open.keys.includes(track.id)) { track.fadeInMs = Math.round(fadeIn); track.fadeOutMs = Math.round(fadeOut) } commit(next, `Fades set on ${open.keys.length} track${open.keys.length === 1 ? '' : 's'}`) }
+    if (open.kind === 'fades') { const fadeIn = Math.max(0, Number(open.fadeIn) || 0), fadeOut = Math.max(0, Number(open.fadeOut) || 0); const next = copy(); for (const track of next) if (open.keys.includes(track.id)) { track.fadeInMs = Math.round(fadeIn); track.fadeOutMs = Math.round(fadeOut) } commit(next, `Fades set on ${open.keys.length} track${open.keys.length === 1 ? '' : 's'}`) }
     else if (open.kind === 'close') closeSession()
     else if (open.kind === 'redetect') redetect()
   }
@@ -250,12 +289,19 @@
     { label: 'Hear starts', run: keys => audition('starts', keys) },
     { label: 'Hear ends', run: keys => audition('ends', keys) },
     { label: 'Export', run: keys => exportTracks(keys) },
-    { label: 'Tags…', key: 'T', run: keys => { const chosen = tracks.filter(track => keys.includes(track.id)); dialog = { kind: 'tags', keys, artist: chosen.every(track => track.artist === chosen[0].artist) ? chosen[0].artist : '', album: chosen.every(track => track.album === chosen[0].album) ? chosen[0].album : '' } } },
+    { label: 'Tags…', key: 'T', run: keys => tagging = keys },
+    { label: 'Look up…', key: 'L', run: keys => openLookup(keys) },
     { label: 'Fades…', key: 'F', run: keys => { const first = tracks.find(track => keys.includes(track.id)); dialog = { kind: 'fades', keys, fadeIn: String(first?.fadeInMs ?? 0), fadeOut: String(first?.fadeOutMs ?? 0) } } },
     { label: 'Merge', run: keys => mergeTracks(keys) },
     { label: 'Remove', key: 'Delete', danger: true, run: keys => deleteTracks(keys) },
   ]
   const exportedCount = $derived(tracks.filter(track => track.exported).length)
+  // Tick boxes: the same selection as Ctrl+click, so the bar at the bottom acts on the ticked tracks
+  function toggleOne(trackId: string) {
+    const next = selectedIds.includes(trackId) ? selectedIds.filter(id => id !== trackId) : selectedIds.concat([trackId])
+    if (next.length) selectKeys(scope, tracks.filter(track => next.includes(track.id)).map(track => track.id), actions, 'track'); else clearSelection()
+  }
+  function toggleAll() { if (selectedIds.length === tracks.length) clearSelection(); else selectKeys(scope, tracks.map(track => track.id), actions, 'track') }
   const auditionChoices: [string, string][] = [['2', '2 s'], ['5', '5 s'], ['10', '10 s'], ['20', '20 s']]
   const outputChoices = $derived(app.outputProfiles.map(profile => [profile.id, profile.name] as [string, string]))
 </script>
@@ -272,6 +318,10 @@
     <input class="name" value={session.name} onchange={(event) => { const name = (event.target as HTMLInputElement).value.trim(); if (name && session) { session.name = name; sendToShell({ type: 'saveSession', id: sessionId, name }) } }} aria-label="Session name" />
     <span class="facts">{new Date(session.created).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} · {formatDuration(session.totalFrames / rate)} · {session.device || 'Unknown device'} · {rate / 1000} kHz {session.bitDepth === 32 ? 'float' : session.bitDepth + '-bit'} · {tracks.length} tracks{exportedCount ? `, ${exportedCount} exported` : ''}</span>
     {#if session.clippedSamples > 0}<span class="clip-warning" title="Samples recorded at full scale">{session.clippedSamples} clipped samples</span>{/if}
+    <span class="header-actions">
+      <button class="ghost" onclick={() => sendToShell({ type: 'openFolder', path: session!.folder + '\\audio.wav' })} title="Open the session's folder in Explorer, with the WAV selected"><Icon name="folder" size={15} />Show files</button>
+      <button class="ghost danger" onclick={() => dialog = { kind: 'close' }}><Icon name="trash" size={15} />Close session…</button>
+    </span>
   </header>
 
   <div class="toolbar">
@@ -311,16 +361,19 @@
   <div class="readout"><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
 
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }}>
-    <div class="row head"><span>#</span><span>Hear</span><span>Start</span><span>Length</span><span>Artist</span><span>Title</span><span>Album</span><span>Fades</span><span></span></div>
+    <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span>Hear</span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Title</span><span>Album</span><span>Year</span><span>Genre</span><span>Fades</span><span></span></div>
     {#each tracks as track, index (track.id)}
       <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
-        <span class="number">{index + 1}</span>
+        <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
         <span class="hear no-hold"><button onclick={(event) => { event.stopPropagation(); hearEdge('start', track.id) }} title="Hear this track's start" aria-label="Hear start"><Icon name="starts" size={14} /></button><button onclick={(event) => { event.stopPropagation(); hearEdge('end', track.id) }} title="Hear this track's end" aria-label="Hear end"><Icon name="ends" size={14} /></button></span>
         <span class="time">{formatTime(track.start, rate, false)}</span>
         <span class="time">{formatDuration((track.end - track.start) / rate)}</span>
+        <button class="art-cell no-hold" onclick={(event) => { event.stopPropagation(); tagging = selectedIds.includes(track.id) ? selectedIds.slice() : [track.id] }} title="Edit tags and picture">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="" />{:else}<span>♪</span>{/if}</button>
         <input class="no-hold" value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.title} placeholder="Title" onchange={(event) => editField(track, 'title', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.album} placeholder="Album" onchange={(event) => editField(track, 'album', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
+        <input class="no-hold" value={track.year ?? ''} placeholder="Year" onchange={(event) => editField(track, 'year', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
+        <input class="no-hold" value={track.genre ?? ''} placeholder="Genre" onchange={(event) => editField(track, 'genre', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <span class="fades">{track.fadeInMs || track.fadeOutMs ? `${track.fadeInMs}/${track.fadeOutMs} ms` : ''}</span>
         <span class="status">{#if track.exported}<button class="exported no-hold" title={track.exportedPath} onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: track.exportedPath }) }}>Exported</button>{/if}</span>
       </div>
@@ -328,19 +381,19 @@
       <div class="none quiet">No tracks found. Place the playhead and press N to add one, or use Redetect.</div>
     {/each}
   </div>
-  <div class="footer">
-    <Hint id="track-select" text="The two small buttons on each row play that track's start or end. Hold a row, right-click it or Ctrl+click to select several: the bar at the bottom runs through their starts or ends, exports, tags, fades, merges or removes them." />
-    <button class="ghost danger" onclick={() => dialog = { kind: 'close' }}><Icon name="trash" size={15} />Close session…</button>
-  </div>
+  <Hint id="track-select" text="Tick tracks (or the box at the top for all) to tag, export, fade, merge or remove several at once; Ctrl/Shift+click and right-click work too. The small buttons on each row play that track's start or end." />
 </div>
 {/if}
 
-{#if dialog?.kind === 'tags'}
-  <Dialog title="Tags for {dialog.keys.length} track{dialog.keys.length === 1 ? '' : 's'}" text="Empty fields are left as they are." confirmLabel="Set" onconfirm={applyDialog} oncancel={() => dialog = null}>
-    <label>Artist <input bind:value={dialog.artist} /></label>
-    <label>Album <input bind:value={dialog.album} /></label>
-  </Dialog>
-{:else if dialog?.kind === 'fades'}
+{#if tagging}
+  {@const taggingKeys = tagging}
+  <TagEditor {sessionId} tracks={tracks.filter(track => taggingKeys.includes(track.id))} {thumbs} onapply={(fields, single) => { applyTags(taggingKeys, fields, single); tagging = null }} onlookup={(fields) => openLookup(taggingKeys, fields)} oncancel={() => tagging = null} />
+{/if}
+{#if lookingUp}
+  {@const lookupKeys = lookingUp.keys}
+  <LookupDialog {sessionId} trackCount={lookupKeys.length} artist={lookingUp.artist} title={lookingUp.title} album={lookingUp.album} onapply={(match, take, artPath, artThumb) => applyMatch(lookupKeys, match, take, artPath, artThumb)} oncancel={() => lookingUp = null} />
+{/if}
+{#if dialog?.kind === 'fades'}
   <Dialog title="Fades for {dialog.keys.length} track{dialog.keys.length === 1 ? '' : 's'}" text="Lengths in milliseconds; 0 is no fade. You hear them when auditioning, and they're in the exported files." confirmLabel="Set" onconfirm={applyDialog} oncancel={() => dialog = null}>
     <label>Fade in <input bind:value={dialog.fadeIn} inputmode="numeric" /></label>
     <label>Fade out <input bind:value={dialog.fadeOut} inputmode="numeric" /></label>
@@ -374,7 +427,7 @@
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
   .list { flex: 1 1 38%; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: 34px 58px 78px 72px minmax(80px, 1fr) minmax(120px, 1.6fr) minmax(80px, 1fr) 90px 80px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
+  .row { display: grid; grid-template-columns: 52px 58px 70px 64px 30px minmax(80px, 1fr) minmax(120px, 1.5fr) minmax(80px, 1fr) 56px minmax(60px, 0.6fr) 76px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
@@ -382,13 +435,16 @@
   .row input { background: transparent; border-color: transparent; padding: 3px 6px; min-width: 0; }
   .row input:hover { border-color: var(--line); }
   .row input:focus { background: var(--panel); }
+  .art-cell { width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg-quiet); cursor: pointer; overflow: hidden; display: grid; place-items: center; font-size: 12px; }
+  .art-cell img { width: 100%; height: 100%; object-fit: cover; }
+  .art-cell:hover { border-color: var(--accent); }
   .hear { display: flex; gap: 2px; }
   .hear button { display: grid; place-items: center; width: 26px; height: 24px; padding: 0; background: none; border: 1px solid transparent; border-radius: 6px; color: var(--fg-quiet); cursor: pointer; }
   .hear button:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--line); }
   .exported { background: none; border: 0; color: #3ecf6e; font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
   .exported:hover { text-decoration: underline; }
   .none { padding: 16px 8px; }
-  .footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .footer :global(.hint) { margin: 0; flex: 1; }
+  .header-actions { margin-left: auto; display: flex; gap: 6px; }
+  .tick { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-quiet); }
 </style>

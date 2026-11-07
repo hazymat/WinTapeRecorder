@@ -8,6 +8,7 @@
   import WhatsNew from './parts/WhatsNew.svelte'
   import ResizeEdges from './parts/ResizeEdges.svelte'
   import Icon from './parts/Icon.svelte'
+  import Dialog from './parts/Dialog.svelte'
 
   // ---- From the shell ----
   onShellMessage('status', message => app.status = message as any)
@@ -83,11 +84,31 @@
     else if (event.key === 'Escape' && ui.toast && !selection.keys.length) ui.toast = null
   }
 
+  // Right-click a session: its files in Explorer, or close it
+  let sessionMenu = $state<null | { session: SessionSummary; left: number; top: number }>(null)
+  let closing = $state<SessionSummary | null>(null)
+  async function closeSession(session: SessionSummary) {
+    closing = null
+    try { await request({ type: 'deleteSession', id: session.id }); if (nav.sessionId === session.id) { nav.view = 'record'; nav.sessionId = ''; writeSetting('session', '') } toast(`Closed “${session.name}” and deleted its recording`) }
+    catch (error) { toast('Could not close the session: ' + (error as Error).message) }
+  }
   const devVersion = $derived(app.status?.version && !/^\d+\.\d+\.0$/.test(app.status.version) ? app.status.version : '')
   const dateLabel = (created: string) => new Date(created).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onpointerdown={(event) => { if (sessionMenu && !(event.target as HTMLElement).closest('.session-menu')) sessionMenu = null }} />
+{#if sessionMenu}
+  {@const menuSession = sessionMenu.session}
+  <div class="session-menu" role="menu" style:left="{sessionMenu.left}px" style:top="{sessionMenu.top}px">
+    <button role="menuitem" onclick={() => { sendToShell({ type: 'openFolder', path: menuSession.id + '\\audio.wav' }); sessionMenu = null }}><Icon name="folder" size={15} />Show session files</button>
+    <button role="menuitem" disabled={menuSession.recording} onclick={() => { sessionMenu = null; openSession(menuSession) }}><Icon name="play" size={15} />Open</button>
+    <button role="menuitem" class="danger" disabled={menuSession.recording} onclick={() => { sessionMenu = null; closing = menuSession }}><Icon name="trash" size={15} />Close session…</button>
+  </div>
+{/if}
+{#if closing}
+  {@const closingSession = closing}
+  <Dialog title="Close “{closingSession.name}”?" text={`This deletes the session's recording (the WAV) for good.${closingSession.tracks - closingSession.exported > 0 ? ` ${closingSession.tracks - closingSession.exported} of ${closingSession.tracks} tracks haven't been exported yet.` : ''} Exported files are kept.`} confirmLabel="Delete recording" danger onconfirm={() => closeSession(closingSession)} oncancel={() => closing = null} />
+{/if}
 <WhatsNew />
 {#if app.window.frameless && !app.window.maximised}<ResizeEdges />{/if}
 
@@ -98,7 +119,7 @@
     <div class="heading">Sessions</div>
     <div class="sessions">
       {#each app.sessions as session (session.id)}
-        <button class="session" class:on={nav.view === 'session' && nav.sessionId === session.id} onclick={() => openSession(session)} title={session.crashed ? 'This recording was cut short (crash or power cut). It opens with what was saved.' : ''}>
+        <button class="session" class:on={nav.view === 'session' && nav.sessionId === session.id} onclick={() => openSession(session)} oncontextmenu={(event) => { event.preventDefault(); sessionMenu = { session, left: Math.min(event.clientX, innerWidth - 220), top: Math.min(event.clientY, innerHeight - 110) } }} title={session.crashed ? 'This recording was cut short (crash or power cut). It opens with what was saved.' : ''}>
           <span class="session-name">{session.name}{#if session.recording}<span class="badge live">REC</span>{:else if session.crashed}<span class="badge">!</span>{/if}</span>
           <span class="session-facts">{dateLabel(session.created)} · {formatDuration(session.seconds)} · {session.exported}/{session.tracks} exported</span>
         </button>
@@ -161,6 +182,11 @@
   .window-controls button { display: grid; place-items: center; width: 40px; height: 30px; background: none; border: 0; border-radius: 6px; color: var(--fg-quiet); cursor: pointer; }
   .window-controls button:hover { background: var(--hover); color: var(--fg); }
   .window-controls .close:hover { background: #c42b1c; color: #fff; }
+  .session-menu { position: fixed; z-index: 110; min-width: 200px; padding: 5px; display: flex; flex-direction: column; gap: 2px; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 14px 36px var(--shadow); }
+  .session-menu button { display: flex; align-items: center; gap: 8px; background: none; border: 0; color: var(--fg); font: inherit; text-align: left; padding: 7px 10px; border-radius: 7px; cursor: pointer; }
+  .session-menu button:hover:not(:disabled) { background: var(--hover); }
+  .session-menu button:disabled { opacity: 0.4; cursor: default; }
+  .session-menu .danger { color: var(--danger); }
   .content { flex: 1; min-height: 0; overflow-y: auto; padding: 0 20px 14px; }
   .content:has(:global(.session)) { overflow: hidden; }
 </style>

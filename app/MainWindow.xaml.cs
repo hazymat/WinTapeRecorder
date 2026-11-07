@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
@@ -134,6 +135,27 @@ public partial class MainWindow : Window
                     if (App.TryGetOpen(Text(message, "id"), out var zeroing)) Reply(message, await Task.Run(() => NearestZeroCrossing(zeroing.audio, (long)Number(message, "frame"), (int)Number(message, "radius", 2000))));
                     break;
                 case "deleteSession": App.DeleteSession(Text(message, "id")); Reply(message, true); break;
+                // ---- Tags (SPEC.md › Tags) ----
+                case "lookup": Reply(message, await TagLookup.SearchAsync(Text(message, "source"), Text(message, "artist"), Text(message, "title"), Text(message, "album"), App.Settings.General.DiscogsToken)); break;
+                case "fetchArt":
+                    if (App.TryGetOpen(Text(message, "id"), out var artSession))
+                    {
+                        string savedArt;
+                        try { savedArt = await TagLookup.SaveArtAsync(Text(message, "url"), artSession.session.Folder); }
+                        catch (HttpRequestException) { Reply(message, new { error = "That release has no cover picture online." }); break; }
+                        Reply(message, new { path = savedArt, thumb = TagLookup.Thumbnail(savedArt) });
+                    }
+                    break;
+                case "chooseArt":
+                    if (App.TryGetOpen(Text(message, "id"), out var chooseSession))
+                    {
+                        var pictureDialog = new Microsoft.Win32.OpenFileDialog { Filter = "Pictures (*.jpg, *.jpeg, *.png)|*.jpg;*.jpeg;*.png", Title = "Album art" };
+                        if (pictureDialog.ShowDialog(this) != true) { Reply(message, new { path = "" }); break; }
+                        var chosenArt = TagLookup.SaveArtBytes(await File.ReadAllBytesAsync(pictureDialog.FileName), chooseSession.session.Folder);
+                        Reply(message, new { path = chosenArt, thumb = TagLookup.Thumbnail(chosenArt) });
+                    }
+                    break;
+                case "thumbs": Reply(message, message.GetProperty("paths").EnumerateArray().Select(path => path.GetString() ?? "").Distinct().ToDictionary(path => path, path => File.Exists(path) ? TagLookup.Thumbnail(path) : "")); break;
                 case "openFolder": var folder = Text(message, "path"); if (File.Exists(folder)) Process.Start("explorer.exe", $"/select,\"{folder}\""); else if (Directory.Exists(folder)) Process.Start("explorer.exe", $"\"{folder}\""); break;
                 // ---- Auditioning ----
                 case "play":

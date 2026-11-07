@@ -23,6 +23,14 @@ public class Track
     public string Artist { get; set; } = "";
     public string Title { get; set; } = "";
     public string Album { get; set; } = "";
+    public string AlbumArtist { get; set; } = "";
+    public string Genre { get; set; } = "";
+    public string Year { get; set; } = "";
+    public string Composer { get; set; } = "";
+    public string Comment { get; set; } = "";
+    public int TrackNumber { get; set; } // 0 = its place in the session
+    public int TrackCount { get; set; } // 0 = the session's number of tracks
+    public string ArtPath { get; set; } = ""; // a picture in the session folder, embedded on export
     public int FadeInMs { get; set; }
     public int FadeOutMs { get; set; }
     public bool Exported { get; set; }

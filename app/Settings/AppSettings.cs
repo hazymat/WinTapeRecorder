@@ -81,6 +81,7 @@ public class GeneralSettings
     public bool GlassWhenInactive { get; set; } = true;
     public int GlassTintHue { get; set; } = 0; // 0 = neutral
     public string LastRunVersion { get; set; } = "";
+    public string DiscogsToken { get; set; } = ""; // the user's own, for Discogs lookups
 }
 
 public class AudioSettings
