@@ -101,8 +101,8 @@
   {@const menuSession = sessionMenu.session}
   <div class="session-menu" role="menu" style:left="{sessionMenu.left}px" style:top="{sessionMenu.top}px">
     <button role="menuitem" onclick={() => { sendToShell({ type: 'openFolder', path: menuSession.id + '\\audio.wav' }); sessionMenu = null }}><Icon name="folder" size={15} />Show session files</button>
-    <button role="menuitem" disabled={menuSession.recording} onclick={() => { sessionMenu = null; openSession(menuSession) }}><Icon name="play" size={15} />Open</button>
-    <button role="menuitem" class="danger" disabled={menuSession.recording} onclick={() => { sessionMenu = null; closing = menuSession }}><Icon name="trash" size={15} />Close session…</button>
+    <button role="menuitem" disabled={menuSession.recording} onclick={() => { const target = menuSession; sessionMenu = null; openSession(target) }}><Icon name="play" size={15} />Open</button>
+    <button role="menuitem" class="danger" disabled={menuSession.recording} onclick={() => { const target = menuSession; sessionMenu = null; closing = target }}><Icon name="trash" size={15} />Close session…</button>
   </div>
 {/if}
 {#if closing}
