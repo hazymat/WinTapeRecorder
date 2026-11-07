@@ -248,6 +248,10 @@
   let exportingFile = $state('')
   onShellMessage('exportProgress', message => { if (message.id !== sessionId) return; exportingFile = message.current ?? ''; if (step === 'export') { const id = Object.keys(exportPaths).find(key => fileOf(exportPaths[key]?.path) === exportingFile); if (id) document.querySelector(`[data-report-row="${id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }) } })
   onShellMessage('exportDone', message => { if (message.id === sessionId) exportingFile = '' })
+  // Each track turns "Exported" the moment it's written and checked, not only at the end
+  onShellMessage('exportTracks', message => { if (message.id !== sessionId) return; for (const update of message.tracks as { id: string; exported: boolean; exportedPath: string; verified: boolean; verifyError: string }[]) { const track = tracks.find(candidate => candidate.id === update.id); if (track) { track.exported = update.exported; track.exportedPath = update.exportedPath; track.verified = update.verified; track.verifyError = update.verifyError } } })
+  const queued = $derived(!!app.status?.exportQueue?.includes(sessionId))
+  const exportingHere = $derived(!!app.status?.exporting && app.status?.exportingSession === sessionId)
   function editComment(track: Track, value: string) { const next = copy(), edited = next.find(candidate => candidate.id === track.id)!; edited.comment = value; edited.exported = false; commit(next, `Track ${tracks.indexOf(track) + 1}: comment changed`) }
   function setTrackNumber(track: Track, text: string) {
     const number = Math.max(0, Math.round(Number(text.trim()) || 0)), next = copy(), edited = next.find(candidate => candidate.id === track.id)!
@@ -609,7 +613,7 @@
   }
   async function exportTracks(keys?: string[], checked = false) {
     const chosen = targets(keys)
-    if (!chosen.length || app.status?.exporting) return
+    if (!chosen.length) return
     if (!checked) {
       // Empty tags and unconfirmed cuts are pointed out once; exporting anyway is always possible
       const missing = wanted.filter(([field]) => chosen.some(track => !(track[field] as string | undefined))).map(([, label]) => label)
@@ -798,7 +802,7 @@
         {#if exportStatus}<span class="export-status">{exportStatus}</span>{/if}
         {#if outputChoices.length}<Dropdown label="Output profile" value={outputProfileId} options={outputChoices} onchange={(value) => { if (value === '__manage') { sendToShell({ type: 'openSettings', tab: 'Output profiles' }); return } if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
         <span class="export-size" title="Estimated size of everything this session exports, with each album's profile (FLAC from the usual ratio, MP3 and AAC from the bitrate)">≈ {sizeText(estimateBytes(exportable))}</span>
-        <button class="primary" disabled={!!app.status?.exporting || !exportable.length} onclick={() => exportTracks(selectedIds.length ? selectedIds : unexported.length ? unexported.map(track => track.id) : undefined)} title="Ctrl+E"><Icon name="export" size={16} />{selectedIds.length ? `Export ${selectedIds.length} selected` : unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>
+        {#if queued}<button class="primary" onclick={() => sendToShell({ type: 'unqueueExport', id: sessionId })} title="Another session is exporting; this one starts after it. Click to take it out of the queue">Export queued: click to unqueue</button>{:else}        <button class="primary" disabled={exportingHere || !exportable.length} onclick={() => exportTracks(selectedIds.length ? selectedIds : unexported.length ? unexported.map(track => track.id) : undefined)} title="Ctrl+E"><Icon name="export" size={16} />{selectedIds.length ? `Export ${selectedIds.length} selected` : unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>{/if}
       {/if}
     </div>
   </nav>
@@ -944,8 +948,9 @@
               {#each app.outputProfiles as profile (profile.id)}<option value={profile.id}>{profile.name}</option>{/each}
               <option value="__manage">Manage output profiles…</option>
             </select>
+            {#if list.some(track => track.exported && track.exportedPath)}<button class="ghost small-button" onclick={() => sendToShell({ type: 'openFolder', path: list.find(track => track.exported && track.exportedPath)?.exportedPath ?? '' })} title="Open this album's folder in Explorer">📂 Open folder</button>{/if}
             <span class="plan-size">≈ {sizeText(estimateBytes(list))}</span>
-            <button class="ghost small-button" disabled={!!app.status?.exporting} onclick={() => exportTracks(group.ids.filter(id => !tracks.find(track => track.id === id)?.skip))}>Export album</button>
+            <button class="ghost small-button" disabled={exportingHere || queued} onclick={() => exportTracks(group.ids.filter(id => !tracks.find(track => track.id === id)?.skip))}>Export album</button>
           </header>
           <table class="tag-table report">
             <thead><tr><th class="c-tick"></th><th class="c-no" title="Track number / tracks in the album, as written">No.</th><th>Album artist</th><th>Artist (per track)</th><th>Title</th><th>Album</th><th class="c-year">Year</th><th>Genre</th><th class="c-disc" title="Disc number (blank: not written)">Disc</th><th>Composer</th><th>Comment</th><th class="c-art">Cover</th><th class="c-file">File</th><th class="c-status"></th></tr></thead>

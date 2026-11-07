@@ -22,6 +22,7 @@ public partial class App : Application
     public string ExportingSessionId { get; set; } = "";
     public int ExportDone { get; set; }
     public int ExportTotal { get; set; }
+    public List<string> ExportQueue { get; } = new(); // sessions waiting to export, in turn
     public event Action? StatusChanged;
     public event Action? SessionsChanged;
     public event Action? HintsChanged;
@@ -493,7 +494,7 @@ public partial class App : Application
         playing = Player.Playing,
         playingSession = Player.SessionId,
         exporting = Exporting,
-        exportingSession = ExportingSessionId, exportDone = ExportDone, exportTotal = ExportTotal,
+        exportingSession = ExportingSessionId, exportDone = ExportDone, exportTotal = ExportTotal, exportQueue = ExportQueue,
         version = Updater.CurrentVersion,
         updateReady = Updater.ReadyVersion,
     }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });

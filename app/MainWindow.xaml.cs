@@ -27,6 +27,71 @@ public partial class MainWindow : Window
     readonly DispatcherTimer levelTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
     readonly DispatcherTimer playheadTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
     CancellationTokenSource? exportCancel;
+    readonly List<JsonElement> exportQueue = new();
+
+    // One export: its own copy of the session and its own reader of the WAV, so opening other sessions meanwhile can't stop it.
+    // Each track's result is pushed as it's written; at the end the results go into the session as it is now (open or on disk)
+    async Task RunExportAsync(JsonElement message)
+    {
+        var exportSessionId = Text(message, "id");
+        var session = Session.Load(exportSessionId);
+        if (session == null) { Reply(message, new { done = 0, verified = 0, error = "The session's files are missing." }); StartNextExport(); return; }
+        var wanted = message.GetProperty("trackIds").EnumerateArray().Select(element => element.GetString() ?? "").ToHashSet();
+        var exportTracks = session.Tracks.Where(track => wanted.Contains(track.Id)).ToList();
+        var outputProfile = App.Settings.OutputProfileOrActive(Text(message, "profileId"));
+        App.Exporting = true; App.ExportingSessionId = exportSessionId; App.ExportDone = 0; App.ExportTotal = exportTracks.Count; Push(App.StatusJson());
+        exportCancel = new CancellationTokenSource();
+        var errors = "";
+        // Albums can have their own output profile: each profile's tracks are exported in turn
+        var byProfile = exportTracks.GroupBy(track => track.OutputProfileId != "" && App.Settings.OutputProfiles.Any(profile => profile.Id == track.OutputProfileId) ? track.OutputProfileId : outputProfile.Id).ToList();
+        int exportedCount = 0;
+        try
+        {
+            exportedCount = await Task.Run(() =>
+            {
+                var thread = Thread.CurrentThread; var before = thread.Priority; thread.Priority = ThreadPriority.BelowNormal;
+                using var audio = SessionAudio.Open(session.AudioPath);
+                try
+                {
+                    int doneBefore = 0, total = exportTracks.Count, written = 0;
+                    foreach (var batch in byProfile)
+                    {
+                        var profile = App.Settings.OutputProfiles.First(candidate => candidate.Id == batch.Key);
+                        var offset = doneBefore;
+                        written += Exporter.Export(session, audio, batch.ToList(), profile, progress =>
+                        {
+                            if (progress.Error != "") errors = progress.Error; App.ExportDone = offset + progress.Done;
+                            Push(JsonSerializer.Serialize(new { type = "exportProgress", id = exportSessionId, done = offset + progress.Done, total, current = progress.Current }));
+                            Push(JsonSerializer.Serialize(new { type = "exportTracks", id = exportSessionId, tracks = exportTracks.Where(track => track.Exported || track.VerifyError != "").Select(track => new { track.Id, track.Exported, track.ExportedPath, track.Verified, track.VerifyError }) }, camel));
+                        }, exportCancel.Token);
+                        doneBefore += batch.Count();
+                        if (exportCancel.IsCancellationRequested) break;
+                    }
+                    return written;
+                }
+                finally { thread.Priority = before; }
+            });
+        }
+        catch (Exception exportError) { errors = exportError.Message; }
+        // The results go into the session as it is now: the open copy if it's open (the user may have edited it meanwhile), else the one on disk
+        var target = App.TryGetOpen(exportSessionId, out var openNow) ? openNow.session : Session.Load(exportSessionId) ?? session;
+        foreach (var track in exportTracks)
+            if (target.Tracks.FirstOrDefault(candidate => candidate.Id == track.Id) is { } into) { into.Exported = track.Exported; into.ExportedPath = track.ExportedPath; into.Verified = track.Verified; into.VerifyError = track.VerifyError; }
+        target.OutputProfileId = outputProfile.Id; target.Save();
+        App.Exporting = false; App.ExportingSessionId = ""; Push(App.StatusJson());
+        var verifiedCount = exportTracks.Count(track => track.Verified);
+        Reply(message, new { done = exportedCount, verified = verifiedCount, error = errors, tracks = target.Tracks, folder = outputProfile.Folder.Trim() == "" ? AppPaths.DefaultOutputFolder : outputProfile.Folder.Trim() });
+        Push(JsonSerializer.Serialize(new { type = "exportDone", id = exportSessionId, done = exportedCount, verified = verifiedCount, total = exportTracks.Count, error = errors }));
+        App.NotifySessionsChanged();
+        StartNextExport();
+    }
+
+    void StartNextExport()
+    {
+        if (exportQueue.Count == 0) return;
+        var next = exportQueue[0]; exportQueue.RemoveAt(0); App.ExportQueue.Remove(Text(next, "id"));
+        _ = Dispatcher.InvokeAsync(() => RunExportAsync(next));
+    }
 
     public MainWindow()
     {
@@ -253,41 +318,16 @@ public partial class MainWindow : Window
                 case "stopPlayback": App.Player.Stop(); Push(App.StatusJson()); Push("{\"type\":\"playhead\",\"frame\":-1}"); break;
                 // ---- Export (SPEC.md › Export) ----
                 case "export":
-                    if (App.Exporting || !App.TryGetOpen(Text(message, "id"), out var exporting)) { Reply(message, new { done = 0, error = "An export is already running." }); break; }
-                    var wanted = message.GetProperty("trackIds").EnumerateArray().Select(element => element.GetString() ?? "").ToHashSet();
-                    var exportTracks = exporting.session.Tracks.Where(track => wanted.Contains(track.Id)).ToList();
-                    var outputProfile = App.Settings.OutputProfileOrActive(Text(message, "profileId"));
-                    App.Exporting = true; App.ExportingSessionId = exporting.session.Id; App.ExportDone = 0; App.ExportTotal = exportTracks.Count; Push(App.StatusJson());
-                    exportCancel = new CancellationTokenSource();
-                    var errors = "";
-                    var exportSessionId = exporting.session.Id;
-                    // Albums can have their own output profile (SPEC.md › Export): each profile's tracks are exported in turn
-                    var byProfile = exportTracks.GroupBy(track => track.OutputProfileId != "" && App.Settings.OutputProfiles.Any(profile => profile.Id == track.OutputProfileId) ? track.OutputProfileId : outputProfile.Id).ToList();
-                    var exportedCount = await Task.Run(() =>
+                    // Exports run one at a time in the background, whatever the user opens meanwhile; later ones wait their turn (SPEC.md › Export)
+                    if (App.Exporting) { exportQueue.Add(message.Clone()); App.ExportQueue.Add(Text(message, "id")); Push(App.StatusJson()); break; }
+                    await RunExportAsync(message.Clone());
+                    break;
+                case "unqueueExport":
                     {
-                        var thread = Thread.CurrentThread; var before = thread.Priority; thread.Priority = ThreadPriority.BelowNormal;
-                        try
-                        {
-                            int doneBefore = 0, total = exportTracks.Count, written = 0;
-                            foreach (var batch in byProfile)
-                            {
-                                var profile = App.Settings.OutputProfiles.First(candidate => candidate.Id == batch.Key);
-                                var offset = doneBefore;
-                                written += Exporter.Export(exporting.session, exporting.audio, batch.ToList(), profile, progress => { if (progress.Error != "") errors = progress.Error; App.ExportDone = offset + progress.Done; Push(JsonSerializer.Serialize(new { type = "exportProgress", id = exportSessionId, done = offset + progress.Done, total, current = progress.Current })); }, exportCancel.Token);
-                                doneBefore += batch.Count();
-                                if (exportCancel.IsCancellationRequested) break;
-                            }
-                            return written;
-                        }
-                        finally { thread.Priority = before; }
-                    });
-                    exporting.session.OutputProfileId = outputProfile.Id;
-                    exporting.session.Save();
-                    App.Exporting = false; App.ExportingSessionId = ""; Push(App.StatusJson());
-                    var verifiedCount = exportTracks.Count(track => track.Verified);
-                    Reply(message, new { done = exportedCount, verified = verifiedCount, error = errors, tracks = exporting.session.Tracks, folder = outputProfile.Folder.Trim() == "" ? AppPaths.DefaultOutputFolder : outputProfile.Folder.Trim() });
-                    Push(JsonSerializer.Serialize(new { type = "exportDone", id = exportSessionId, done = exportedCount, verified = verifiedCount, total = exportTracks.Count, error = errors }));
-                    App.NotifySessionsChanged();
+                        var unqueueId = Text(message, "id");
+                        var job = exportQueue.FirstOrDefault(candidate => Text(candidate, "id") == unqueueId);
+                        if (job.ValueKind != JsonValueKind.Undefined) { exportQueue.Remove(job); App.ExportQueue.Remove(unqueueId); Reply(job, new { done = 0, verified = 0, error = "", unqueued = true }); Push(App.StatusJson()); }
+                    }
                     break;
                 case "cancelExport": exportCancel?.Cancel(); break;
                 // ---- Window ----
