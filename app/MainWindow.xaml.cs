@@ -270,6 +270,13 @@ public partial class MainWindow : Window
                         Reply(message, new { path = chosenArt, thumb = TagLookup.Thumbnail(chosenArt) });
                     }
                     break;
+                case "artData":
+                    if (App.TryGetOpen(Text(message, "id"), out var droppedOn))
+                    {
+                        try { var droppedArt = TagLookup.SaveArtBytes(Convert.FromBase64String(Text(message, "data")), droppedOn.session.Folder); Reply(message, new { path = droppedArt, thumb = TagLookup.Thumbnail(droppedArt), error = "" }); }
+                        catch (Exception dropError) { Reply(message, new { path = "", error = dropError.Message }); }
+                    }
+                    break;
                 case "pasteArt":
                     if (App.TryGetOpen(Text(message, "id"), out var pasteSession))
                     {

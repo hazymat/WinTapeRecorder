@@ -440,6 +440,20 @@
     try { const saved = await request<{ path: string; thumb: string }>({ type: 'fetchArt', id: sessionId, url }); thumbs = Object.assign({}, thumbs, { [saved.path]: saved.thumb }); coverSources = Object.assign({}, coverSources, { [group.first]: 'database' }); applyTags(group.ids, { artPath: saved.path }, false) }
     catch (error) { toast('No picture for that album: ' + (error as Error).message) }
   }
+  // A picture dropped on an album's panel (SPEC.md › Fill gaps & covers)
+  let dropAlbum = $state('')
+  function dropCover(group: ListAlbum, file: File) {
+    const reader = new FileReader()
+    reader.onload = async () => {
+      try {
+        const data = String(reader.result).split(',')[1] ?? ''
+        const saved = await request<{ path: string; thumb: string; error?: string }>({ type: 'artData', id: sessionId, data })
+        if (!saved.path) { toast(saved.error || 'Could not use that picture'); return }
+        thumbs = Object.assign({}, thumbs, { [saved.path]: saved.thumb }); coverSources = Object.assign({}, coverSources, { [group.first]: 'own' }); applyTags(group.ids, { artPath: saved.path }, false)
+      } catch (error) { toast('Could not use that picture: ' + (error as Error).message) }
+    }
+    reader.readAsDataURL(file)
+  }
   async function chooseCoverFor(group: ListAlbum, paste: boolean) {
     try {
       const result = await request<{ path: string; thumb: string; error?: string }>({ type: paste ? 'pasteArt' : 'chooseArt', id: sessionId })
@@ -869,7 +883,10 @@
         {@const playerCover = list.map(track => track.playerArtPath ?? '').find(path => path && thumbs[path]) ?? ''}
         {@const inUse = coverInUse(group, ownCover, playerCover)}
         {@const found = match ? match.trackTitles.filter(title => list.some(track => sameTitle(track.title, title))).length : 0}
-        <section class="tag-card">
+        <section class="tag-card" class:dropping={dropAlbum === group.first} role="group" aria-label="Album"
+          ondragover={(event) => { if (event.dataTransfer?.types.includes('Files')) { event.preventDefault(); dropAlbum = group.first } }}
+          ondragleave={(event) => { if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node)) dropAlbum = '' }}
+          ondrop={(event) => { event.preventDefault(); dropAlbum = ''; const file = Array.from(event.dataTransfer?.files ?? []).find(candidate => /image\/(jpeg|png)/.test(candidate.type)); if (file) dropCover(group, file); else toast('Drop a JPEG or PNG picture') }}>
           <header class="tag-head">
             <div class="tag-title">
               <h4>{group.album || 'No album'}<span class="quiet">{' - '}{group.artist || 'unknown artist'}</span></h4>
@@ -890,7 +907,7 @@
                   {#if inUse === 'own' && ownCover && thumbs[ownCover]}<img src={thumbs[ownCover]} alt="Your own cover" />{:else}<span class="no-cover">{ownCover === null ? 'Mixed' : 'Choose or paste'}</span>{/if}<span class="cover-caption">Your own{inUse === 'own' ? ' · in use' : ''}</span>
                 </button>
               </div>
-              <span class="quiet cover-help">Click one to use it · right-click "Your own" or Ctrl+V to paste</span>
+              <span class="quiet cover-help">Click one to use it · drop a picture here, or right-click "Your own" or Ctrl+V to paste</span>
             </div>
             <table class="tag-table">
               <thead><tr><th></th><th>Yours</th><th>{match ? match.source : 'Online'}</th></tr></thead>
@@ -908,8 +925,8 @@
               </tbody>
             </table>
           </div>
-          <details class="tag-tracks" open={openTrackLists[group.first] ?? listAlbums.length === 1} ontoggle={(event) => { const isOpen = (event.currentTarget as HTMLDetailsElement).open; if ((openTrackLists[group.first] ?? listAlbums.length === 1) !== isOpen) openTrackLists = Object.assign({}, openTrackLists, { [group.first]: isOpen }) }}>
-            <summary>Tracks <span class="quiet">({list.length}){match && list.some(track => theirTitle(track, match) && theirTitle(track, match) !== track.title) ? ' · some titles differ from ' + match.source : ''}</span></summary>
+          <div class="tag-tracks">
+            <p class="tracks-heading">Tracks <span class="quiet">({list.length}){match && list.some(track => theirTitle(track, match) && theirTitle(track, match) !== track.title) ? ' · some titles differ from ' + match.source : ''}</span></p>
             <table class="tag-table tracks">
               <thead><tr><th>No.</th><th>Artist</th><th>Title</th><th>{match ? match.source + ' title' : ''}{#if match && list.some(track => theirTitle(track, match) && theirTitle(track, match) !== track.title)}<button class="ghost small-button" onclick={() => useAllTitles(list, match)}>Use all</button>{/if}</th></tr></thead>
               <tbody>
@@ -925,7 +942,7 @@
               </tbody>
             </table>
             {#if match && match.trackTitles.length && found < match.trackTitles.length}<p class="quiet missing">On the release but not here: {match.trackTitles.filter(title => !list.some(track => sameTitle(track.title, title))).join(', ')}</p>{/if}
-          </details>
+          </div>
         </section>
       {/each}
       {#if session.albumLooked}<p class="tags-foot"><button class="link" onclick={() => { if (session) session.albumLooked = false; sendToShell({ type: 'suggestAgain', id: sessionId }) }}>Look all albums up again</button></p>{/if}
@@ -1162,10 +1179,12 @@
   .hear button.checked { background: rgba(62, 207, 110, 0.18); color: #2e9e57; border-color: rgba(62, 207, 110, 0.5); }
   .tags-page { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 2px 2px 16px; }
   .tags-note, .tags-foot { margin: 0; font-size: 12.5px; }
-  .tag-card { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .tag-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+  .tag-card.dropping { border-color: var(--accent); background: var(--accent-soft); }
+  .tracks-heading { margin: 2px 0 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-quiet); }
   .tag-head { display: flex; align-items: flex-start; gap: 12px; }
   .tag-title { flex: 1; min-width: 0; }
-  .tag-title h4 { margin: 0; font-size: 15px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg); }
+  .tag-title h4 { margin: 0; font-size: 13.5px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg); }
   .tag-title p { margin: 2px 0 0; font-size: 12px; }
   .tag-actions { display: flex; gap: 6px; flex: none; }
   .tag-body { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: start; }
@@ -1175,12 +1194,16 @@
   .cover-option { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; border-radius: 8px; border: 2px solid transparent; background: none; cursor: pointer; color: var(--fg); font: inherit; }
   .cover-option:hover { border-color: var(--line); }
   .cover-option.chosen { border-color: var(--accent); }
-  .cover-option img, .cover-option .no-cover { width: 84px; height: 84px; object-fit: cover; border-radius: 5px; background: var(--hover); display: grid; place-items: center; font-size: 12px; color: var(--fg-quiet); }
+  .cover-option img, .cover-option .no-cover { width: 120px; height: 120px; object-fit: cover; border-radius: 5px; background: var(--hover); display: grid; place-items: center; font-size: 12px; color: var(--fg-quiet); }
   .cover-caption { font-size: 11px; color: var(--fg-quiet); }
   .cover-help { font-size: 11px; max-width: 290px; }
-  .tag-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  .tag-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
   .tag-table input:not([type=checkbox]), .tag-table td.theirs button { box-sizing: border-box; max-width: 100%; }
-  .tag-table.tracks td.mine input { width: 100%; padding: 3px 8px; }
+  .tag-table.tracks td.mine input { width: 100%; padding: 0 6px; height: 20px; font-size: 12px; }
+  .tag-card .tag-table td { padding: 1px 6px 1px 0; }
+  .tag-card .tag-table td.mine .with-same > input { padding: 0 6px; height: 22px; font-size: 12px; }
+  .tag-card .tag-table td.theirs button { padding: 1px 6px; font-size: 12px; }
+  .tag-card .tag-table.tracks td.theirs button { padding: 0 6px; }
   .tag-table.tracks td { padding-right: 8px; }
   .tag-table:not(.tracks) th:first-child { width: 100px; }
   .tag-table.tracks th:first-child { width: 44px; }
