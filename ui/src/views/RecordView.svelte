@@ -234,7 +234,7 @@
   const albums = $derived.by(() => {
     const list: Album[] = []
     changes.forEach((change, index) => {
-      const key = loose(change.artist) + '|' + loose(change.album), last = list[list.length - 1]
+      const key = change.album ? 'album:' + loose(change.album) : 'artist:' + loose(change.artist), last = list[list.length - 1] // by album, so a featured artist doesn't split it
       if (last && last.key === key) { last.indexes.push(index); if (!last.year && change.year) last.year = change.year }
       else list.push({ key, artist: change.artist, album: change.album, year: change.year ?? '', indexes: [index] })
     })

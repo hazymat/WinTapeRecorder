@@ -220,7 +220,9 @@
 
   // ---- Albums in the track list (SPEC.md › Tags › Albums): runs of tracks sharing artist (or album artist) and album, each with a
   // header that sets artist, album, year and genre for all its tracks; a track can be moved into the album above or below ----
-  const albumKey = (track: Track) => (track.albumArtist || track.artist || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') + '|' + (track.album || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+  // Grouped by album name and album artist, so featured artists on single tracks don't split an album; tracks with no album group by artist
+  const squash = (text: string | undefined) => (text ?? '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+  const albumKey = (track: Track) => track.album ? 'album:' + squash(track.album) + '|' + squash(track.albumArtist) : 'artist:' + squash(track.artist)
   type ListAlbum = { key: string; first: string; ids: string[]; artist: string; album: string; year: string; genre: string }
   const listAlbums = $derived.by(() => {
     const list: ListAlbum[] = []
@@ -228,6 +230,7 @@
       const key = albumKey(track), last = list[list.length - 1]
       if (last && last.key === key) { last.ids.push(track.id); if (!last.year && track.year) last.year = track.year; if (!last.genre && track.genre) last.genre = track.genre }
       else list.push({ key, first: track.id, ids: [track.id], artist: track.albumArtist || track.artist || '', album: track.album || '', year: track.year ?? '', genre: track.genre ?? '' })
+      if (list[list.length - 1].ids.length > 1 && !track.albumArtist) { const group = list[list.length - 1]; const artists = new Set(group.ids.map(id => tracks.find(candidate => candidate.id === id)?.artist ?? '')); if (artists.size > 1) group.artist = Array.from(artists).sort((first, second) => second.length - first.length).pop() ?? group.artist }
     }
     return list
   })
@@ -241,17 +244,66 @@
     }
     commit(next, `${field === 'artist' ? 'Artist' : field[0].toUpperCase() + field.slice(1)} set on ${group.ids.length} track${group.ids.length === 1 ? '' : 's'}`)
   }
-  let joining = $state<null | { trackId: string; target: ListAlbum }>(null)
+  let joining = $state<null | { trackId: string; target: ListAlbum; mergeIds?: string[] }>(null)
   let dragTrack = ''
   function joinAlbum(mode: 'theirs' | 'mine') {
     const join = joining; joining = null; if (!join) return
     const mover = tracks.find(track => track.id === join.trackId); if (!mover) return
     const next = copy()
-    if (mode === 'theirs') { const edited = next.find(track => track.id === mover.id)!; const sample = tracks.find(track => track.id === join.target.first)!; edited.artist = sample.artist; edited.albumArtist = sample.albumArtist; edited.album = sample.album; edited.year = sample.year; edited.genre = sample.genre || edited.genre; edited.exported = false }
-    else for (const track of next) if (join.target.ids.includes(track.id)) { track.artist = mover.artist; track.albumArtist = mover.albumArtist; track.album = mover.album; track.year = mover.year || track.year; track.exported = false }
-    commit(next, 'Track moved into the album')
+    // Album-level fields only: each track keeps its own artist (a featured artist stays on its track)
+    const movers = join.mergeIds ?? [mover.id]
+    if (mode === 'theirs') { const sample = tracks.find(track => track.id === join.target.first)!; for (const edited of next) if (movers.includes(edited.id)) { edited.albumArtist = sample.albumArtist; edited.album = sample.album; edited.year = sample.year; edited.genre = sample.genre || edited.genre; edited.exported = false } }
+    else for (const track of next) if (join.target.ids.includes(track.id)) { track.albumArtist = mover.albumArtist; track.album = mover.album; track.year = mover.year || track.year; track.genre = mover.genre || track.genre; track.exported = false }
+    commit(next, movers.length > 1 ? 'Albums merged' : 'Track moved into the album')
   }
   const albumName = (group: { artist: string; album: string; year?: string }) => `${group.artist || 'Unknown artist'} — ${group.album || 'no album'}${group.year ? ` (${group.year})` : ''}`
+
+  // ---- Tags cards ----
+  const plainTitle = (title: string) => squash((title ?? '').replace(/\s*[\(\[][^\)\]]*[\)\]]/g, ''))
+  function sameTitle(mine: string, theirs: string) { const a = plainTitle(mine), b = plainTitle(theirs); return a !== '' && (a === b || (a.length >= 4 && b.length >= 4 && (a.includes(b) || b.includes(a)))) }
+  // The online match for an album: the one sharing most of its tracks
+  function matchFor(group: ListAlbum): AlbumMatch | null { let best: AlbumMatch | null = null, most = 0; for (const match of session?.albums ?? []) { const shared = match.trackIds.filter(id => group.ids.includes(id)).length; if (shared > most) { most = shared; best = match } } return best }
+  function theirTitle(track: Track, match: AlbumMatch) { if (track.suggestion?.releaseId === match.releaseId && track.suggestion.title) return track.suggestion.title; return match.trackTitles.find(title => sameTitle(track.title, title)) ?? '' }
+  function commonOf(list: Track[], field: keyof Track): string | null { const values = Array.from(new Set(list.map(track => ((track as any)[field] ?? '') as string))); return values.length === 1 ? values[0] : values.length === 0 ? '' : null }
+  type Field = 'artist' | 'albumArtist' | 'album' | 'year' | 'genre'
+  function fieldRows(list: Track[], match: AlbumMatch | null) {
+    const rows: { field: Field; label: string; mine: string | null; theirs: string }[] = [
+      { field: 'artist', label: 'Artist', mine: commonOf(list, 'artist'), theirs: match?.albumArtist ?? '' },
+      { field: 'albumArtist', label: 'Album artist', mine: commonOf(list, 'albumArtist'), theirs: match?.albumArtist ?? '' },
+      { field: 'album', label: 'Album', mine: commonOf(list, 'album'), theirs: match?.album ?? '' },
+      { field: 'year', label: 'Year', mine: commonOf(list, 'year'), theirs: match?.year ?? '' },
+      { field: 'genre', label: 'Genre', mine: commonOf(list, 'genre'), theirs: match?.genre ?? '' },
+    ]
+    return rows.map(row => ({ ...row, same: !!row.theirs && (row.mine ?? '').toLowerCase() === row.theirs.toLowerCase() }))
+  }
+  function setGroupField(group: ListAlbum, field: Field, value: string) {
+    const next = copy()
+    for (const track of next) if (group.ids.includes(track.id)) { (track as any)[field] = value; track.exported = false }
+    commit(next, `${field === 'albumArtist' ? 'Album artist' : field[0].toUpperCase() + field.slice(1)} set on ${group.ids.length} track${group.ids.length === 1 ? '' : 's'}`)
+  }
+  function sameAlbumArtist(group: ListAlbum) { const next = copy(); for (const track of next) if (group.ids.includes(track.id)) { track.albumArtist = track.artist; track.exported = false } commit(next, 'Album artist set to the artist') }
+  function useAllFrom(group: ListAlbum, list: Track[], match: AlbumMatch) {
+    const next = copy()
+    for (const track of next) if (group.ids.includes(track.id)) {
+      if (match.albumArtist) { track.albumArtist = match.albumArtist; if (!track.artist) track.artist = match.albumArtist }
+      if (match.album) track.album = match.album; if (match.year) track.year = match.year; if (match.genre) track.genre = match.genre
+      track.exported = false
+    }
+    commit(next, `Album details from ${match.source}`)
+    if (match.artUrl && !failedCovers[match.artUrl] && !commonOf(list, 'artPath')) useCoverUrl(group, match.artUrl)
+  }
+  function useAllTitles(list: Track[], match: AlbumMatch) { const next = copy(); for (const track of next) { const original = list.find(candidate => candidate.id === track.id); if (!original) continue; const theirs = theirTitle(original, match); if (theirs) { track.title = theirs; track.exported = false } } commit(next, `Titles from ${match.source}`) }
+  async function useCoverUrl(group: ListAlbum, url: string) {
+    try { const saved = await request<{ path: string; thumb: string }>({ type: 'fetchArt', id: sessionId, url }); thumbs = Object.assign({}, thumbs, { [saved.path]: saved.thumb }); applyTags(group.ids, { artPath: saved.path }, false) }
+    catch (error) { toast('No picture for that album: ' + (error as Error).message) }
+  }
+  async function chooseCoverFor(group: ListAlbum, paste: boolean) {
+    try {
+      const result = await request<{ path: string; thumb: string; error?: string }>({ type: paste ? 'pasteArt' : 'chooseArt', id: sessionId })
+      if (!result.path) { if (result.error) toast(result.error); return }
+      thumbs = Object.assign({}, thumbs, { [result.path]: result.thumb }); applyTags(group.ids, { artPath: result.path }, false)
+    } catch (error) { toast('Could not use that picture: ' + (error as Error).message) }
+  }
 
   // ---- Bulk dialogs: tags and fades for the selected tracks ----
   let dialog = $state<null | { kind: 'fades'; keys: string[]; fadeIn: string; fadeOut: string } | { kind: 'close' } | { kind: 'redetect' }>(null)
@@ -465,7 +517,7 @@
     const key = event.key, lower = key.toLowerCase()
     const step = event.ctrlKey ? 1 : Math.max(1, Math.round(view.framesPerPixel)) * (event.shiftKey ? 10 : 1)
     let handled = true
-    if (event.ctrlKey && lower === 'v' && inTagsStep() && !tagging && !lookingUp) chooseCover(true, albums.length === 1 ? albums[0] : undefined)
+    if (event.ctrlKey && lower === 'v' && inTagsStep() && !tagging && !lookingUp) { const group = (current && albumOf(current.id)) || listAlbums[0]; if (group) chooseCoverFor(group, true) }
     else if (event.ctrlKey && lower === 'z' && !event.shiftKey) undo()
     else if (event.ctrlKey && (lower === 'y' || (lower === 'z' && event.shiftKey))) redo()
     else if (event.ctrlKey && lower === 'e') exportTracks()
@@ -556,8 +608,7 @@
         
         <Dropdown label="Track ends" value={betweenTracks} options={[['meet', 'Meet the next start'], ['trim', 'Trim silence'], ['keep', 'Keep as recorded']]} onchange={setBetween} />
       {:else if step === 'tags'}
-        <button class="primary" onclick={() => tagging = (selectedIds.length ? selectedIds : untagged.length ? untagged.map(track => track.id) : exportable.map(track => track.id))}>{selectedIds.length ? `Edit ${selectedIds.length} selected…` : untagged.length ? `Fill in ${untagged.length}…` : 'Edit tags…'}</button>
-        <button class="ghost" onclick={() => openLookup(exportable.map(track => track.id))} title="Search MusicBrainz, iTunes or Discogs yourself and pick the album">Look up album…</button>
+        {#if selectedIds.length}<button class="ghost" onclick={() => tagging = selectedIds.slice()}>Edit {selectedIds.length} selected…</button>{/if}
       {:else}
         {#if exportStatus}<span class="export-status">{exportStatus}</span>{/if}
         {#if outputChoices.length}<Dropdown label="Output profile" value={outputProfileId} options={outputChoices} onchange={(value) => { if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
@@ -604,6 +655,7 @@
     {#if exportStatus && step !== 'export'}<span class="export-status">{exportStatus}</span>{/if}
   </div>
 
+  {#if step !== 'tags'}
   <Hint id="waveform-cuts" text="Next to confirm (C) jumps to the next start or end without a ✓, from the track you're on, and plays it. Drag the line, nudge it with ← →, or press S / E to set it at the playhead; then tick ✓ beside it in the list. Wheel zooms, Shift+wheel scrolls, Ctrl+wheel sets the height, W switches wave and spectrogram." />
   <div class="wave-host" bind:this={waveHost} style:height="{waveHeight}px">
 
@@ -614,87 +666,81 @@
       <button class:on={waveMode === 'wave'} onclick={() => setWaveMode('wave')} title="Waveform: levels, starts and ends (W switches)">Wave</button><button class:on={waveMode === 'spectrogram'} onclick={() => setWaveMode('spectrogram')} title="Spectrogram: frequency over time. A flat top edge means a lossy source; a vertical gap is a dropout (W switches)">Spectrogram</button><kbd>W</kbd>
     </div><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
   <div class="splitter" role="separator" aria-orientation="horizontal" aria-label="Drag to share the height between the wave and the track list" title="Drag to make the wave or the track list bigger" onpointerdown={splitDown} onpointermove={splitMove} onpointerup={splitUp} onpointercancel={splitUp}><span></span></div>
+  {/if}
 
   {#if step === 'tags'}
-    <div class="tags-step">
-      {#if !session.albumLooked}
-        <p class="quiet suggest-note">Matching albums from your track names{albumProgress ? ` (${albumProgress.done} of ${albumProgress.total} looked up)` : ''}…</p>
-      {:else if !albums.length}
-        <p class="quiet suggest-note">No album found online for these titles. <button class="link" onclick={() => openLookup(exportable.map(track => track.id))}>Look up album…</button> searches yourself; Edit tags… fills them in by hand.</p>
-      {:else}
-        {#if albums.length > 1}<p class="quiet suggest-note">{albums.length} albums in this session. Each exports to its own folder.</p>{/if}
-        {#each albums as match, albumIndex (albumIndex + match.releaseId)}
-          {@const list = albumTracks(match)}
-          {@const offers = albumOffers(match)}
-          {@const pending = offers.filter(offer => !offer.same && !offer.kept)}
-          {@const ownCover = commonValue(list, 'artPath')}
-          {@const missing = missingFrom(match)}
-          {@const coverShown = !!match.artUrl && !failedCovers[match.artUrl]}
-          {@const playerCover = list.map(track => track.playerArtPath ?? '').find(path => path && thumbs[path]) ?? ''}
-          <div class="album-card">
-            <div class="cover-col">
-              <div class="covers">
-                <figure><span class="cover-label">Yours</span>{#if ownCover && thumbs[ownCover]}<img src={thumbs[ownCover]} alt="Your cover" />{:else}<div class="no-cover">{ownCover === null ? 'Mixed' : 'None'}</div>{/if}</figure>
-                {#if coverShown}<figure><span class="cover-label">{match.source}</span><img src={match.artUrl} alt="Cover from {match.source}" onerror={() => failedCovers = Object.assign({}, failedCovers, { [match.artUrl]: true })} /></figure>{/if}
-                {#if playerCover && playerCover !== ownCover}<figure><span class="cover-label">Player</span><img src={thumbs[playerCover]} alt="The picture the player sent" /></figure>{/if}
-              </div>
-              <div class="cover-buttons">
-                {#if coverShown}<button class="ghost" onclick={() => useMatchCover(match)} title="Download this cover and put it on this album's tracks">Use {match.source}'s</button>{/if}
-                {#if playerCover && playerCover !== ownCover}<button class="ghost" onclick={() => applyTags(list.map(track => track.id), { artPath: playerCover }, false)} title="The picture the player sent while it played (often smaller than a database cover)">Use the player's</button>{/if}
-                <button class="ghost" onclick={() => chooseCover(false, match)} title="A JPEG or PNG of your own, on this album's tracks (or the selected ones)">Choose…</button>
-                <button class="ghost" onclick={() => chooseCover(true, match)} title="The picture on the clipboard, on this album's tracks (or the selected ones)">Paste{#if albums.length === 1}<kbd>Ctrl+V</kbd>{/if}</button>
-              </div>
+    <!-- Tags (SPEC.md › Tags): one card per album, as a table of your values beside the database's; click theirs to use it -->
+    <div class="tags-page">
+      {#if !session.albumLooked}<p class="quiet tags-note">Looking your albums up on MusicBrainz{albumProgress ? ` (${albumProgress.done} of ${albumProgress.total} tracks)` : ''}…</p>{/if}
+      {#each listAlbums as group, groupIndex (group.key + group.first)}
+        {@const list = tracks.filter(track => group.ids.includes(track.id))}
+        {@const match = matchFor(group)}
+        {@const rows = fieldRows(list, match)}
+        {@const ownCover = commonOf(list, 'artPath')}
+        {@const playerCover = list.map(track => track.playerArtPath ?? '').find(path => path && thumbs[path]) ?? ''}
+        {@const found = match ? match.trackTitles.filter(title => list.some(track => sameTitle(track.title, title))).length : 0}
+        <section class="tag-card">
+          <header class="tag-head">
+            <div class="tag-title">
+              <h4>{group.album || 'No album'}<span class="quiet">{' — '}{group.artist || 'unknown artist'}</span></h4>
+              <p class="quiet">Album {groupIndex + 1} · your tracks {tracks.indexOf(list[0]) + 1}–{tracks.indexOf(list[list.length - 1]) + 1} ({list.length}){#if match}{' · '}matched on {match.source}{match.trackTitles.length ? `: ${found} of its ${match.trackTitles.length} tracks are here` : ''}{:else if session.albumLooked}{' · '}not found online{/if}</p>
             </div>
-            <div class="album-body">
-              <div class="album-head">
-                <span><span class="suggest-source">{match.source}</span> <strong>{match.album}</strong>{match.albumArtist ? ` · ${match.albumArtist}` : ''}{match.detail ? ` · ${match.detail}` : ''}{albums.length > 1 ? ` · your tracks ${tracks.indexOf(list[0]) + 1}–${tracks.indexOf(list[list.length - 1]) + 1}` : ''}</span>
-                <span class="album-actions">
-                  {#if pending.length > 1}<button class="primary" onclick={() => useAllAlbum(match)}>Use all</button>{/if}
-                  <button class="ghost" onclick={() => openLookup(list.map(track => track.id))} title="Pick a different album for these tracks yourself">Not this album?</button>
-                </span>
+            <div class="tag-actions">
+              {#if match && rows.some(row => row.theirs && !row.same)}<button class="primary" onclick={() => useAllFrom(group, list, match)}>Use all from {match.source}</button>{/if}
+              <button class="ghost" onclick={() => openLookup(group.ids)} title="Search MusicBrainz, iTunes or Discogs for this album yourself">{match ? 'Wrong album? Search…' : 'Search…'}</button>
+            </div>
+          </header>
+          <div class="tag-body">
+            <div class="cover-pick">
+              <span class="pick-label">Cover</span>
+              <div class="cover-options">
+                <button class="cover-option" class:chosen={!!ownCover} title="Yours. Right-click or Ctrl+V pastes a picture; click to choose a file" onclick={() => chooseCoverFor(group, false)} oncontextmenu={(event) => { event.preventDefault(); chooseCoverFor(group, true) }}>
+                  {#if ownCover && thumbs[ownCover]}<img src={thumbs[ownCover]} alt="Your cover" />{:else}<span class="no-cover">{ownCover === null ? 'Mixed' : 'None'}</span>{/if}<span class="cover-caption">Yours</span>
+                </button>
+                {#if match?.artUrl && !failedCovers[match.artUrl]}<button class="cover-option" title={`Use ${match.source}'s cover for this album`} onclick={() => useCoverUrl(group, match.artUrl)}><img src={match.artUrl} alt="Cover from {match.source}" onerror={() => failedCovers = Object.assign({}, failedCovers, { [match.artUrl]: true })} /><span class="cover-caption">{match.source}</span></button>{/if}
+                {#if playerCover}<button class="cover-option" class:chosen={playerCover === ownCover} title="Use the picture the player sent" onclick={() => applyTags(group.ids, { artPath: playerCover }, false)}><img src={thumbs[playerCover]} alt="The player's picture" /><span class="cover-caption">Player</span></button>{/if}
               </div>
-              <div class="album-fields">
-                {#each offers as offer (offer.field)}
-                  <span class="field-label">{offer.label}</span>
-                  <span class="field-theirs">{offer.theirs || '—'}</span>
-                  {#if !offer.theirs}<span class="quiet">not given</span><span></span>
-                  {:else if offer.same}<span class="field-state ok">✓ yours matches</span><span></span>
-                  {:else if offer.kept}<span class="field-state">keeping yours: {offer.yours === null ? 'mixed' : offer.yours || 'empty'}</span><button class="ghost" onclick={() => keepAlbumField(albumIndex, offer.field, false)}>Undo</button>
-                  {:else}<span class="field-state">yours: {offer.yours === null ? 'differs between tracks' : offer.yours || 'empty'}</span><span class="field-buttons"><button class="ghost" onclick={() => useAlbumField(match, [offer.field])}>Use</button><button class="ghost" onclick={() => keepAlbumField(albumIndex, offer.field, true)}>Keep mine</button></span>{/if}
+              <span class="quiet cover-help">Click one to use it · right-click Yours or Ctrl+V to paste</span>
+            </div>
+            <table class="tag-table">
+              <thead><tr><th></th><th>Yours</th><th>{match ? match.source : 'Online'}</th></tr></thead>
+              <tbody>
+                {#each rows as row (row.field)}
+                  <tr>
+                    <th>{row.label}</th>
+                    <td class="mine">
+                      <div class="with-same"><input value={row.mine ?? ''} placeholder={row.mine === null ? 'differs between tracks' : row.label} onchange={(event) => setGroupField(group, row.field, (event.target as HTMLInputElement).value.trim())} />
+                      {#if row.field === 'albumArtist'}<label class="same"><input type="checkbox" checked={list.every(track => (track.albumArtist || '') === (track.artist || ''))} onchange={(event) => { if ((event.target as HTMLInputElement).checked) sameAlbumArtist(group) }} />same as artist</label>{/if}</div>
+                    </td>
+                    <td class="theirs">{#if row.theirs}<button class:same={row.same} onclick={() => setGroupField(group, row.field, row.theirs)} title={row.same ? 'Yours already matches' : `Use “${row.theirs}”`}>{row.same ? '✓ ' : '← '}{row.theirs}</button>{:else}<span class="quiet">—</span>{/if}</td>
+                  </tr>
                 {/each}
-              </div>
-              {#if match.trackTitles.length}
-                <div class="album-complete" class:complete={missing.length === 0}>{match.trackTitles.length - missing.length} of the release's {match.trackTitles.length} tracks are here{#if missing.length}{' · '}missing: {missing.join(', ')}{/if}</div>
-              {/if}
-            </div>
+              </tbody>
+            </table>
           </div>
-        {/each}
-        <div class="match-again"><button class="link" onclick={() => { if (session) session.albumLooked = false; sendToShell({ type: 'suggestAgain', id: sessionId }) }}>Match albums again</button></div>
-        {#if trackOffers.length}
-          <div class="track-offers">
-            <div class="track-offers-head"><span><strong>Titles and numbers</strong><span class="quiet">{' · '}as the release has them</span></span>{#if trackOffers.length > 1}<button class="ghost" onclick={() => useTrackOffer(trackOffers)}>Use for all {trackOffers.length}</button>{/if}</div>
-            {#each trackOffers as track (track.id)}
-              {@const suggestion = track.suggestion!}
-              <div class="suggest">
-                <span class="suggest-track">{tracks.indexOf(track) + 1}. {track.title}</span>
-                <span class="arrow">→</span>
-                {#if suggestion.title !== track.title}<span class="chip-text"><span class="chip-label">Title</span>{suggestion.title}</span>{/if}
-                {#if suggestion.trackNumber}<span class="chip-text"><span class="chip-label">No.</span>{suggestion.trackNumber}{suggestion.trackCount ? '/' + suggestion.trackCount : ''}</span>{/if}
-                <span class="suggest-actions"><button class="ghost" onclick={() => useTrackOffer([track])}>Use</button><button class="ghost" onclick={() => dismissSuggestion(track)}>Keep mine</button></span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-        {#each offAlbum as track (track.id)}
-          <div class="suggest off-album">
-            <span class="suggest-track">{tracks.indexOf(track) + 1}. {track.title}</span>
-            <span>isn't on this release.</span>
-            <span class="suggest-actions"><button class="ghost" onclick={() => openLookup([track.id])}>Look it up…</button><button class="ghost" onclick={() => dismissSuggestion(track)}>It's fine</button></span>
-          </div>
-        {/each}
-      {/if}
+          <details class="tag-tracks" open={listAlbums.length === 1}>
+            <summary>Tracks <span class="quiet">({list.length}){match && list.some(track => theirTitle(track, match) && theirTitle(track, match) !== track.title) ? ' · some titles differ from ' + match.source : ''}</span></summary>
+            <table class="tag-table tracks">
+              <thead><tr><th>No.</th><th>Artist</th><th>Title</th><th>{match ? match.source + ' title' : ''}{#if match && list.some(track => theirTitle(track, match) && theirTitle(track, match) !== track.title)}<button class="ghost small-button" onclick={() => useAllTitles(list, match)}>Use all</button>{/if}</th></tr></thead>
+              <tbody>
+                {#each list as track (track.id)}
+                  {@const theirs = match ? theirTitle(track, match) : ''}
+                  <tr>
+                    <td class="number-cell">{track.trackNumber || '–'}</td>
+                    <td class="mine"><input value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} /></td>
+                    <td class="mine"><input value={track.title} placeholder="Title" onchange={(event) => editField(track, 'title', (event.target as HTMLInputElement).value.trim())} /></td>
+                    <td class="theirs">{#if theirs}<button class:same={theirs === track.title} onclick={() => editField(track, 'title', theirs)} title={theirs === track.title ? 'Yours already matches' : `Use “${theirs}”`}>{theirs === track.title ? '✓ ' : '← '}{theirs}</button>{:else if match}<span class="quiet">not on this release</span>{/if}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+            {#if match && match.trackTitles.length && found < match.trackTitles.length}<p class="quiet missing">On the release but not here: {match.trackTitles.filter(title => !list.some(track => sameTitle(track.title, title))).join(', ')}</p>{/if}
+          </details>
+        </section>
+      {/each}
+      {#if session.albumLooked}<p class="tags-foot"><button class="link" onclick={() => { if (session) session.albumLooked = false; sendToShell({ type: 'suggestAgain', id: sessionId }) }}>Look all albums up again</button></p>{/if}
     </div>
-  {/if}
+  {:else}
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }}>
     <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span>Hear · ✓</span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Album</span><span>Year</span><span>Title</span><span>Genre</span><span>Source</span><span>Fades</span><span></span></div>
     {#each tracks as track, index (track.id)}
@@ -710,14 +756,14 @@
           <input value={group.album} placeholder="Album" title="This album's name, for all its tracks" onchange={(event) => setAlbumField(group, 'album', (event.target as HTMLInputElement).value.trim())} />
           <input class="album-year" value={group.year} placeholder="Year" title="This album's year, for all its tracks" onchange={(event) => setAlbumField(group, 'year', (event.target as HTMLInputElement).value.trim())} />
           <input value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks" onchange={(event) => setAlbumField(group, 'genre', (event.target as HTMLInputElement).value.trim())} />
-          <span class="quiet album-count">{group.ids.length} track{group.ids.length === 1 ? '' : 's'}</span>
+          <span class="album-tail"><span class="quiet album-count">{group.ids.length} track{group.ids.length === 1 ? '' : 's'}</span>{#if groupIndex > 0}<button class="ghost small-button" onclick={() => joining = { trackId: group.first, target: listAlbums[groupIndex - 1], mergeIds: group.ids }} title={`Make these ${group.ids.length} track${group.ids.length === 1 ? '' : 's'} part of ${albumName(listAlbums[groupIndex - 1])}`}>Merge with album above</button>{/if}</span>
         </div>
       {/if}
       {@const groupIndex = group ? listAlbums.indexOf(group) : -1}
       {@const above = groupIndex > 0 ? listAlbums[groupIndex - 1] : null}
       {@const below = groupIndex >= 0 && groupIndex + 1 < listAlbums.length ? listAlbums[groupIndex + 1] : null}
-      <div class="row" draggable="true" ondragstart={(event) => { if ((event.target as HTMLElement)?.matches?.('input')) { event.preventDefault(); return } dragTrack = track.id }} ondragend={() => dragTrack = ''} class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
-        <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}{#if group && group.first === track.id && above}<button class="join no-hold" onclick={(event) => { event.stopPropagation(); joining = { trackId: track.id, target: above } }} title={`Move into the album above: ${albumName(above)}`}>⤒</button>{/if}{#if group && group.ids[group.ids.length - 1] === track.id && below}<button class="join no-hold" onclick={(event) => { event.stopPropagation(); joining = { trackId: track.id, target: below } }} title={`Move into the album below: ${albumName(below)}`}>⤓</button>{/if}</span>
+      <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
+        <span class="number"><span class="drag no-hold" draggable="true" ondragstart={(event) => { dragTrack = track.id; event.dataTransfer?.setData('text/plain', track.id) }} ondragend={() => dragTrack = ''} title="Drag onto another album's header to move this track into it" role="button" tabindex="-1" aria-label="Drag to another album">⋮⋮</span><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
         <span class="hear no-hold"><button class="hear-start" class:checked={track.startChecked} class:heard={focused?.trackId === track.id && focused.edge === 'start'} class:grabbed={grab?.trackId === track.id && grab.edge === 'start'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }} title="Hear this track's start, zoomed in" aria-label="Hear start"><Icon name="play" size={11} /><span>Start</span></button><button class="hear-end" class:checked={track.endChecked} class:heard={focused?.trackId === track.id && focused.edge === 'end'} class:grabbed={grab?.trackId === track.id && grab.edge === 'end'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }} title="Hear this track's end, zoomed in" aria-label="Hear end"><span>End</span><Icon name="play" size={11} /></button><button class="ok" class:on={track.startChecked && track.endChecked} class:half={!!track.startChecked !== !!track.endChecked} onclick={(event) => { event.stopPropagation(); confirmTrack(track) }} title={track.startChecked && track.endChecked ? 'Start and end confirmed. Click to undo (Y)' : 'Happy with this start and end? Click to confirm both (Y)'} aria-label="Confirm this track's start and end">✓</button></span>
         <span class="edge-cell"><button class="time edge no-hold" class:doubt={!track.startSure && !track.startChecked} class:checked={track.startChecked} title={`${track.startNote || 'Start'}${track.startChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }}>{formatTime(track.start, rate, false)}</button>{#if track.detectedStart != null && track.detectedStart >= 0 && track.start !== track.detectedStart}<button class="revert no-hold" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'start') }} title={`Back to where it was detected (${formatTime(track.detectedStart, rate, false)})`}>↺</button>{/if}</span>
         <span class="edge-cell"><button class="time edge no-hold" class:doubt={!track.endSure && !track.endChecked} class:checked={track.endChecked} title={`${track.endNote || 'End'}${track.endChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }}>{formatDuration((track.end - track.start) / rate)}</button>{#if track.detectedEnd != null && track.detectedEnd >= 0 && track.end !== track.detectedEnd}<button class="revert no-hold" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'end') }} title={`End back to where it was detected (${formatTime(track.detectedEnd, rate, false)})`}>↺</button>{/if}</span>
@@ -735,7 +781,8 @@
       <div class="none quiet">No tracks found. Place the playhead and press N to add one, or use Redetect.</div>
     {/each}
   </div>
-  <Hint id="track-select" text="Tick tracks (or the box at the top for all) to tag, export, fade, merge or remove several at once; Ctrl/Shift+click and right-click work too. The small buttons on each row play that track's start or end." />
+  {/if}
+  {#if step !== 'tags'}<Hint id="track-select" text="Tick tracks (or the box at the top for all) to tag, export, fade, merge or remove several at once; Ctrl/Shift+click and right-click work too. The small buttons on each row play that track's start or end." />{/if}
 </div>
 {/if}
 
@@ -757,8 +804,8 @@
 {#if joining}
   {@const join = joining}
   {@const mover = tracks.find(track => track.id === join.trackId)}
-  <Dialog title="Move this track into that album?" wide text={`“${mover?.title || 'This track'}” (${albumName({ artist: mover?.albumArtist || mover?.artist || '', album: mover?.album ?? '', year: mover?.year })}) joins ${albumName(join.target)}. Which names should they share?`}
-    confirmLabel="Use that album's names" altLabel="Give that album this track's names" onconfirm={() => joinAlbum('theirs')} onalt={() => joinAlbum('mine')} oncancel={() => joining = null} />
+  <Dialog title={join.mergeIds ? 'Merge these albums?' : 'Move this track into that album?'} wide text={`${join.mergeIds ? `${join.mergeIds.length} track${join.mergeIds.length === 1 ? '' : 's'} (${albumName({ artist: mover?.albumArtist || mover?.artist || '', album: mover?.album ?? '', year: mover?.year })})` : `“${mover?.title || 'This track'}” (${albumName({ artist: mover?.albumArtist || mover?.artist || '', album: mover?.album ?? '', year: mover?.year })})`} join ${albumName(join.target)}. Which album name, album artist, year and genre should they share? Each track keeps its own artist.`}
+    confirmLabel="Use the other album's" altLabel={join.mergeIds ? 'Use these tracks\u2019' : 'Use this track\u2019s'} onconfirm={() => joinAlbum('theirs')} onalt={() => joinAlbum('mine')} oncancel={() => joining = null} />
 {/if}
 {#if exportCheck}
   {@const check = exportCheck}
@@ -843,7 +890,46 @@
   .hear .hear-start { border-radius: 7px 0 0 7px; } .hear .hear-end { border-radius: 0 7px 7px 0; border-left: 0; }
   .hear button:hover { background: var(--accent); color: var(--on-accent); }
   .hear button.checked { background: rgba(62, 207, 110, 0.18); color: #2e9e57; border-color: rgba(62, 207, 110, 0.5); }
-  .album-row { display: grid; grid-template-columns: 70px minmax(100px, 1fr) minmax(100px, 1fr) 64px minmax(80px, 0.7fr) auto; gap: 8px; align-items: center; margin-top: 6px; padding: 2px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+  .tags-page { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 2px 2px 16px; }
+  .tags-note, .tags-foot { margin: 0; font-size: 12.5px; }
+  .tag-card { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .tag-head { display: flex; align-items: flex-start; gap: 12px; }
+  .tag-title { flex: 1; min-width: 0; }
+  .tag-title h4 { margin: 0; font-size: 15px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg); }
+  .tag-title p { margin: 2px 0 0; font-size: 12px; }
+  .tag-actions { display: flex; gap: 6px; flex: none; }
+  .tag-body { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: start; }
+  .cover-pick { display: flex; flex-direction: column; gap: 6px; }
+  .pick-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-quiet); font-weight: 600; }
+  .cover-options { display: flex; gap: 8px; }
+  .cover-option { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; border-radius: 8px; border: 2px solid transparent; background: none; cursor: pointer; color: var(--fg); font: inherit; }
+  .cover-option:hover { border-color: var(--line); }
+  .cover-option.chosen { border-color: var(--accent); }
+  .cover-option img, .cover-option .no-cover { width: 84px; height: 84px; object-fit: cover; border-radius: 5px; background: var(--hover); display: grid; place-items: center; font-size: 12px; color: var(--fg-quiet); }
+  .cover-caption { font-size: 11px; color: var(--fg-quiet); }
+  .cover-help { font-size: 11px; max-width: 290px; }
+  .tag-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  .tag-table:not(.tracks) th:first-child { width: 100px; }
+  .tag-table.tracks th:first-child { width: 44px; }
+  .tag-table th { text-align: left; font-weight: 500; color: var(--fg-quiet); padding: 3px 8px 3px 0; white-space: nowrap; font-size: 12px; }
+  .tag-table thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  .tag-table td { padding: 2px 6px 2px 0; vertical-align: middle; }
+  .tag-table td.mine { width: 48%; }
+  .tag-table td.mine .with-same { display: flex; align-items: center; gap: 10px; }
+  .tag-table td.mine .with-same > input { flex: 1; min-width: 0; padding: 3px 8px; }
+  .tag-table td.mine input[type=text], .tag-table td.mine > input:not([type]) { width: 100%; padding: 3px 8px; }
+  .tag-table td.mine .same { display: inline-flex; flex-direction: row; gap: 4px; align-items: center; font-size: 11.5px; color: var(--fg-quiet); white-space: nowrap; flex: none; }
+  .tag-table td.theirs button { width: 100%; text-align: left; padding: 3px 8px; border-radius: 6px; border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); color: var(--fg); font: inherit; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag-table td.theirs button:hover { border-style: solid; border-color: var(--accent); }
+  .tag-table td.theirs button.same { background: none; border-color: transparent; color: #2e9e57; }
+  .tag-tracks summary { cursor: pointer; font-size: 13px; font-weight: 600; padding: 2px 0; }
+  .tag-table.tracks td.mine { width: auto; }
+  .number-cell { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); width: 34px; text-align: center; }
+  .missing { margin: 6px 0 0; font-size: 12px; }
+  .small-button { padding: 1px 8px; font-size: 11.5px; min-height: 0; height: 22px; margin-left: 8px; }
+  .album-tail { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+  .drag { cursor: grab; color: var(--fg-quiet); font-size: 11px; padding: 0 3px; user-select: none; }
+  .album-row { display: grid; grid-template-columns: 70px minmax(100px, 1fr) minmax(100px, 1fr) 64px minmax(80px, 0.7fr) minmax(220px, auto); gap: 8px; align-items: center; margin-top: 6px; padding: 2px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
   .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .album-year { text-align: center; }
   .album-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-quiet); font-weight: 600; }
