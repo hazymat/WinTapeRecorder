@@ -235,6 +235,15 @@
     return list
   })
   const albumOf = (trackId: string) => listAlbums.find(group => group.ids.includes(trackId))
+  // Fill: every track in the album gets the header's artist (and album artist), album, year and genre, as typed now
+  function fillFromHeader(group: ListAlbum, header: HTMLElement | null) {
+    if (!header) return
+    const value = (selector: string) => ((header.querySelector(selector) as HTMLInputElement | null)?.value ?? '').trim()
+    const artist = value('.cell-artist'), album = value('.cell-album'), year = value('.cell-year'), genre = value('.cell-genre')
+    const next = copy()
+    for (const track of next) if (group.ids.includes(track.id)) { if (artist) { track.artist = artist; track.albumArtist = artist } track.album = album; track.year = year; track.genre = genre; track.exported = false }
+    commit(next, `Album details filled into ${group.ids.length} track${group.ids.length === 1 ? '' : 's'}`)
+  }
   function setAlbumField(group: ListAlbum, field: 'artist' | 'album' | 'year' | 'genre', value: string) {
     const next = copy()
     for (const track of next) if (group.ids.includes(track.id)) {
@@ -849,6 +858,7 @@
             <input class="cell-artist" value={group.artist} placeholder="Artist" title="Artist and album artist for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'artist', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'artist', value) } }} />
             <input class="cell-album" value={group.album} placeholder="Album" title="This album's name, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'album', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'album', value) } }} />
             <input class="cell-year album-year" value={group.year} placeholder="Year" title="This album's year, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'year', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'year', value) } }} />
+            <button class="ghost small-button cell-fill" onclick={(event) => fillFromHeader(group, (event.currentTarget as HTMLElement).closest('.album-row') as HTMLElement)} title="Set every track in this album to the artist, album, year and genre in this header">Fill all tracks ↓</button>
             <input class="cell-genre" value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'genre', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'genre', value) } }} />
           </div>
         {:else}
@@ -1053,7 +1063,7 @@
   .album-row.row-grid { display: grid; grid-template-columns: 52px 160px 88px 82px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; padding: 3px 8px; }
   .row-grid .album-label .album-count { text-transform: none; letter-spacing: 0; font-weight: 400; }
   .row-grid .album-label { grid-column: 1 / 6; display: flex; gap: 10px; align-items: baseline; white-space: nowrap; overflow: hidden; }
-  .row-grid .cell-artist { grid-column: 6; } .row-grid .cell-album { grid-column: 7; } .row-grid .cell-year { grid-column: 8; } .row-grid .cell-genre { grid-column: 10; }
+  .row-grid .cell-artist { grid-column: 6; } .row-grid .cell-album { grid-column: 7; } .row-grid .cell-year { grid-column: 8; } .row-grid .cell-genre { grid-column: 10; } .row-grid .cell-fill { grid-column: 9; justify-self: start; margin-left: 0; }
   .album-row.lifted { opacity: 0.85; box-shadow: 0 8px 22px var(--shadow); cursor: grabbing; }
   .split-zone { margin: 6px 0; padding: 10px; border: 2px dashed var(--line); border-radius: 8px; text-align: center; font-size: 12.5px; color: var(--fg-quiet); }
   .split-zone.over { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
