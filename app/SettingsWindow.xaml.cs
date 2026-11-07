@@ -251,7 +251,7 @@ public partial class SettingsWindow : Window
         uiScaleResetButton.Click += (sender, args) => uiScaleSlider.Value = 100;
         void ShowGlass()
         {
-            glassTransparencyText.Text = general.GlassTransparency < 0 ? $"{(int)glassTransparencySlider.Value}% (default)" : $"{general.GlassTransparency}%";
+            glassTransparencyText.Text = general.GlassTransparency < 0 ? $"{(int)glassTransparencySlider.Value}%  default" : $"{general.GlassTransparency}%";
             glassTintText.Text = general.GlassTintHue == 0 ? "Neutral" : $"{general.GlassTintHue}°";
             glassTintSwatch.Background = new System.Windows.Media.SolidColorBrush(general.GlassTintHue == 0 ? System.Windows.Media.Color.FromRgb(30, 32, 38) : HueColour(general.GlassTintHue));
         }
@@ -263,7 +263,9 @@ public partial class SettingsWindow : Window
         glassInactiveBox.IsChecked = general.GlassWhenInactive;
         glassInactiveBox.Click += (sender, args) => { general.GlassWhenInactive = glassInactiveBox.IsChecked == true; Settings.Save(); App.RefreshInactiveGlass(); };
         glassBox.IsChecked = general.Glass; framelessBox.IsChecked = general.Frameless;
-        glassBox.Click += (sender, args) => { general.Glass = glassBox.IsChecked == true; Settings.Save(); App.ApplyWindowStyle(); };
+        void ShowGlassEnabled() => glassControls.IsEnabled = general.Glass;
+        ShowGlassEnabled();
+        glassBox.Click += (sender, args) => { general.Glass = glassBox.IsChecked == true; Settings.Save(); App.ApplyWindowStyle(); ShowGlassEnabled(); };
         framelessBox.Click += (sender, args) => { general.Frameless = framelessBox.IsChecked == true; Settings.Save(); App.ApplyWindowStyle(); };
     }
 
