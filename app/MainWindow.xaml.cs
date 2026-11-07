@@ -97,6 +97,7 @@ public partial class MainWindow : Window
                 case "record": App.StartRecording(Text(message, "profileId"), Text(message, "source") is { Length: > 0 } source ? source : "auto", Text(message, "name")); break;
                 case "stopRecording": var stopped = App.StopRecording(); Reply(message, new { sessionId = stopped?.Id ?? "" }); break;
                 case "marker": App.AddMarker(); break;
+                case "setSource": App.MonitorSource = Text(message, "source") is { Length: > 0 } chosenSource ? chosenSource : "auto"; App.RaiseNamesUpdated(); break;
                 case "setActiveProfile":
                     if (Text(message, "kind") == "recording") App.Settings.ActiveRecordingProfileId = Text(message, "profileId"); else App.Settings.ActiveOutputProfileId = Text(message, "profileId");
                     App.Settings.Save(); PushSettings();

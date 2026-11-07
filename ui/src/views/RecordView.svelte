@@ -8,6 +8,7 @@
   // The recorder (SPEC.md › Recording): choose a profile and where track names come from, check the level, record
   let sessionName = $state('')
   let source = $state('auto')
+  $effect(() => { sendToShell({ type: 'setSource', source }) }) // Now playing follows the chosen source before recording too
   const recording = $derived(!!app.status?.recording)
   const profileId = $derived(app.activeRecording)
 

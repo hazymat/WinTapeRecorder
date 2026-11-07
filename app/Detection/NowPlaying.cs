@@ -14,55 +14,103 @@ public record NameSource(string Key, string Kind, string App, string Label, stri
     public string NameKey => Artist + "\u0001" + Title;
 }
 
-// Generic now-playing detection (SPEC.md › Track detection): Windows' media info and browser window titles through the user's rules
+// Generic now-playing detection (SPEC.md › Track detection): Windows' media info and browser window titles through the user's rules.
+// Media sessions are followed through Windows' own change events (title, playback, current session), so a new track shows within a moment;
+// a slower poll is only a safety net, and every Windows call has a time limit so one stuck app can't freeze the rest.
 public sealed class NowPlayingWatcher
 {
     GlobalSystemMediaTransportControlsSessionManager? mediaManager;
+    readonly Dictionary<string, GlobalSystemMediaTransportControlsSession> mediaSessions = new(); // kept so their events stay alive
+    readonly Dictionary<string, NameSource> mediaSources = new();
+    readonly Dictionary<string, DateTime> startedPlayingAt = new();
+    readonly Dictionary<string, DateTime> lastPlayingAt = new(); // players flicker through "changing" or "paused" between tracks
+    string currentMediaKey = "";
+    List<NameSource> windowSources = new();
     readonly Dictionary<int, string> processNames = new();
-    public List<NameSource> Sources { get; private set; } = new();
+    readonly object sourcesLock = new();
+    public List<NameSource> Sources { get { lock (sourcesLock) return mediaSources.Values.Concat(windowSources).ToList(); } }
     public event Action? Updated;
-    readonly System.Threading.Timer pollTimer;
-    bool polling;
-    Func<AppSettings> settings;
+    readonly System.Threading.Timer windowTimer, mediaTimer;
+    bool windowsBusy, mediaBusy;
+    readonly Func<AppSettings> settings;
 
     public NowPlayingWatcher(Func<AppSettings> settingsProvider)
     {
         settings = settingsProvider;
-        pollTimer = new System.Threading.Timer(_ => _ = PollAsync(), null, 300, 700);
+        windowTimer = new System.Threading.Timer(_ => PollWindows(), null, 300, 500);
+        mediaTimer = new System.Threading.Timer(_ => _ = RefreshAllMediaAsync(), null, 200, 2000);
     }
 
-    async Task PollAsync()
+    static async Task<T?> Limited<T>(Windows.Foundation.IAsyncOperation<T> operation) where T : class
     {
-        if (polling) return;
-        polling = true;
+        var task = operation.AsTask();
+        return await Task.WhenAny(task, Task.Delay(2000)) == task ? await task : null;
+    }
+
+    void PollWindows()
+    {
+        if (windowsBusy) return;
+        windowsBusy = true;
+        try { var found = WindowSources(settings()); lock (sourcesLock) windowSources = found; Updated?.Invoke(); }
+        catch { }
+        finally { windowsBusy = false; }
+    }
+
+    async Task RefreshAllMediaAsync()
+    {
+        if (mediaBusy) return;
+        mediaBusy = true;
         try
         {
-            var found = new List<NameSource>();
-            try { found.AddRange(await MediaSourcesAsync()); } catch { }
-            try { found.AddRange(WindowSources(settings())); } catch { }
-            Sources = found;
+            if (mediaManager == null)
+            {
+                mediaManager = await Limited(GlobalSystemMediaTransportControlsSessionManager.RequestAsync());
+                if (mediaManager == null) return;
+                mediaManager.SessionsChanged += (sender, args) => _ = RefreshAllMediaAsync();
+                mediaManager.CurrentSessionChanged += (sender, args) => { NoteCurrentSession(); Updated?.Invoke(); };
+            }
+            var sessions = mediaManager.GetSessions().ToList();
+            var keys = sessions.Select(session => "media:" + session.SourceAppUserModelId).ToHashSet();
+            lock (sourcesLock) foreach (var gone in mediaSources.Keys.Where(key => !keys.Contains(key)).ToList()) { mediaSources.Remove(gone); mediaSessions.Remove(gone); startedPlayingAt.Remove(gone); }
+            foreach (var session in sessions) { Hook(session); await RefreshMediaAsync(session, false); }
+            NoteCurrentSession();
             Updated?.Invoke();
         }
-        finally { polling = false; }
+        catch { }
+        finally { mediaBusy = false; }
     }
 
-    async Task<List<NameSource>> MediaSourcesAsync()
+    void Hook(GlobalSystemMediaTransportControlsSession session)
     {
-        mediaManager ??= await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-        var sources = new List<NameSource>();
-        foreach (var mediaSession in mediaManager.GetSessions())
+        var key = "media:" + session.SourceAppUserModelId;
+        lock (sourcesLock) { if (mediaSessions.TryGetValue(key, out var known) && ReferenceEquals(known, session)) return; mediaSessions[key] = session; }
+        session.MediaPropertiesChanged += (sender, args) => _ = RefreshMediaAsync(sender, true);
+        session.PlaybackInfoChanged += (sender, args) => _ = RefreshMediaAsync(sender, true);
+    }
+
+    void NoteCurrentSession() { try { currentMediaKey = mediaManager?.GetCurrentSession() is { } current ? "media:" + current.SourceAppUserModelId : ""; } catch { } }
+
+    async Task RefreshMediaAsync(GlobalSystemMediaTransportControlsSession session, bool announce)
+    {
+        try
         {
-            try
+            var properties = await Limited(session.TryGetMediaPropertiesAsync());
+            var playing = session.GetPlaybackInfo()?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+            var key = "media:" + session.SourceAppUserModelId; var app = FriendlyApp(session.SourceAppUserModelId);
+            var source = new NameSource(key, "media", app, $"Media info: {app}", properties?.Artist?.Trim() ?? "", properties?.Title?.Trim() ?? "", properties?.AlbumTitle?.Trim() ?? "", playing, "");
+            lock (sourcesLock)
             {
-                var properties = await mediaSession.TryGetMediaPropertiesAsync();
-                var playing = mediaSession.GetPlaybackInfo()?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
-                var app = FriendlyApp(mediaSession.SourceAppUserModelId);
-                var title = properties?.Title?.Trim() ?? ""; var artist = properties?.Artist?.Trim() ?? ""; var album = properties?.AlbumTitle?.Trim() ?? "";
-                sources.Add(new NameSource("media:" + mediaSession.SourceAppUserModelId, "media", app, $"Media info: {app}", artist, title, album, playing, ""));
+                var wasPlaying = mediaSources.TryGetValue(key, out var previous) && previous.Playing;
+                if (playing && !wasPlaying) startedPlayingAt[key] = DateTime.UtcNow;
+                if (playing) lastPlayingAt[key] = DateTime.UtcNow;
+                if (!playing) startedPlayingAt.Remove(key);
+                // Players blank the title for a moment between tracks: keep the last name until the next one arrives, so nothing else is picked meanwhile
+                var blank = properties == null || source.Title == "";
+                mediaSources[key] = blank && previous != null && playing ? previous with { Playing = playing } : source;
             }
-            catch { }
+            if (announce) { NoteCurrentSession(); Updated?.Invoke(); }
         }
-        return sources;
+        catch { }
     }
 
     static string FriendlyApp(string appId)
@@ -131,14 +179,25 @@ public sealed class NowPlayingWatcher
         return ("", cleaned, "", "");
     }
 
-    // Which name a recording follows: a chosen source, or "auto" (a playing media session, else a window a rule recognises)
+    // Which name a recording follows: a chosen source, or "auto": the playing media session Windows calls current, else the one that started
+    // playing most recently (so switching players follows at once, and a paused one drops out), else a window a rule recognises
     public NameSource? Current(string sourceKey, RecordingProfileSnapshot profile)
     {
         var sources = Sources;
         if (sourceKey == "none") return null;
         if (sourceKey != "auto") { var chosen = sources.FirstOrDefault(source => source.Key == sourceKey); return chosen != null && Allowed(chosen, profile) ? chosen : null; }
-        return sources.FirstOrDefault(source => source.Kind == "media" && source.Playing && source.HasName && profile.UseMediaInfo)
-            ?? sources.FirstOrDefault(source => source.Kind == "window" && source.Rule != "" && profile.UseWindowTitles);
+        if (profile.UseMediaInfo)
+        {
+            var playing = sources.Where(source => source.Kind == "media" && source.Playing && source.HasName).ToList();
+            DateTime StartedAt(NameSource source) { lock (sourcesLock) return startedPlayingAt.TryGetValue(source.Key, out var at) ? at : DateTime.MinValue; }
+            var best = playing.FirstOrDefault(source => source.Key == currentMediaKey) ?? playing.OrderByDescending(StartedAt).FirstOrDefault();
+            if (best != null) return best;
+            // Between tracks a player can briefly stop saying "playing": stay with it rather than jumping to a window title
+            DateTime LastPlayed(NameSource source) { lock (sourcesLock) return lastPlayingAt.TryGetValue(source.Key, out var at) ? at : DateTime.MinValue; }
+            var recent = sources.Where(source => source.Kind == "media" && source.HasName && DateTime.UtcNow - LastPlayed(source) < TimeSpan.FromSeconds(15)).OrderByDescending(LastPlayed).FirstOrDefault();
+            if (recent != null) return recent;
+        }
+        return profile.UseWindowTitles ? sources.FirstOrDefault(source => source.Kind == "window" && source.Rule != "") : null;
     }
 
     static bool Allowed(NameSource source, RecordingProfileSnapshot profile) => source.Kind == "media" ? profile.UseMediaInfo : profile.UseWindowTitles;

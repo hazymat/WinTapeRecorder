@@ -31,6 +31,7 @@ public partial class App : Application
 
     // Which name source the current recording follows, and the last name noted
     public string RecordingSource { get; private set; } = "auto";
+    public string MonitorSource { get; set; } = "auto"; // the Record view's choice before recording starts
     string lastNameKey = "";
     public NameSource? CurrentName { get; private set; }
 
@@ -123,10 +124,15 @@ public partial class App : Application
         session.Save(); StatusChanged?.Invoke();
     }
 
+    public void RaiseNamesUpdated() => OnNamesUpdated();
     void OnNamesUpdated()
     {
         if (Recorder.Recording) NoteName();
-        else CurrentName = Watcher.Current("auto", Snapshot(Settings.ActiveRecordingProfile));
+        else
+        {
+            var previous = CurrentName; CurrentName = Watcher.Current(MonitorSource, Snapshot(Settings.ActiveRecordingProfile));
+            if (previous?.Key != CurrentName?.Key || previous?.NameKey != CurrentName?.NameKey) StatusChanged?.Invoke(); // the Record view shows it straight away
+        }
         mainWindow.PushSources();
     }
 
