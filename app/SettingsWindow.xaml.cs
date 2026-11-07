@@ -197,6 +197,9 @@ public partial class SettingsWindow : Window
         tagAlbumArtistBox.TextChanged += (sender, args) => { if (!filling && EditedOutput is { } profile) { profile.AlbumArtist = tagAlbumArtistBox.Text; Changed(); } };
         tagGenreBox.TextChanged += (sender, args) => { if (!filling && EditedOutput is { } profile) { profile.Genre = tagGenreBox.Text; Changed(); } };
         tagCommentBox.TextChanged += (sender, args) => { if (!filling && EditedOutput is { } profile) { profile.Comment = tagCommentBox.Text; Changed(); } };
+        embedCoverBox.Click += (sender, args) => { if (EditedOutput is { } profile) { profile.EmbedCover = embedCoverBox.IsChecked == true; Changed(); } };
+        saveCoverBox.Click += (sender, args) => { if (EditedOutput is { } profile) { profile.SaveCoverFile = saveCoverBox.IsChecked == true; coverNameBox.IsEnabled = profile.SaveCoverFile; Changed(); } };
+        coverNameBox.TextChanged += (sender, args) => { if (!filling && EditedOutput is { } profile) { profile.CoverFileName = coverNameBox.Text.Trim(); Changed(); } };
         ShowOutputProfile();
     }
 
@@ -209,6 +212,7 @@ public partial class SettingsWindow : Window
         bitrateCombo.SelectedItem = bitrateCombo.Items.Cast<ComboBoxItem>().FirstOrDefault(item => (string)item.Tag == profile.BitrateKbps.ToString()) ?? bitrateCombo.Items[3];
         bitratePanel.Visibility = profile.Format is "mp3" or "m4a" ? Visibility.Visible : Visibility.Collapsed;
         outputFolderBox.Text = FolderOrDefault(profile.Folder, AppPaths.DefaultOutputFolder);
+        embedCoverBox.IsChecked = profile.EmbedCover; saveCoverBox.IsChecked = profile.SaveCoverFile; coverNameBox.Text = profile.CoverFileName; coverNameBox.IsEnabled = profile.SaveCoverFile;
         templateBox.Text = profile.Template; tagAlbumBox.Text = profile.Album; tagAlbumArtistBox.Text = profile.AlbumArtist; tagGenreBox.Text = profile.Genre; tagCommentBox.Text = profile.Comment;
         removeOutputButton.IsEnabled = Settings.OutputProfiles.Count > 1;
         filling = false;

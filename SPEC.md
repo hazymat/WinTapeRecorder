@@ -52,7 +52,7 @@ A change of now-playing text drops a marker at that moment (minus a latency offs
 - Tick boxes on every track and a select-all box; the selection bar acts on the ticked tracks.
 - Tags per track: title, artist, album, album artist, genre, year, composer, track number and count, comment, cover picture. Several tracks can be tagged at once (empty fields stay as each track has them).
 - Online lookup: MusicBrainz (covers from the Cover Art Archive) and iTunes need no account; Discogs uses the user's own token (Settings › General). Amazon has no public catalogue API. Pick a result and choose which fields to take.
-- Cover pictures are fetched or chosen from disk, kept in the session folder and embedded on export.
+- Cover pictures are fetched or chosen from disk (JPEG or PNG), kept in the session folder, and on export embedded in the tags and/or saved beside the tracks as a picture file (output profile: on/off and its name, default folder.jpg).
 
 ## Export
 

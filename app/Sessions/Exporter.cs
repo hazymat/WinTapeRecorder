@@ -72,6 +72,7 @@ public static class Exporter
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 WriteAudio(audio, track, path, profile, session);
                 WriteTags(path, track, number, allTracks.Count, session, profile);
+                SaveCoverFile(path, track, profile);
                 track.Exported = true; track.ExportedPath = path; done++;
             }
             catch (Exception exportError) { errors.Add($"{Path.GetFileName(path)}: {exportError.Message}"); try { if (File.Exists(path)) File.Delete(path); } catch { } }
@@ -155,6 +156,14 @@ public static class Exporter
         }
     }
 
+    // The cover as a picture in the track's folder (Settings › Output profiles), e.g. folder.jpg, which players and Windows show
+    static void SaveCoverFile(string trackPath, Track track, OutputProfile profile)
+    {
+        if (!profile.SaveCoverFile || track.ArtPath == "" || !File.Exists(track.ArtPath)) return;
+        var name = NameTemplate.SafeName(Path.GetFileNameWithoutExtension(profile.CoverFileName.Trim() == "" ? "folder" : profile.CoverFileName.Trim()));
+        File.Copy(track.ArtPath, Path.Combine(Path.GetDirectoryName(trackPath)!, name + Path.GetExtension(track.ArtPath).ToLowerInvariant()), true);
+    }
+
     static void WriteTags(string path, Track track, int number, int count, Session session, OutputProfile profile)
     {
         using var tagFile = TagLib.File.Create(path);
@@ -171,7 +180,7 @@ public static class Exporter
         if (track.Composer != "") tag.Composers = new[] { track.Composer };
         tag.Track = (uint)(track.TrackNumber > 0 ? track.TrackNumber : number); tag.TrackCount = (uint)(track.TrackCount > 0 ? track.TrackCount : count);
         tag.Year = uint.TryParse(track.Year, out var year) && year > 0 ? year : (uint)session.Created.Year;
-        if (track.ArtPath != "" && File.Exists(track.ArtPath)) tag.Pictures = new TagLib.IPicture[] { new TagLib.Picture(track.ArtPath) { Type = TagLib.PictureType.FrontCover, Description = "Cover" } };
+        if (profile.EmbedCover && track.ArtPath != "" && File.Exists(track.ArtPath)) tag.Pictures = new TagLib.IPicture[] { new TagLib.Picture(track.ArtPath) { Type = TagLib.PictureType.FrontCover, Description = "Cover" } };
         tagFile.Save();
     }
 }

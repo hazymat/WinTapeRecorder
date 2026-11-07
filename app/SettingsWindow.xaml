@@ -186,6 +186,14 @@
               <TextBlock Grid.Row="2" Text="Genre" VerticalAlignment="Center" /><TextBox Grid.Row="2" Grid.Column="1" x:Name="tagGenreBox" Margin="0,3" />
               <TextBlock Grid.Row="3" Text="Comment" VerticalAlignment="Center" /><TextBox Grid.Row="3" Grid.Column="1" x:Name="tagCommentBox" Margin="0,3" />
             </Grid>
+            <TextBlock Style="{StaticResource Heading}" Text="Cover picture" />
+            <CheckBox x:Name="embedCoverBox" Content="Put the cover inside each file's tags" />
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+              <CheckBox x:Name="saveCoverBox" Content="Also save it in the tracks' folder as" Margin="0" VerticalAlignment="Center" />
+              <TextBox x:Name="coverNameBox" Width="140" Margin="8,0,4,0" />
+              <TextBlock Text=".jpg or .png" VerticalAlignment="Center" Foreground="#666" />
+            </StackPanel>
+            <TextBlock Style="{StaticResource Quiet}" Text="Pictures come from Tags… in a session: choose your own JPEG or PNG, or take one from an online lookup." />
           </StackPanel>
         </ScrollViewer>
       </Grid>

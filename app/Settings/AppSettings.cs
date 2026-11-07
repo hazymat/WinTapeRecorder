@@ -46,6 +46,9 @@ public class OutputProfile
     public string AlbumArtist { get; set; } = "";
     public string Genre { get; set; } = "";
     public string Comment { get; set; } = "";
+    public bool EmbedCover { get; set; } = true; // the cover inside each file's tags
+    public bool SaveCoverFile { get; set; } = true; // and as a picture beside the tracks
+    public string CoverFileName { get; set; } = "folder"; // without extension: .jpg or .png follows the picture
     public override string ToString() => Name;
 }
 
