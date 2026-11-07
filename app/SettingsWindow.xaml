@@ -7,6 +7,17 @@
     <Style TargetType="Button"><Setter Property="Padding" Value="12,4" /><Setter Property="Margin" Value="0,0,8,0" /></Style>
     <Style TargetType="CheckBox"><Setter Property="Margin" Value="0,8,0,0" /></Style>
     <Style TargetType="TextBox" x:Key="Small"><Setter Property="Width" Value="80" /><Setter Property="HorizontalAlignment" Value="Left" /></Style>
+    <!-- Explanations as callouts (a tinted panel with an accent edge), tables (a read-only list) and expandable panels, rather than loose grey text -->
+    <Style TargetType="Border" x:Key="Callout"><Setter Property="Background" Value="#EEF4FB" /><Setter Property="BorderBrush" Value="#2F7FD8" /><Setter Property="BorderThickness" Value="3,0,0,0" /><Setter Property="CornerRadius" Value="3" /><Setter Property="Padding" Value="12,8" /><Setter Property="HorizontalAlignment" Value="Stretch" /></Style>
+    <Style TargetType="Border" x:Key="Warning" BasedOn="{StaticResource Callout}"><Setter Property="Background" Value="#FFF6E5" /><Setter Property="BorderBrush" Value="#E0A030" /></Style>
+    <Style TargetType="TextBlock" x:Key="CalloutText"><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="Foreground" Value="#2B3340" /><Setter Property="LineHeight" Value="19" /></Style>
+    <Style TargetType="Expander" x:Key="Panel"><Setter Property="Margin" Value="0,10,0,0" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="#2F7FD8" /></Style>
+    <Style TargetType="StackPanel" x:Key="PanelBody"><Setter Property="Margin" Value="0,6,0,4" /><Setter Property="TextElement.FontWeight" Value="Normal" /><Setter Property="TextElement.Foreground" Value="#1B1E24" /></Style>
+    <Style TargetType="ListView" x:Key="Table">
+      <Setter Property="BorderBrush" Value="#E2E2E2" /><Setter Property="BorderThickness" Value="1" /><Setter Property="Background" Value="White" /><Setter Property="HorizontalAlignment" Value="Left" /><Setter Property="Focusable" Value="False" /><Setter Property="IsHitTestVisible" Value="False" /><Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" /><Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+      <Setter Property="ItemContainerStyle"><Setter.Value><Style TargetType="ListViewItem"><Setter Property="Focusable" Value="False" /><Setter Property="Padding" Value="4,3" /><Setter Property="Foreground" Value="#1B1E24" /><Style.Triggers><Trigger Property="ItemsControl.AlternationIndex" Value="1"><Setter Property="Background" Value="#F6F8FB" /></Trigger></Style.Triggers></Style></Setter.Value></Setter>
+      <Setter Property="AlternationCount" Value="2" />
+    </Style>
     <!-- Settings pages in a left sidebar, grouped under small section headings; the page's name heads its content (as WinSqueeze) -->
     <Style TargetType="TabControl">
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabControl">
@@ -57,7 +68,7 @@
               <Button x:Name="refreshRecordingDevicesButton" DockPanel.Dock="Right" Content="Refresh" Margin="8,0,0,0" />
               <ComboBox x:Name="recordingDeviceCombo" DisplayMemberPath="Label" />
             </DockPanel>
-            <TextBlock Style="{StaticResource Quiet}" Text="An output records what that device plays (loopback); an input records what comes in." />
+<Border Style="{StaticResource Callout}" Margin="0,8,0,0"><TextBlock Style="{StaticResource CalloutText}" Text="An output device records what it plays (loopback), exactly as the player sends it. An input device records what comes in. Keep a loopback device's Windows volume at 100% while recording." /></Border>
             <TextBlock Style="{StaticResource Label}" Text="WAV format" />
             <ComboBox x:Name="bitDepthCombo" Width="200" HorizontalAlignment="Left">
               <ComboBoxItem Content="16-bit" Tag="16" />
@@ -80,7 +91,7 @@
               <TextBlock Text="ms" VerticalAlignment="Center" Margin="6,0,0,0" />
             </StackPanel>
             <TextBlock Style="{StaticResource Heading}" Text="Gap detection" />
-            <TextBlock Style="{StaticResource Quiet}" Text="Like a noise gate: sound above the threshold for the attack time starts a track; silence for the release time ends it. Changes apply to new recordings and to Redetect in a session." />
+            <Border Style="{StaticResource Callout}" Margin="0,4,0,0"><TextBlock Style="{StaticResource CalloutText}" Text="Works like a noise gate: sound above the threshold for the attack time starts a track, silence for the release time ends it. Pre-roll and post-roll are kept either side. A name change looks for the nearest gap within its window. Changes apply to new recordings and to Redetect in a session." /></Border>
             <Grid Margin="0,6,0,0">
               <Grid.ColumnDefinitions><ColumnDefinition Width="170" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
               <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
@@ -105,7 +116,8 @@
         <TextBlock Text="Browser programs (window titles are read from these)" />
         <TextBox x:Name="browsersBox" Margin="0,4,0,0" />
         <TextBlock Style="{StaticResource Heading}" Text="Rules" />
-        <TextBlock Style="{StaticResource Quiet}" Text="Each rule is a regular expression tried on a browser window's title (with the browser's name taken off). Named groups artist, title and album pick out the parts. The first rule that matches wins; with none, the whole title is the track name." />
+<Border Style="{StaticResource Callout}" Margin="0,4,0,0"><TextBlock Style="{StaticResource CalloutText}" Text="Each rule is a regular expression tried on a browser window's title, with the browser's name taken off. Named groups artist, title and album pick out the parts. The first rule that matches wins; with none, the whole title becomes the track name." /></Border>
+        <Expander Style="{StaticResource Panel}" Header="The example rules"><StackPanel Style="{StaticResource PanelBody}"><ListView x:Name="rulesExampleTable" Style="{StaticResource Table}" Margin="0,0,0,0"><ListView.View><GridView><GridViewColumn Header="Site" DisplayMemberBinding="{Binding Key}" Width="150" /><GridViewColumn Header="A window title like…" DisplayMemberBinding="{Binding Value}" Width="440" /></GridView></ListView.View></ListView></StackPanel></Expander>
         <Grid Margin="0,8,0,0">
           <Grid.ColumnDefinitions><ColumnDefinition Width="190" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
           <DockPanel Margin="0,0,12,0">
@@ -174,10 +186,10 @@
             </DockPanel>
             <TextBlock Style="{StaticResource Label}" Text="Folders and file name (/ starts a folder)" />
             <TextBox x:Name="templateBox" FontFamily="Consolas" />
-            <TextBlock x:Name="templateExampleText" Style="{StaticResource Quiet}" />
-            <TextBlock Style="{StaticResource Quiet}" Text="Tokens: {artist} {title} {album} {track} {track:00} {tracks} {year} {date} {session} {source}" />
-            <TextBlock Style="{StaticResource Heading}" Text="Tags" />
-            <TextBlock Style="{StaticResource Quiet}" Text="Title, artist and track number come from each track. These fill the rest; tokens work here too. A track's own album wins over the album here." />
+            <Border Style="{StaticResource Callout}" Margin="0,6,0,0"><StackPanel><TextBlock Text="Example" FontSize="11" FontWeight="SemiBold" Foreground="#2F7FD8" /><TextBlock x:Name="templateExampleText" Style="{StaticResource CalloutText}" FontFamily="Consolas" FontSize="12" /></StackPanel></Border>
+            <Expander Style="{StaticResource Panel}" Header="Tokens you can use"><StackPanel Style="{StaticResource PanelBody}"><ListView x:Name="tokensTable" Style="{StaticResource Table}" Margin="0,0,0,0"><ListView.View><GridView><GridViewColumn Header="Token" DisplayMemberBinding="{Binding Key}" Width="130" /><GridViewColumn Header="Becomes" DisplayMemberBinding="{Binding Value}" Width="430" /></GridView></ListView.View></ListView><TextBlock Margin="0,6,0,0" Foreground="#555" TextWrapping="Wrap" Text="Characters Windows won't allow in a name are swapped for lookalikes. A / in the template starts a folder." /></StackPanel></Expander>
+            <TextBlock Style="{StaticResource Heading}" Text="Tag defaults" />
+            <Border Style="{StaticResource Callout}" Margin="0,4,0,0"><TextBlock Style="{StaticResource CalloutText}" Text="Normally leave these empty: tag the tracks themselves in the session (Tags…, or Look up… for MusicBrainz, iTunes and Discogs). Anything here is only used for a file whose track has that tag empty. Before exporting, tracks still missing artist, album, album artist or genre are pointed out." /></Border>
             <Grid Margin="0,4,0,0">
               <Grid.ColumnDefinitions><ColumnDefinition Width="110" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
               <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
@@ -193,7 +205,7 @@
               <TextBox x:Name="coverNameBox" Width="140" Margin="8,0,4,0" />
               <TextBlock Text=".jpg or .png" VerticalAlignment="Center" Foreground="#666" />
             </StackPanel>
-            <TextBlock Style="{StaticResource Quiet}" Text="Pictures come from Tags… in a session: choose your own JPEG or PNG, or take one from an online lookup." />
+<Border Style="{StaticResource Callout}" Margin="0,8,0,0"><TextBlock Style="{StaticResource CalloutText}" Text="Pictures come from Tags… in a session: choose your own JPEG or PNG, or take one from an online lookup. A picture saved beside the tracks (folder.jpg) is what Windows and most players show for the album." /></Border>
           </StackPanel>
         </ScrollViewer>
       </Grid>
@@ -248,10 +260,11 @@
         </StackPanel>
         <TextBlock x:Name="settingsFileText" Style="{StaticResource Quiet}" Text="Profiles, rules and look, as a JSON file you can keep or copy to another PC." />
         <TextBlock Style="{StaticResource Heading}" Text="Online tag lookup" />
-        <TextBlock Style="{StaticResource Quiet}" Text="MusicBrainz (with Cover Art Archive pictures) and iTunes work without an account. Discogs needs your own free token: discogs.com › Settings › Developers › Generate new token. Amazon has no public catalogue to search." />
+<Border Style="{StaticResource Callout}" Margin="0,4,0,0"><TextBlock Style="{StaticResource CalloutText}" Text="MusicBrainz (with Cover Art Archive pictures) and iTunes work without an account. Discogs needs your own free token: discogs.com › Settings › Developers › Generate new token, then paste it below. Amazon has no public catalogue to search." /></Border>
         <TextBlock Style="{StaticResource Label}" Text="Discogs token" />
         <PasswordBox x:Name="discogsTokenBox" Width="360" HorizontalAlignment="Left" />
-        <TextBlock Style="{StaticResource Quiet}" Margin="0,18,0,0" Text="Close (X) quits WinTapeRecorder. It warns first if a recording or export is running." />
+        <TextBlock Style="{StaticResource Heading}" Text="Closing" />
+        <Border Style="{StaticResource Callout}" Margin="0,4,0,0"><TextBlock Style="{StaticResource CalloutText}" Text="Close (X) quits WinTapeRecorder: there is no tray icon. It warns first if a recording or export is running, and what has been recorded so far is always kept." /></Border>
       </StackPanel>
       </ScrollViewer>
     </TabItem>
@@ -272,7 +285,7 @@
         </ComboBox>
         <TextBlock Style="{StaticResource Heading}" Text="Devices on this PC" />
         <TextBox x:Name="devicesBox" IsReadOnly="True" Height="160" Margin="0,4,0,0" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" />
-        <TextBlock Style="{StaticResource Quiet}" Text="What to record from is set in each recording profile." />
+<Border Style="{StaticResource Callout}" Margin="0,8,0,0"><TextBlock Style="{StaticResource CalloutText}" Text="What to record from is chosen in each recording profile, not here. Refresh after plugging a device in." /></Border>
       </StackPanel>
       </ScrollViewer>
     </TabItem>
@@ -280,15 +293,15 @@
       <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="16">
         <TextBlock Text="Recording" FontWeight="SemiBold" />
-        <TextBlock Style="{StaticResource Quiet}" Text="Ctrl+R start or stop recording · M mark a new track here (while recording)" />
-        <TextBlock Text="Waveform" FontWeight="SemiBold" Margin="0,14,0,0" />
-        <TextBlock Style="{StaticResource Quiet}" Text="Wheel zoom at the pointer (resets the height) · Ctrl+wheel taller or shorter · Shift+wheel scroll · + and - zoom · Ctrl+0 whole session · Z zoom to the track · Home/End session start/end · drag the overview to scroll · click to place the playhead" />
-        <TextBlock Text="Editing" FontWeight="SemiBold" Margin="0,14,0,0" />
-        <TextBlock Style="{StaticResource Quiet}" Text="S set the track's start at the playhead · E set its end · X split here · Left/Right nudge the playhead or a grabbed edge (Shift: 10×, Ctrl: one sample) · [ and ] previous/next track · Del delete selected tracks · Ctrl+Z undo · Ctrl+Y or Ctrl+Shift+Z redo" />
-        <TextBlock Text="Listening" FontWeight="SemiBold" Margin="0,14,0,0" />
-        <TextBlock Style="{StaticResource Quiet}" Text="Space play/stop from the playhead · , hear this track's start · . hear its end · Enter hear a grabbed edge · Ctrl+E export · Esc clear selection" />
-        <TextBlock Text="App" FontWeight="SemiBold" Margin="0,14,0,0" />
-        <TextBlock Style="{StaticResource Quiet}" Text="Ctrl+, settings · Ctrl+Q quit" />
+        <ListView x:Name="recordingKeysTable" Style="{StaticResource Table}" Margin="0,6,0,0"><ListView.View><GridView><GridViewColumn Header="Key" DisplayMemberBinding="{Binding Key}" Width="150" /><GridViewColumn Header="Does" DisplayMemberBinding="{Binding Value}" Width="470" /></GridView></ListView.View></ListView>
+        <TextBlock Text="Waveform" FontWeight="SemiBold" Margin="0,16,0,0" />
+        <ListView x:Name="waveformKeysTable" Style="{StaticResource Table}" Margin="0,6,0,0"><ListView.View><GridView><GridViewColumn Header="Key or mouse" DisplayMemberBinding="{Binding Key}" Width="150" /><GridViewColumn Header="Does" DisplayMemberBinding="{Binding Value}" Width="470" /></GridView></ListView.View></ListView>
+        <TextBlock Text="Editing" FontWeight="SemiBold" Margin="0,16,0,0" />
+        <ListView x:Name="editingKeysTable" Style="{StaticResource Table}" Margin="0,6,0,0"><ListView.View><GridView><GridViewColumn Header="Key" DisplayMemberBinding="{Binding Key}" Width="150" /><GridViewColumn Header="Does" DisplayMemberBinding="{Binding Value}" Width="470" /></GridView></ListView.View></ListView>
+        <TextBlock Text="Listening and export" FontWeight="SemiBold" Margin="0,16,0,0" />
+        <ListView x:Name="listeningKeysTable" Style="{StaticResource Table}" Margin="0,6,0,0"><ListView.View><GridView><GridViewColumn Header="Key" DisplayMemberBinding="{Binding Key}" Width="150" /><GridViewColumn Header="Does" DisplayMemberBinding="{Binding Value}" Width="470" /></GridView></ListView.View></ListView>
+        <TextBlock Text="App" FontWeight="SemiBold" Margin="0,16,0,0" />
+        <ListView x:Name="appKeysTable" Style="{StaticResource Table}" Margin="0,6,0,0"><ListView.View><GridView><GridViewColumn Header="Key" DisplayMemberBinding="{Binding Key}" Width="150" /><GridViewColumn Header="Does" DisplayMemberBinding="{Binding Value}" Width="470" /></GridView></ListView.View></ListView>
       </StackPanel>
       </ScrollViewer>
     </TabItem>

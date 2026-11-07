@@ -2,12 +2,12 @@
 export type Track = { id: string; start: number; end: number; artist: string; title: string; album: string; albumArtist?: string; genre?: string; year?: string; composer?: string; comment?: string; trackNumber?: number; trackCount?: number; artPath?: string; fadeInMs: number; fadeOutMs: number; exported: boolean; exportedPath: string }
 export type NameChange = { frame: number; artist: string; title: string; album: string; source: string; manual: boolean }
 export type SessionSummary = { id: string; name: string; created: string; seconds: number; tracks: number; exported: number; recording: boolean; crashed: boolean }
-export type SessionDetail = { id: string; name: string; created: string; device: string; loopback: boolean; sampleRate: number; channels: number; bitDepth: number; totalFrames: number; recordingProfileId: string; outputProfileId: string; clippedSamples: number; changes: NameChange[]; tracks: Track[]; folder: string }
+export type SessionDetail = { id: string; name: string; created: string; device: string; loopback: boolean; sampleRate: number; channels: number; bitDepth: number; totalFrames: number; recordingProfileId: string; outputProfileId: string; clippedSamples: number; changes: NameChange[]; dropouts: { frame: number; ms: number }[]; tracks: Track[]; folder: string }
 export type Profile = { id: string; name: string; loopback?: boolean; deviceName?: string; bitDepth?: number; format?: string; template?: string }
 export type NameSource = { key: string; kind: string; label: string; artist: string; title: string; playing: boolean; rule: string }
 
 export const app = $state({
-  status: null as null | { recording: boolean; capturing: boolean; sessionId: string; sessionName: string; device: string; sampleRate: number; changes: { frame: number; artist: string; title: string; manual: boolean }[]; current: null | { label: string; artist: string; title: string }; source: string; playing: boolean; playingSession: string; exporting: boolean; version: string; updateReady: string },
+  status: null as null | { recording: boolean; capturing: boolean; sessionId: string; sessionName: string; device: string; deviceVolume: number; dropouts: number; sampleRate: number; changes: { frame: number; artist: string; title: string; manual: boolean }[]; current: null | { label: string; artist: string; title: string }; source: string; playing: boolean; playingSession: string; exporting: boolean; version: string; updateReady: string },
   levels: { peaks: [] as number[], clipped: 0, seconds: 0, bytes: 0, minutesLeft: -1 },
   hints: { hidden: false, dismissed: [] as string[] },
   recordingProfiles: [] as Profile[], outputProfiles: [] as Profile[], activeRecording: '', activeOutput: '', auditionSeconds: 5,

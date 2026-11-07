@@ -15,6 +15,13 @@ public class NameChange
     public bool Manual { get; set; } // M pressed while recording
 }
 
+// Samples the audio engine threw away while recording (the PC was too busy): where, and how much
+public class Dropout
+{
+    public long Frame { get; set; }
+    public int Ms { get; set; }
+}
+
 public class Track
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
@@ -53,6 +60,7 @@ public class Session
     public bool Recording { get; set; } // still true after a crash mid-recording: the WAV header is repaired on open
     public int ClippedSamples { get; set; }
     public List<NameChange> Changes { get; set; } = new();
+    public List<Dropout> Dropouts { get; set; } = new();
     public List<Track> Tracks { get; set; } = new();
 
     [JsonIgnore] public string Folder { get; set; } = "";

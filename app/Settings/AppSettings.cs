@@ -41,8 +41,8 @@ public class OutputProfile
     public string Format { get; set; } = "flac"; // flac | wav | mp3 | m4a
     public int BitrateKbps { get; set; } = 320; // mp3 and m4a
     public string Folder { get; set; } = ""; // empty = Music\WinTapeRecorder
-    public string Template { get; set; } = "{session}/{track:00} {artist} - {title}";
-    public string Album { get; set; } = "{session}";
+    public string Template { get; set; } = "{albumartist} - {album}/{artist} - {album} - {track:00} {title}";
+    public string Album { get; set; } = "";
     public string AlbumArtist { get; set; } = "";
     public string Genre { get; set; } = "";
     public string Comment { get; set; } = "";
@@ -124,6 +124,8 @@ public class AppSettings
     void EnsureDefaults()
     {
         if (RecordingProfiles.Count == 0) RecordingProfiles.Add(new RecordingProfile());
+        // Profiles made by the first builds used the session name; the album is the folder now
+        foreach (var profile in OutputProfiles) { if (profile.Template == "{session}/{track:00} {artist} - {title}") profile.Template = new OutputProfile().Template; if (profile.Album == "{session}") profile.Album = ""; }
         if (OutputProfiles.Count == 0) { OutputProfiles.Add(new OutputProfile()); OutputProfiles.Add(new OutputProfile { Name = "MP3 320", Format = "mp3", BitrateKbps = 320 }); }
     }
 

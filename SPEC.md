@@ -12,7 +12,8 @@ A Windows tape recorder for listening sessions. Record one long session to a sin
 - Source: any input device (WASAPI capture) or any output device's loopback (what the PC is playing). Standard Windows audio APIs only. Nothing that gets around DRM or protected audio paths.
 - Format: the device's own sample rate and channels; 16-bit, 24-bit (default) or 32-bit float, set by the recording profile.
 - The WAV header is kept up to date while recording, so a crash leaves a playable file; on open, a damaged header is repaired from the file length.
-- Input level check: live peak meters per channel with peak hold, and a clip light that latches (count of clipped samples) until clicked. No other meters.
+- Input level check: live peak meters per channel with peak hold, and a clip light that latches (count of clipped samples) until clicked. No other meters. Nothing is adjusted during recording: loopback is the player's digital signal as it is.
+- Dropout detection: the audio engine has a half-second buffer and disk writes happen off the audio thread; the audio clock is checked against the wall clock, and any samples the engine still threw away are logged as dropouts (frame and length), shown on the recorder, in the session header and on the waveform's ruler.
 - Start/stop recording (Ctrl+R from anywhere); mark a new track by hand while recording (M).
 - Output devices are recorded through WASAPI loopback; the app plays silence to that device while recording so gaps in the audio keep their real length.
 - WAV size limit (4 GB): the app warns before it and stops cleanly at it.
@@ -57,8 +58,9 @@ A change of now-playing text drops a marker at that moment (minus a latency offs
 ## Export
 
 - One click exports all (or the selected) tracks using an output profile.
-- **Output profile**: format (FLAC default, WAV, MP3, AAC/M4A, lossy bitrate), output folder, file and folder name template with tokens, tag defaults.
-- Tokens: `{artist}` `{title}` `{album}` `{albumartist}` `{track}` `{track:00}` `{genre}` `{year}` `{date}` `{session}` `{source}`. Characters Windows forbids are replaced.
+- **Output profile**: format (FLAC default, WAV, MP3, AAC/M4A, lossy bitrate), output folder, file and folder name template with tokens (default `{albumartist} - {album}/{artist} - {album} - {track:00} {title}`), tag defaults (used only where a track has none; normally empty).
+- Before exporting, tracks missing artist, album, album artist or genre are pointed out, with the choice to fill them in first or export anyway.
+- Tokens: `{artist}` `{title}` `{album}` `{albumartist}` (the album artist, else the track's artist) `{track}` `{track:00}` `{tracks}` `{genre}` `{year}` `{date}` `{session}` `{source}`. Characters Windows forbids are replaced.
 - Tags written: title, artist, album, album artist, track number and total, genre, year, comment.
 - Exported tracks are marked in the list; exporting again overwrites.
 - FLAC is written by the app's own encoder (lossless, no Windows codec needed); MP3 and AAC use Windows' encoders (16-bit, 44.1/48 kHz).

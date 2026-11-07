@@ -48,6 +48,7 @@ public partial class App : Application
         Settings = AppSettings.Load();
         Watcher = new NowPlayingWatcher(() => Settings);
         Watcher.Updated += () => Dispatcher.BeginInvoke(OnNamesUpdated);
+        Recorder.DropoutFound += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
         Recorder.Stopped += () => Dispatcher.BeginInvoke(() => { var problem = Recorder.Problem; FinishRecording(); if (problem != "") ShowTip("Recording stopped", problem); });
         Player.Finished += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
         mainWindow = new MainWindow();
@@ -204,6 +205,8 @@ public partial class App : Application
         sessionId = Recorder.Session?.Id ?? "",
         sessionName = Recorder.Session?.Name ?? "",
         device = Recorder.DeviceName,
+        deviceVolume = Recorder.DeviceVolume,
+        dropouts = Recorder.Dropouts.Count,
         sampleRate = Recorder.Session?.SampleRate ?? 0,
         changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Manual }) ?? Enumerable.Empty<object>(),
         current = CurrentName == null ? null : new { CurrentName.Label, CurrentName.Artist, CurrentName.Title },

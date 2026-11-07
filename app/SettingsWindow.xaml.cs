@@ -22,7 +22,7 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent(); settingsTabs.SelectedItem = recordingTab;
         devices = SafeDevices();
-        WireRecordingTab(); WireDetectionTab(); WireOutputTab(); WireAppearanceTab(); WireGeneralTab(); WireAudioTab(); WireAboutTab();
+        WireRecordingTab(); WireDetectionTab(); WireOutputTab(); WireAppearanceTab(); WireGeneralTab(); WireAudioTab(); WireAboutTab(); FillTables();
     }
 
     public void SelectTab(string tabName)
@@ -222,10 +222,10 @@ public partial class SettingsWindow : Window
     void ShowTemplateExample()
     {
         if (EditedOutput is not { } profile) return;
-        var example = new Track { Artist = "Nina Simone", Title = "Feeling Good" };
+        var example = new Track { Artist = "Nina Simone", Title = "Feeling Good", Album = "I Put a Spell on You", Year = "1965" };
         var session = new Session { Name = "Friday night", Created = DateTime.Now, Device = "Speakers" };
         var relative = NameTemplate.Expand(profile.Template.Replace('\\', '/'), example, 3, 12, session, true).Replace('/', '\\');
-        templateExampleText.Text = "Example: " + Path.Combine(FolderOrDefault(profile.Folder, AppPaths.DefaultOutputFolder), relative) + NameTemplate.Extension(profile.Format);
+        templateExampleText.Text = Path.Combine(FolderOrDefault(profile.Folder, AppPaths.DefaultOutputFolder), relative) + NameTemplate.Extension(profile.Format);
     }
 
     // ---- Appearance (from WinSqueeze) ----
@@ -381,6 +381,22 @@ public partial class SettingsWindow : Window
             restartToUpdateButton.Visibility = App.Updater.ReadyVersion == "" ? Visibility.Collapsed : Visibility.Visible;
             restartToUpdateButton.Content = $"Restart to update to {App.Updater.ReadyVersion}";
         });
+    }
+
+    // The reference tables: tokens, example rules and shortcuts
+    static List<KeyValuePair<string, string>> Rows(params (string key, string value)[] rows) => rows.Select(row => new KeyValuePair<string, string>(row.key, row.value)).ToList();
+    void FillTables()
+    {
+        tokensTable.ItemsSource = Rows(("{artist}", "The track's artist"), ("{title}", "The track's title"), ("{album}", "The album"), ("{albumartist}", "The album artist, or the track's artist when there is none"), ("{track}", "Track number; {track:00} pads it to two digits"), ("{tracks}", "How many tracks the album has"),
+            ("{genre}", "Genre"), ("{year}", "Year of the album, else of the recording"), ("{date}", "The recording's date, 2026-11-07"), ("{session}", "The session's name"), ("{source}", "The device it was recorded from"));
+        rulesExampleTable.ItemsSource = Rows(("YouTube", "Artist - Title - YouTube  →  artist, title"), ("Bandcamp", "Title | Artist  →  title, artist"), ("Lyrion web player", "Title • Artist • Album  →  title, artist, album"));
+        recordingKeysTable.ItemsSource = Rows(("Ctrl+R", "Start or stop recording, from anywhere in the app"), ("M", "Mark a new track here, while recording"));
+        waveformKeysTable.ItemsSource = Rows(("Wheel", "Zoom at the pointer (and reset the height)"), ("Ctrl+wheel", "Make the waveform taller or shorter"), ("Shift+wheel", "Scroll along"), ("+ and -", "Zoom in and out"), ("Ctrl+0", "The whole session"), ("Z", "Zoom to the current track"),
+            ("Home / End", "Start / end of the session"), ("Click", "Place the playhead"), ("Double-click a track", "Zoom to it"), ("Drag the overview", "Scroll"));
+        editingKeysTable.ItemsSource = Rows(("S / E", "Set the current track's start / end at the playhead"), ("X", "Split the track at the playhead"), ("N", "New track at the playhead"), ("← →", "Nudge the playhead, or a grabbed edge (Shift: 10×, Ctrl: one sample)"), ("[ ]", "Previous / next track"),
+            ("Del", "Remove the selected tracks (their audio is skipped on export)"), ("Ctrl+Z", "Undo"), ("Ctrl+Y, Ctrl+Shift+Z", "Redo"), ("Esc", "Let go of a grabbed edge, or clear the selection"));
+        listeningKeysTable.ItemsSource = Rows(("Space", "Play / stop from the playhead"), (", and .", "Hear the current track's start / end"), ("Enter", "Hear a grabbed edge"), ("T", "Tags for the selected tracks"), ("L", "Look up tags online"), ("F", "Fades for the selected tracks"), ("Ctrl+E", "Export the selected tracks, or all"));
+        appKeysTable.ItemsSource = Rows(("Ctrl+,", "Settings"), ("Ctrl+Q", "Quit"));
     }
 
     static void OpenUrl(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });

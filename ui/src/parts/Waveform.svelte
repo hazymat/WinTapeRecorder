@@ -7,8 +7,8 @@
   import { request } from '../bridge'
   import { formatTime, type Track, type NameChange } from '../state.svelte'
   // The session's waveform (SPEC.md › Editing): an overview of the whole session, and a detail view that zooms with the wheel down to single samples
-  let { sessionId, sampleRate, channels, totalFrames, tracks, changes, selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onPickTrack, onZoomTrack }: {
-    sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
+  let { sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onPickTrack, onZoomTrack }: {
+    sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; dropouts?: { frame: number; ms: number }[]; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
     view: WaveView; onCursor: (frame: number) => void; onEdge: (grab: NonNullable<Grab>, frame: number) => void; onEdgeDone: (grab: NonNullable<Grab>) => void; onPickTrack: (trackId: string, additive: boolean) => void; onZoomTrack: (trackId: string) => void
   } = $props()
 
@@ -142,8 +142,10 @@
     if (detailData?.mode === 'samples' && view.framesPerPixel < 1.5) drawSamples(context, detailData, waveTop, laneHeight)
     else if (detailData) drawPeaks(context, detailData.mode === 'samples' ? toPeaks(detailData) : detailData, waveTop, laneHeight, frameToX, css.wave, verticalScale)
     if (verticalScale > 1) { context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'; context.fillStyle = css.quiet; context.fillText(`Height ×${verticalScale < 10 ? verticalScale.toFixed(1) : Math.round(verticalScale)} (wheel resets)`, width - 160, waveTop + 4) }
-    // Ruler
+    // Ruler, with any dropouts (samples lost while recording) as red marks on it
     drawRuler(context, detailHeight - rulerHeight)
+    context.fillStyle = css.end
+    for (const dropout of dropouts) { const x = frameToX(dropout.frame); if (x >= 0 && x <= width) { context.fillRect(x - 1, detailHeight - rulerHeight, Math.max(2, dropout.ms / 1000 * sampleRate / view.framesPerPixel), rulerHeight); } }
     // Cursor and playhead
     const cursorX = frameToX(cursor)
     if (cursorX >= 0 && cursorX <= width) { context.fillStyle = css.accent; context.fillRect(cursorX - 0.5, waveTop, 1, waveHeight); context.beginPath(); context.moveTo(cursorX - 5, detailHeight - rulerHeight); context.lineTo(cursorX + 5, detailHeight - rulerHeight); context.lineTo(cursorX, detailHeight - rulerHeight - 6); context.fill() }
@@ -181,7 +183,7 @@
     if (playhead >= 0) { context.fillStyle = css.playhead; context.fillRect(toX(playhead) - 0.5, 0, 1, overviewHeight) }
   }
 
-  $effect(() => { detailData; tracks; changes; selectedIds; currentId; cursor; playhead; grab; view.start; view.framesPerPixel; width; detailHeight; css; channels; verticalScale; requestAnimationFrame(drawDetail) })
+  $effect(() => { detailData; tracks; changes; dropouts; selectedIds; currentId; cursor; playhead; grab; view.start; view.framesPerPixel; width; detailHeight; css; channels; verticalScale; requestAnimationFrame(drawDetail) })
   $effect(() => { overviewData; tracks; selectedIds; currentId; playhead; view.start; view.framesPerPixel; width; css; requestAnimationFrame(drawOverview) })
 
   // ---- Mouse ----
@@ -204,7 +206,7 @@
   let drag: null | { kind: 'edge'; grab: NonNullable<Grab> } | { kind: 'pan'; startX: number; startView: number; moved: boolean } = null
   let hoverCursor = $state('default'), hoverTitle = $state('')
   // Hovering a dotted line says what it is
-  function changeTitle(x: number) { const change = changes.find(candidate => Math.abs(frameToX(candidate.frame) - x) < 5); return change ? `Where the playing name changed while recording${change.title ? ` to “${change.title}”${change.artist ? ` by ${change.artist}` : ''}` : ''}. The track's green start snaps to the quietest point near it.` : '' }
+  function changeTitle(x: number) { const dropout = dropouts.find(candidate => Math.abs(frameToX(candidate.frame) - x) < 6); if (dropout) return `Dropout: about ${dropout.ms} ms of audio was lost here because the PC was too busy`; const change = changes.find(candidate => Math.abs(frameToX(candidate.frame) - x) < 5); return change ? `Where the playing name changed while recording${change.title ? ` to “${change.title}”${change.artist ? ` by ${change.artist}` : ''}` : ''}. The track's green start snaps to the quietest point near it.` : '' }
   function onDown(event: PointerEvent) {
     if (event.button !== 0) return
     detailCanvas?.setPointerCapture(event.pointerId)

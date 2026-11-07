@@ -214,9 +214,16 @@
 
   // ---- Export (SPEC.md › Export) ----
   const outputProfileId = $derived(session?.outputProfileId && app.outputProfiles.some(profile => profile.id === session!.outputProfileId) ? session.outputProfileId : app.activeOutput)
-  async function exportTracks(keys?: string[]) {
+  // Tags worth having on every file before it goes out (SPEC.md › Export): the dialog offers to fill them in first
+  const wanted: [keyof Track, string][] = [['artist', 'artist'], ['album', 'album'], ['albumArtist', 'album artist'], ['genre', 'genre']]
+  let exportCheck = $state<null | { keys: string[]; missing: string }>(null)
+  async function exportTracks(keys?: string[], checked = false) {
     const chosen = targets(keys)
     if (!chosen.length || app.status?.exporting) return
+    if (!checked) {
+      const missing = wanted.filter(([field]) => chosen.some(track => !(track[field] as string | undefined))).map(([, label]) => label)
+      if (missing.length) { exportCheck = { keys: chosen.map(track => track.id), missing: missing.join(', ') }; return }
+    }
     clearTimeout(saveTimer); sendToShell({ type: 'saveSession', id: sessionId, tracks: $state.snapshot(tracks) })
     exportStatus = `Exporting ${chosen.length} track${chosen.length === 1 ? '' : 's'}…`
     try {
@@ -319,6 +326,7 @@
     <input class="name" value={session.name} onchange={(event) => { const name = (event.target as HTMLInputElement).value.trim(); if (name && session) { session.name = name; sendToShell({ type: 'saveSession', id: sessionId, name }) } }} aria-label="Session name" />
     <span class="facts">{new Date(session.created).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} · {formatDuration(session.totalFrames / rate)} · {session.device || 'Unknown device'} · {rate / 1000} kHz {session.bitDepth === 32 ? 'float' : session.bitDepth + '-bit'} · {tracks.length} tracks{exportedCount ? `, ${exportedCount} exported` : ''}</span>
     {#if session.clippedSamples > 0}<span class="clip-warning" title="Samples recorded at full scale">{session.clippedSamples} clipped samples</span>{/if}
+    {#if session.dropouts?.length}<span class="clip-warning" title={session.dropouts.map(dropout => `${formatTime(dropout.frame, rate, false)}: ${dropout.ms} ms lost`).join('\n')}>{session.dropouts.length} dropout{session.dropouts.length === 1 ? '' : 's'} (marked in red on the ruler)</span>{/if}
     <span class="header-actions">
       <button class="ghost" onclick={() => sendToShell({ type: 'openFolder', path: session!.folder + '\\audio.wav' })} title="Open the session's folder in Explorer, with the WAV selected"><Icon name="folder" size={15} />Show files</button>
       <button class="ghost danger" onclick={() => dialog = { kind: 'close' }}><Icon name="trash" size={15} />Close session…</button>
@@ -356,7 +364,7 @@
 
   <Hint id="waveform-basics" text="Wheel zooms (down to single samples), Ctrl+wheel makes the wave taller, Shift+wheel scrolls. Drag a green start or red end line to move it. Click to place the playhead; S and E set the current track's start and end there." />
   <div class="wave-host" bind:this={waveHost}>
-    <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
+    <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
       onCursor={(frame) => { cursor = frame; grab = null; if (playing) playFrom(frame) }} {onEdge} {onEdgeDone} onPickTrack={(trackId, additive) => { currentId = trackId; if (additive) selectKeys(scope, Array.from(new Set(selectedIds.concat([trackId]))), actions, 'track'); scrollRowIntoView(trackId) }} onZoomTrack={zoomToTrack} />
   </div>
   <div class="readout"><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
@@ -393,6 +401,10 @@
 {#if lookingUp}
   {@const lookupKeys = lookingUp.keys}
   <LookupDialog {sessionId} trackCount={lookupKeys.length} artist={lookingUp.artist} title={lookingUp.title} album={lookingUp.album} onapply={(match, take, artPath, artThumb) => applyMatch(lookupKeys, match, take, artPath, artThumb)} oncancel={() => lookingUp = null} />
+{/if}
+{#if exportCheck}
+  {@const check = exportCheck}
+  <Dialog title="Some tags are empty" text={`${check.keys.length === 1 ? 'This track has' : 'Some of these tracks have'} no ${check.missing}. Players and libraries sort by these, so it's worth filling them in first.`} confirmLabel="Fill in tags…" altLabel="Export anyway" onalt={() => { exportCheck = null; exportTracks(check.keys, true) }} onconfirm={() => { exportCheck = null; tagging = check.keys }} oncancel={() => exportCheck = null} />
 {/if}
 {#if dialog?.kind === 'fades'}
   <Dialog title="Fades for {dialog.keys.length} track{dialog.keys.length === 1 ? '' : 's'}" text="Lengths in milliseconds; 0 is no fade. You hear them when auditioning, and they're in the exported files." confirmLabel="Set" onconfirm={applyDialog} oncancel={() => dialog = null}>

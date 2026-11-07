@@ -18,8 +18,8 @@ public static class NameTemplate
         {
             ["artist"] = track.Artist == "" ? "Unknown artist" : track.Artist,
             ["title"] = track.Title == "" ? $"Track {trackNumber}" : track.Title,
-            ["album"] = track.Album,
-            ["albumartist"] = track.AlbumArtist,
+            ["album"] = track.Album == "" ? "Unknown album" : track.Album,
+            ["albumartist"] = track.AlbumArtist != "" ? track.AlbumArtist : track.Artist == "" ? "Unknown artist" : track.Artist, // the album's artist, else the track's
             ["track"] = (track.TrackNumber > 0 ? track.TrackNumber : trackNumber).ToString(),
             ["tracks"] = (track.TrackCount > 0 ? track.TrackCount : trackCount).ToString(),
             ["genre"] = track.Genre,

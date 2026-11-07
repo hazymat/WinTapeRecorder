@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   // A small glass dialog: a question with OK/Cancel, optionally with fields (children)
-  let { title, text = '', confirmLabel = 'OK', danger = false, wide = false, onconfirm, oncancel, children }: { title: string; text?: string; confirmLabel?: string; danger?: boolean; wide?: boolean; onconfirm: () => void; oncancel: () => void; children?: Snippet } = $props()
+  let { title, text = '', confirmLabel = 'OK', altLabel = '', danger = false, wide = false, onconfirm, onalt, oncancel, children }: { title: string; text?: string; confirmLabel?: string; altLabel?: string; danger?: boolean; wide?: boolean; onconfirm: () => void; onalt?: () => void; oncancel: () => void; children?: Snippet } = $props()
   let box = $state<HTMLElement>()
   $effect(() => { (box?.querySelector('input') as HTMLInputElement | null ?? box?.querySelector('button.confirm') as HTMLButtonElement | null)?.focus() })
   function onKey(event: KeyboardEvent) {
@@ -16,7 +16,7 @@
     <h3>{title}</h3>
     {#if text}<p>{text}</p>{/if}
     {#if children}<div class="fields">{@render children()}</div>{/if}
-    <div class="buttons"><button class="ghost" onclick={oncancel}>Cancel</button><button class="confirm" class:primary={!danger} class:danger onclick={onconfirm}>{confirmLabel}</button></div>
+    <div class="buttons"><button class="ghost" onclick={oncancel}>Cancel</button>{#if altLabel}<button class="ghost" onclick={onalt}>{altLabel}</button>{/if}<button class="confirm" class:primary={!danger} class:danger onclick={onconfirm}>{confirmLabel}</button></div>
   </div>
 </div>
 
