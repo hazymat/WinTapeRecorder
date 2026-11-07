@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { request, sendToShell, onShellMessage } from '../bridge'
-  import { app, nav, toast, formatTime, formatDuration, writeSetting, readSetting, describeCutoff, shortCutoff, medianCutoff, type SessionDetail, type Track, type AlbumMatch } from '../state.svelte'
+  import { app, nav, toast, formatTime, formatLength, formatDuration, writeSetting, readSetting, describeCutoff, shortCutoff, medianCutoff, type SessionDetail, type Track, type AlbumMatch } from '../state.svelte'
   import { selection, selectKeys, clearSelection, type SelectionAction } from '../lib/selection.svelte'
   import { selectable } from '../lib/selectable.svelte'
   import Waveform, { type WaveView, type Grab } from '../parts/Waveform.svelte'
@@ -208,9 +208,21 @@
     const added: Track = { id: Math.random().toString(36).slice(2, 12), start, end, artist: previous?.artist ?? '', title: '', album: previous?.album ?? '', fadeInMs: 0, fadeOutMs: 0, exported: false, exportedPath: '' }
     commit(copy().concat([added]), `Added a track at ${formatTime(start, rate)}`); currentId = added.id
   }
+  // Removing one track between two others asks how the gap closes (SPEC.md › Tracks › Remove)
+  let gapFor = $state<Track | null>(null)
+  function closeGap(how: 'gap' | 'previous' | 'next' | 'middle') {
+    const removed = gapFor; gapFor = null
+    if (!removed) return
+    const next = copy(), at = next.findIndex(track => track.id === removed.id), before = next[at - 1], after = next[at + 1]
+    if (how === 'previous' || how === 'middle') { before.end = how === 'previous' ? after.start : Math.round((before.end + after.start) / 2); before.exported = false; before.endChecked = false }
+    if (how === 'next' || how === 'middle') { after.start = before.end; after.exported = false; after.startChecked = false }
+    commit(next.filter(track => track.id !== removed.id), how === 'gap' ? 'Removed 1 track (its audio is skipped on export)' : 'Removed 1 track and closed the gap')
+    clearSelection()
+  }
   function deleteTracks(keys: string[]) {
     const ids = keys.length ? keys : current ? [current.id] : []
     if (!ids.length) return
+    if (ids.length === 1) { const at = tracks.findIndex(track => track.id === ids[0]); if (at > 0 && at < tracks.length - 1) { gapFor = tracks[at]; return } }
     commit(copy().filter(track => !ids.includes(track.id)), `Removed ${ids.length} track${ids.length === 1 ? '' : 's'} (their audio is skipped on export)`)
     clearSelection()
   }
@@ -1036,7 +1048,7 @@
       <div class="row" class:lifting={lifting === track.id} class:lifted={lifted === track.id} onpointerdown={(event) => liftDown(track, event)} class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
         <span class="hear no-hold">
-          <button class="hear-start" class:checked={track.startChecked} class:doubt={!track.startSure && !track.startChecked} class:heard={focused?.trackId === track.id && focused.edge === 'start'} class:grabbed={grab?.trackId === track.id && grab.edge === 'start'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }} title={`Hear the start, zoomed in. ${track.startNote || ''}`} aria-label="Hear start"><Icon name="play" size={10} /><span class="pill-time">{formatTime(track.start, rate, false)}</span>{#if track.detectedStart != null && track.detectedStart >= 0 && track.start !== track.detectedStart}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'start') }} onkeydown={() => { }} title={`Moved. Click to put the start back where it was detected (${formatTime(track.detectedStart, rate, false)})`}>↺</span>{/if}</button><button class="hear-end" class:checked={track.endChecked} class:doubt={!track.endSure && !track.endChecked} class:heard={focused?.trackId === track.id && focused.edge === 'end'} class:grabbed={grab?.trackId === track.id && grab.edge === 'end'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }} title={`Hear the end, zoomed in. Length ${formatDuration((track.end - track.start) / rate)}. ${track.endNote || ''}`} aria-label="Hear end">{#if track.detectedEnd != null && track.detectedEnd >= 0 && track.end !== track.detectedEnd}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'end') }} onkeydown={() => { }} title={`Moved. Click to put the end back where it was detected (${formatTime(track.detectedEnd, rate, false)})`}>↺</span>{/if}<span class="pill-time">{formatDuration((track.end - track.start) / rate)}</span><Icon name="play" size={10} /></button><button class="ok" class:on={track.startChecked && track.endChecked} class:half={!!track.startChecked !== !!track.endChecked} onclick={(event) => { event.stopPropagation(); confirmTrack(track) }} title={track.startChecked && track.endChecked ? 'Start and end confirmed. Click to undo (Y)' : 'Happy with this start and end? Click to confirm both (Y)'} aria-label="Confirm this track's start and end">✓</button>
+          <button class="hear-start" class:checked={track.startChecked} class:doubt={!track.startSure && !track.startChecked} class:heard={focused?.trackId === track.id && focused.edge === 'start'} class:grabbed={grab?.trackId === track.id && grab.edge === 'start'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }} title={`Hear the start, zoomed in. ${track.startNote || ''}`} aria-label="Hear start"><Icon name="play" size={10} /><span class="pill-time">{formatTime(track.start, rate, false)}</span>{#if track.detectedStart != null && track.detectedStart >= 0 && track.start !== track.detectedStart}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'start') }} onkeydown={() => { }} title={`Moved. Click to put the start back where it was detected (${formatTime(track.detectedStart, rate, false)})`}>↺</span>{/if}</button><button class="hear-end" class:checked={track.endChecked} class:doubt={!track.endSure && !track.endChecked} class:heard={focused?.trackId === track.id && focused.edge === 'end'} class:grabbed={grab?.trackId === track.id && grab.edge === 'end'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }} title={`Hear the end, zoomed in. Length ${formatDuration((track.end - track.start) / rate)}. ${track.endNote || ''}`} aria-label="Hear end">{#if track.detectedEnd != null && track.detectedEnd >= 0 && track.end !== track.detectedEnd}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'end') }} onkeydown={() => { }} title={`Moved. Click to put the end back where it was detected (${formatTime(track.detectedEnd, rate, false)})`}>↺</span>{/if}<span class="pill-time">{formatLength(track.end - track.start, rate)}</span><Icon name="play" size={10} /></button><button class="ok" class:on={track.startChecked && track.endChecked} class:half={!!track.startChecked !== !!track.endChecked} onclick={(event) => { event.stopPropagation(); confirmTrack(track) }} title={track.startChecked && track.endChecked ? 'Start and end confirmed. Click to undo (Y)' : 'Happy with this start and end? Click to confirm both (Y)'} aria-label="Confirm this track's start and end">✓</button>
         </span>
         <button class="art-cell no-hold" onclick={(event) => { event.stopPropagation(); tagging = selectedIds.includes(track.id) ? selectedIds.slice() : [track.id] }} title="Edit tags and picture">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="" />{:else}<span>♪</span>{/if}</button>
         <input class="no-hold" value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
@@ -1119,7 +1131,27 @@
   <Dialog title="Close this session?" text={`This deletes the session's recording (the WAV) for good.${tracks.length - exportedCount > 0 ? ` ${tracks.length - exportedCount} of ${tracks.length} tracks haven't been exported yet.` : ' Every track has been exported.'} Exported files are kept.`} confirmLabel="Delete recording" danger onconfirm={applyDialog} oncancel={() => dialog = null} />
 {/if}
 
+{#if gapFor}
+  {@const at = tracks.findIndex(track => track.id === gapFor?.id)}
+  <div class="gap-backdrop" role="presentation" onpointerdown={(event) => { if (event.target === event.currentTarget) gapFor = null }}>
+    <div class="gap-box" role="dialog" aria-label="Remove this track">
+      <h3>Remove track {at + 1}: how should its neighbours meet?</h3>
+      <button class="ghost gap-choice" onclick={() => closeGap('previous')}>Track {at}'s end moves to where track {at + 2} starts</button>
+      <button class="ghost gap-choice" onclick={() => closeGap('next')}>Track {at + 2}'s start moves to where track {at} ends</button>
+      <button class="ghost gap-choice" onclick={() => closeGap('middle')}>They meet in the middle</button>
+      <button class="ghost gap-choice" onclick={() => closeGap('gap')}>Leave the gap (its audio is skipped on export)</button>
+      <div class="gap-foot"><button class="ghost" onclick={() => gapFor = null}>Cancel</button></div>
+    </div>
+  </div>
+{/if}
+
 <style>
+  .gap-backdrop { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; background: rgba(0, 0, 0, 0.25); }
+  .gap-box { width: min(460px, calc(100vw - 40px)); display: flex; flex-direction: column; gap: 6px; padding: 16px 18px 14px; border-radius: 14px; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: 0 24px 60px var(--shadow); }
+  .gap-box h3 { margin: 0 0 6px; font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--fg); }
+  .gap-choice { text-align: left; padding: 7px 12px; }
+  .gap-foot { display: flex; justify-content: flex-end; margin-top: 4px; }
+
   .session { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 8px; }
   .empty { padding: 40px; }
   :global(.session-title) { display: flex; align-items: baseline; gap: 10px; flex-wrap: nowrap; overflow: hidden; min-width: 0; }

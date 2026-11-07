@@ -37,6 +37,11 @@ export function toast(text: string, options: { undo?: () => unknown; action?: To
 export function undoToast() { const undo = ui.toast?.undo; ui.toast = null; undo?.() }
 
 // Time as h:mm:ss.mmm (or m:ss.mmm), from frames
+// A track length; under a second it's almost certainly a blip, so it shows ! and milliseconds
+export function formatLength(frames: number, rate: number) {
+  return frames < rate ? `! ${Math.round(frames / rate * 1000)} ms` : formatTime(frames, rate, false)
+}
+
 export function formatTime(frames: number, rate: number, withMs = true) {
   if (!rate || frames < 0) return withMs ? '0:00.000' : '0:00'
   const totalMs = Math.round(frames / rate * 1000)

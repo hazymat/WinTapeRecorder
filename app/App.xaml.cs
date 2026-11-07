@@ -274,10 +274,22 @@ public partial class App : Application
         session.Changes.RemoveAt(index); session.Save(); StatusChanged?.Invoke();
     }
 
+    // The latest marker of the same album passes on its year, genre and composer (typed or looked up), even with other names in between
+    static void CarryAlbumTags(Session session, NameChange change)
+    {
+        if (change.Album == "") return;
+        var before = session.Changes.LastOrDefault(other => string.Equals(other.Album, change.Album, StringComparison.OrdinalIgnoreCase));
+        if (before == null) return;
+        if (change.Year == "") change.Year = before.Year;
+        if (change.Genre == "") change.Genre = before.Genre;
+        if (change.Composer == "") change.Composer = before.Composer;
+    }
+
     public void AddMarker()
     {
         if (Recorder.Session is not { } session) return;
         session.Changes.Add(new NameChange { Frame = Recorder.FramesWritten, Artist = CurrentName?.Artist ?? "", Title = CurrentName?.Title ?? "", Album = CurrentName?.Album ?? "", AlbumArtist = CurrentName?.AlbumArtist ?? "", TrackNumber = CurrentName?.TrackNumber ?? 0, Year = YearFor(CurrentName), Source = "marker", Manual = true });
+        CarryAlbumTags(session, session.Changes[^1]);
         session.Save(); StatusChanged?.Invoke();
     }
 
@@ -344,8 +356,9 @@ public partial class App : Application
             return;
         }
         var change = new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, AlbumArtist = name.AlbumArtist, TrackNumber = name.TrackNumber, Year = YearFor(name), Source = name.Label };
-        // The same album as the marker before: its year, genre and composer carry on (typed or looked up)
-        if (session.Changes.LastOrDefault() is { } before && before.Album != "" && string.Equals(before.Album, change.Album, StringComparison.OrdinalIgnoreCase)) { if (change.Year == "") change.Year = before.Year; change.Genre = before.Genre; change.Composer = before.Composer; }
+        // Players show an idle title for a moment between songs: a name that lasted under 5 s with no album was only that blip, so it goes
+        if (session.Changes.Count > 1 && session.Changes[^1] is { Manual: false, Problem: "", Album: "" } blip && frame - blip.Frame < 5L * session.SampleRate) session.Changes.RemoveAt(session.Changes.Count - 1);
+        CarryAlbumTags(session, change);
         session.Changes.Add(change);
         if (name.Picture) _ = SavePlayerArtAsync(session, change, name.Key);
         session.Save();

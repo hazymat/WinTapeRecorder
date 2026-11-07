@@ -1,6 +1,6 @@
 <script lang="ts">
   import { request, sendToShell } from '../bridge'
-  import { app, nav, toast, formatTime, writeSetting, readSetting } from '../state.svelte'
+  import { app, nav, toast, formatTime, formatLength, writeSetting, readSetting } from '../state.svelte'
   import LevelMeter from '../parts/LevelMeter.svelte'
   import Dropdown from '../parts/Dropdown.svelte'
   import Dialog from '../parts/Dialog.svelte'
@@ -252,6 +252,15 @@
   const firstEstimate = $derived(estimates.find(estimate => app.outputProfiles.find(profile => profile.name === estimate.name)?.id === app.activeOutput) ?? estimates[0])
   const current = $derived(app.status?.current)
   let startingOver = $state(false)
+  // Removing a marker between two others: the track before runs on, the next one starts earlier, or they meet in the middle
+  let removing = $state(-1)
+  function removeMarker(index: number) { const count = app.status?.changes.length ?? 0; if (index > 0 && index < count - 1) removing = index; else sendToShell({ type: 'removeChange', index }) }
+  function closeGap(how: 'previous' | 'next' | 'middle') {
+    const index = removing; removing = -1
+    const changes = app.status?.changes ?? [], here = changes[index]?.frame, next = changes[index + 1]?.frame
+    if (how !== 'previous' && here != null && next != null) sendToShell({ type: 'editChange', index: index + 1, frame: Math.round(how === 'next' ? here : (here + next) / 2) })
+    sendToShell({ type: 'removeChange', index })
+  }
   // Quiet PC check: read when the page opens and whenever the window comes back to the front (after changing Settings)
   let quiet = $state<null | { soundsOff: boolean; notificationsOff: boolean }>(null)
   function checkQuiet() { request<{ soundsOff: boolean; notificationsOff: boolean }>({ type: 'quietCheck' }).then(found => quiet = found).catch(() => { }) }
@@ -504,8 +513,8 @@
           {@const rate = app.status?.sampleRate ?? 48000}
           {@const nextFrame = changes[index + 1]?.frame ?? app.levels.seconds * rate}
           <div class="row" class:lifting={liftingIndex === index} class:lifted={liftedIndex === index} class:current={selected === index} onpointerdown={(event) => liftDown(index, event)} role="listitem">
-            <span class="number"><input type="checkbox" class="tick" checked={ticked.includes(String(index))} onchange={() => tickIndexes([index], !ticked.includes(String(index)))} aria-label="Select track {index + 1}" /> {index + 1}</span>
-            <span class="hear"><button class="hear-start locate" class:grabbed={selected === index} class:checked={change.confirmed} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Find this start in the wave above, zoomed in (click again to let go)"><span class="pill-time">{formatTime(change.frame, rate, false)}</span><span class="locate-icon">⌖</span></button><button class="hear-end locate" onclick={() => selectMarker(index, true)} title="Length so far"><span class="pill-time">{formatTime(Math.max(0, nextFrame - change.frame), rate, false)}</span></button></span>
+            <span class="tick-cell"><input type="checkbox" class="tick" checked={ticked.includes(String(index))} onchange={() => tickIndexes([index], !ticked.includes(String(index)))} aria-label="Select track {index + 1}" /> {index + 1}</span>
+            <span class="hear"><button class="hear-start locate" class:grabbed={selected === index} class:checked={change.confirmed} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Find this start in the wave above, zoomed in (click again to let go)"><span class="pill-time">{formatTime(change.frame, rate, false)}</span><span class="locate-icon">⌖</span></button><button class="hear-end locate" onclick={() => selectMarker(index, true)} title="Length so far"><span class="pill-time">{formatLength(Math.max(0, nextFrame - change.frame), rate)}</span></button></span>
             <input value={change.artist} placeholder="Artist" onchange={(event) => sendToShell({ type: 'editChange', index, artist: (event.target as HTMLInputElement).value.trim() })} />
             <input value={change.album} placeholder="Album" onchange={(event) => sendToShell({ type: 'editChange', index, album: (event.target as HTMLInputElement).value.trim() })} />
             <input value={change.year ?? ''} placeholder={group.year || 'Year'} onchange={(event) => sendToShell({ type: 'editChange', index, year: (event.target as HTMLInputElement).value.trim() })} />
@@ -514,7 +523,7 @@
             <input value={change.genre ?? ''} placeholder={group.genre || 'Genre'} onchange={(event) => sendToShell({ type: 'editChanges', indexes: [index], genre: (event.target as HTMLInputElement).value.trim() })} />
             <input value={change.composer ?? ''} placeholder={group.composer || 'Composer'} onchange={(event) => sendToShell({ type: 'editChanges', indexes: [index], composer: (event.target as HTMLInputElement).value.trim() })} />
             <button class="retake" class:on={!!change.problem} onclick={() => { problemFor = index; problemNote = change.note ?? '' }} title={change.problem ? `${problemLabel(change.problem)}${change.note ? ': ' + change.note : ''}. Click to change it` : 'Problem with this track? Note it, play it again or leave it out'}>{change.problem ? problemLabel(change.problem) : 'Problem?'}</button>
-            <button class="remove" onclick={() => sendToShell({ type: 'removeChange', index })} title="Remove this marker (the audio stays)" aria-label="Remove marker">✕</button>
+            <button class="remove" onclick={() => removeMarker(index)} title="Remove this marker (the audio stays)" aria-label="Remove marker">✕</button>
           </div>
           {#if liftedIndex >= 0 && group.indexes.includes(liftedIndex) && group.indexes[group.indexes.length - 1] === index}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
         {/each}
@@ -529,7 +538,24 @@
     confirmLabel="Use that album's names" altLabel="Give that album this track's names" onconfirm={() => joinAs('theirs')} onalt={() => joinAs('mine')} oncancel={() => joining = null} />
 {/if}
 
+{#if removing >= 0}
+  <div class="backdrop" role="presentation" onpointerdown={(event) => { if (event.target === event.currentTarget) removing = -1 }}>
+    <div class="gap-box" role="dialog" aria-label="Remove this track">
+      <h3>Remove track {removing + 1}: how should its neighbours meet?</h3>
+      <button class="ghost gap-choice" onclick={() => closeGap('previous')}>Track {removing} runs on until track {removing + 2} starts</button>
+      <button class="ghost gap-choice" onclick={() => closeGap('next')}>Track {removing + 2} starts where track {removing} ends now</button>
+      <button class="ghost gap-choice" onclick={() => closeGap('middle')}>They meet in the middle</button>
+      <div class="gap-foot"><button class="ghost" onclick={() => removing = -1}>Cancel</button></div>
+    </div>
+  </div>
+{/if}
+
 <style>
+  .gap-box { width: min(460px, calc(100vw - 40px)); display: flex; flex-direction: column; gap: 6px; padding: 16px 18px 14px; border-radius: 14px; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: 0 24px 60px var(--shadow); }
+  .gap-box h3 { margin: 0 0 6px; font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--fg); }
+  .gap-choice { text-align: left; padding: 7px 12px; }
+  .gap-foot { display: flex; justify-content: flex-end; margin-top: 4px; }
+
   .record { padding-bottom: 20px; }
   .record.recording h3 { margin-top: 10px; }
   .settings-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -673,7 +699,8 @@
   .album-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .album-track { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .album-tracks { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; font-size: 12px; color: var(--fg-quiet); max-height: 160px; overflow-y: auto; }
-  .retake { height: 26px; padding: 0 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; color: var(--fg-quiet); font: inherit; font-size: 12px; cursor: pointer; }
+  .tick-cell { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
+  .retake { height: 22px; margin: 2px 0; white-space: nowrap; padding: 0 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; color: var(--fg-quiet); font: inherit; font-size: 12px; cursor: pointer; }
   .retake:hover { background: var(--hover); } .retake.on { background: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--fg); border-color: transparent; }
   .issues { display: flex; flex-direction: column; gap: 6px; }
   .issue { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--danger) 12%, transparent); border-left: 3px solid var(--danger); font-size: 13px; }
