@@ -393,7 +393,10 @@
     for (const track of next) if (group.ids.includes(track.id)) { (track as any)[field] = value; track.exported = false }
     commit(next, `${field === 'albumArtist' ? 'Album artist' : field[0].toUpperCase() + field.slice(1)} set on ${group.ids.length} track${group.ids.length === 1 ? '' : 's'}`)
   }
-  function sameAlbumArtist(group: ListAlbum) { const next = copy(); for (const track of next) if (group.ids.includes(track.id)) { track.albumArtist = track.artist; track.exported = false } commit(next, 'Album artist set to the artist') }
+  // The album's main artist: the one most of its tracks have (featured credits on single tracks don't count against it)
+  function mainArtist(list: Track[]) { const counts = new Map<string, number>(); for (const track of list) if (track.artist) counts.set(track.artist, (counts.get(track.artist) ?? 0) + 1); return Array.from(counts.entries()).sort((first, second) => second[1] - first[1] || first[0].length - second[0].length)[0]?.[0] ?? '' }
+  // One album artist for the whole album, so it stays one album however the track artists vary
+  function sameAlbumArtist(group: ListAlbum) { const list = tracks.filter(track => group.ids.includes(track.id)), main = mainArtist(list); if (!main) return; const next = copy(); for (const track of next) if (group.ids.includes(track.id)) { track.albumArtist = main; track.exported = false } commit(next, `Album artist set to ${main}`) }
   function useAllFrom(group: ListAlbum, list: Track[], match: AlbumMatch) {
     const next = copy()
     for (const track of next) if (group.ids.includes(track.id)) {
@@ -893,7 +896,7 @@
                     <th>{row.label}</th>
                     <td class="mine">
                       <div class="with-same"><input value={row.mine ?? ''} placeholder={row.mine === null ? 'differs between tracks' : row.label} onchange={(event) => setGroupField(group, row.field, (event.target as HTMLInputElement).value.trim())} />
-                      {#if row.field === 'albumArtist'}<label class="same"><input type="checkbox" checked={list.every(track => (track.albumArtist || '') === (track.artist || ''))} onchange={(event) => { if ((event.target as HTMLInputElement).checked) sameAlbumArtist(group) }} />same as artist</label>{/if}</div>
+                      {#if row.field === 'albumArtist'}{@const main = mainArtist(list)}<button class="ghost small-button use-main" disabled={!main || list.every(track => track.albumArtist === main)} onclick={() => sameAlbumArtist(group)} title={main ? `Set the album artist of every track to ${main}, the artist most of its tracks have` : 'No track artist to use'}>Use main artist{main ? `: ${main}` : ''}</button>{/if}</div>
                     </td>
                     <td class="theirs">{#if row.theirs}<button class:same={row.same} onclick={() => setGroupField(group, row.field, row.theirs)} title={row.same ? 'Yours already matches' : `Use “${row.theirs}”`}>{row.same ? '✓ ' : '← '}{row.theirs}</button>{:else}<span class="quiet">-</span>{/if}</td>
                   </tr>
