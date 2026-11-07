@@ -2,6 +2,8 @@
   export type TagFields = { artist: string; title: string; album: string; albumArtist: string; genre: string; year: string; composer: string; comment: string; trackNumber: string; trackCount: string; artPath: string }
   export const tagFieldNames: [keyof TagFields, string][] = [['title', 'Title'], ['artist', 'Artist'], ['album', 'Album'], ['albumArtist', 'Album artist'], ['genre', 'Genre'], ['year', 'Year'], ['composer', 'Composer'], ['trackNumber', 'Track no.'], ['trackCount', 'Tracks on album'], ['comment', 'Comment']]
 </script>
+
+<svelte:window onkeydown={(event) => { if (event.ctrlKey && event.key.toLowerCase() === 'v' && !(event.target as HTMLElement)?.matches?.('input, textarea')) { event.preventDefault(); event.stopPropagation(); pasteArt() } }} />
 <script lang="ts">
   import { untrack } from 'svelte'
   import { request } from '../bridge'
@@ -23,6 +25,10 @@
     try { const result = await request<{ path: string; thumb: string }>({ type: 'chooseArt', id: sessionId }); if (result.path) { fields.artPath = result.path; thumbs[result.path] = result.thumb; artThumb = result.thumb } }
     catch (error) { toast('Could not use that picture: ' + (error as Error).message) }
   }
+  async function pasteArt() {
+    try { const result = await request<{ path: string; thumb: string; error: string }>({ type: 'pasteArt', id: sessionId }); if (result.path) { fields.artPath = result.path; thumbs[result.path] = result.thumb; artThumb = result.thumb } else toast(result.error) }
+    catch (error) { toast('Could not paste that picture: ' + (error as Error).message) }
+  }
   function apply() {
     if (single) { onapply(Object.assign({}, fields), true); return }
     const changed: Partial<TagFields> = {}
@@ -41,6 +47,7 @@
     {#if artThumb}<img src={artThumb} alt="Album art" />{:else}<div class="no-art">No picture</div>{/if}
     <div class="art-buttons">
       <button class="ghost" onclick={chooseArt}>Choose picture…</button>
+      <button class="ghost" onclick={pasteArt} title="Use the picture on the clipboard (Ctrl+V)">Paste picture<kbd>Ctrl+V</kbd></button>
       {#if fields.artPath}<button class="ghost" onclick={() => { fields.artPath = ''; artThumb = '' }}>Remove picture</button>{/if}
       <button class="ghost" onclick={() => onlookup(Object.assign({}, fields))}>Look up online…</button>
     </div>

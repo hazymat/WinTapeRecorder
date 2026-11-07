@@ -42,6 +42,8 @@ public partial class MainWindow : Window
         App.Tip += (title, text) => Push(JsonSerializer.Serialize(new { type = "tip", title, text }));
         App.SuggestionFound += (sessionId, track) => Push(JsonSerializer.Serialize(new { type = "suggestion", id = sessionId, trackId = track.Id, suggestion = track.Suggestion, looked = track.SuggestionLooked }, camel));
         App.AlbumChecked += (sessionId, check) => Push(JsonSerializer.Serialize(new { type = "albumCheck", id = sessionId, check }, camel));
+        App.AlbumProgress += (sessionId, done, total) => Push(JsonSerializer.Serialize(new { type = "albumProgress", id = sessionId, done, total }, camel));
+        App.AlbumMatched += (sessionId, matched) => Push(JsonSerializer.Serialize(new { type = "albumMatch", id = sessionId, albums = matched.Albums, tracks = matched.Tracks.Select(track => new { trackId = track.Id, suggestion = track.Suggestion, offAlbum = track.OffAlbum }) }, camel));
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += (sender, args) => Dispatcher.BeginInvoke(RestoreBoundsForDisplays);
         levelTimer.Tick += (sender, args) => PushLevels();
         playheadTimer.Tick += (sender, args) => { if (!App.Player.Playing) { playheadTimer.Stop(); Push(App.StatusJson()); Push("{\"type\":\"playhead\",\"frame\":-1}"); return; } Push(JsonSerializer.Serialize(new { type = "playhead", frame = App.Player.Position, session = App.Player.SessionId })); };
@@ -120,6 +122,15 @@ public partial class MainWindow : Window
                     App.SuggestTags(sessionId);
                     break;
                 case "suggestAgain": App.SuggestTags(Text(message, "id"), true); break;
+                case "albumKeep":
+                    if (App.TryGetOpen(Text(message, "id"), out var keeping) && keeping.session.Albums.ElementAtOrDefault((int)Number(message, "album")) is { } keptMatch)
+                    {
+                        var keptField = Text(message, "field");
+                        if (message.TryGetProperty("keep", out var keepFlag) && keepFlag.GetBoolean()) { if (!keptMatch.Kept.Contains(keptField)) keptMatch.Kept.Add(keptField); }
+                        else keptMatch.Kept.Remove(keptField);
+                        keeping.session.Save();
+                    }
+                    break;
                 case "peaks": Reply(message, await Task.Run(() => PeaksFor(Text(message, "id"), Number(message, "start"), Number(message, "end"), (int)Number(message, "columns", 800)))); break;
                 case "saveSession":
                     if (App.TryGetOpen(Text(message, "id"), out var saving))
@@ -178,6 +189,16 @@ public partial class MainWindow : Window
                         if (pictureDialog.ShowDialog(this) != true) { Reply(message, new { path = "" }); break; }
                         var chosenArt = TagLookup.SaveArtBytes(await File.ReadAllBytesAsync(pictureDialog.FileName), chooseSession.session.Folder);
                         Reply(message, new { path = chosenArt, thumb = TagLookup.Thumbnail(chosenArt) });
+                    }
+                    break;
+                case "pasteArt":
+                    if (App.TryGetOpen(Text(message, "id"), out var pasteSession))
+                    {
+                        var (pastedBytes, pasteUrl) = ClipboardPicture();
+                        if (pastedBytes == null && pasteUrl != "") { try { pastedBytes = await TagLookup.ArtBytesAsync(pasteUrl); } catch { } }
+                        if (pastedBytes == null) { Reply(message, new { path = "", error = "The clipboard has no picture. Copy an image (or a picture file, or its web address) and paste again." }); break; }
+                        var pastedArt = TagLookup.SaveArtBytes(pastedBytes, pasteSession.session.Folder);
+                        Reply(message, new { path = pastedArt, thumb = TagLookup.Thumbnail(pastedArt), error = "" });
                     }
                     break;
                 case "thumbs": Reply(message, message.GetProperty("paths").EnumerateArray().Select(path => path.GetString() ?? "").Distinct().ToDictionary(path => path, path => File.Exists(path) ? TagLookup.Thumbnail(path) : "")); break;
@@ -247,7 +268,7 @@ public partial class MainWindow : Window
     static object SessionDetail(Session session) => new
     {
         id = session.Id, name = session.Name, created = session.Created, device = session.Device, loopback = session.Loopback, sampleRate = session.SampleRate, channels = session.Channels, bitDepth = session.BitDepth,
-        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, clips = session.Clips, quality = session.Quality, albumCheck = session.AlbumCheck, tracks = session.Tracks, folder = session.Folder,
+        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, clips = session.Clips, quality = session.Quality, albumCheck = session.AlbumCheck, albums = session.Albums, albumLooked = session.AlbumLooked, tracks = session.Tracks, folder = session.Folder,
     };
 
     // Waveform data for [start, end) in columns: min/max per column for each channel, or the samples themselves when zoomed in that far
@@ -508,5 +529,28 @@ public partial class MainWindow : Window
         if (!App.ConfirmQuit()) { closingArgs.Cancel = true; return; }
         exportCancel?.Cancel();
         App.Quit(true);
+    }
+
+    // A picture from the clipboard (SPEC.md › Tags › Cover): PNG or JPEG data as copied by browsers, a bitmap, a copied picture file,
+    // or a picture's web address. Returns the bytes, or the address to fetch
+    static (byte[]? bytes, string url) ClipboardPicture()
+    {
+        try
+        {
+            foreach (var format in new[] { "PNG", "image/png", "JFIF", "image/jpeg" })
+                if (Clipboard.ContainsData(format) && Clipboard.GetData(format) is MemoryStream stream && stream.Length > 0) return (stream.ToArray(), "");
+            if (Clipboard.ContainsFileDropList())
+                foreach (var file in Clipboard.GetFileDropList())
+                    if (file != null && new[] { ".jpg", ".jpeg", ".png" }.Contains(Path.GetExtension(file).ToLowerInvariant()) && File.Exists(file)) return (File.ReadAllBytes(file), "");
+            if (Clipboard.ContainsImage() && Clipboard.GetImage() is { } image)
+            {
+                var encoder = new System.Windows.Media.Imaging.JpegBitmapEncoder { QualityLevel = 92 };
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+                using var output = new MemoryStream(); encoder.Save(output); return (output.ToArray(), "");
+            }
+            if (Clipboard.ContainsText() && Clipboard.GetText().Trim() is var text && (text.StartsWith("http://") || text.StartsWith("https://")) && !text.Contains(' ')) return (null, text);
+        }
+        catch { }
+        return (null, "");
     }
 }

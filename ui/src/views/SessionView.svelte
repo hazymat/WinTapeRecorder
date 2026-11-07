@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { request, sendToShell, onShellMessage } from '../bridge'
-  import { app, nav, toast, formatTime, formatDuration, writeSetting, readSetting, describeCutoff, shortCutoff, medianCutoff, type SessionDetail, type Track } from '../state.svelte'
+  import { app, nav, toast, formatTime, formatDuration, writeSetting, readSetting, describeCutoff, shortCutoff, medianCutoff, type SessionDetail, type Track, type AlbumMatch } from '../state.svelte'
   import { selection, selectKeys, clearSelection, type SelectionAction } from '../lib/selection.svelte'
   import { selectable } from '../lib/selectable.svelte'
   import Waveform, { type WaveView, type Grab } from '../parts/Waveform.svelte'
@@ -76,6 +76,12 @@
   onShellMessage('openProgress', message => { if (message.id === sessionId) loadProgress = message.fraction })
   onShellMessage('suggestion', message => { if (message.id !== sessionId) return; const track = tracks.find(candidate => candidate.id === message.trackId); if (track) { track.suggestion = message.suggestion; track.suggestionLooked = message.looked } })
   onShellMessage('albumCheck', message => { if (message.id === sessionId && session) session.albumCheck = message.check })
+  onShellMessage('albumProgress', message => { if (message.id === sessionId) albumProgress = { done: message.done, total: message.total } })
+  onShellMessage('albumMatch', message => {
+    if (message.id !== sessionId || !session) return
+    session.albums = message.albums; session.albumLooked = true; albumProgress = null
+    for (const update of message.tracks as { trackId: string; suggestion: any; offAlbum: boolean }[]) { const track = tracks.find(candidate => candidate.id === update.trackId); if (track) { track.suggestion = update.suggestion; track.offAlbum = update.offAlbum; track.suggestionDismissed = false; track.suggestionLooked = true } }
+  })
   onShellMessage('exportProgress', message => exportStatus = message.total ? `Exporting ${Math.min(message.done + 1, message.total)} of ${message.total}${message.current ? ': ' + message.current : ''}` : '')
 
   async function load() {
@@ -220,37 +226,67 @@
     applyTags(keys, fields, keys.length === 1)
     lookingUp = null
   }
-  // Suggestions (SPEC.md › Tags): take one field, or all that differ, from what the database found
-  type SuggestField = 'title' | 'artist' | 'album' | 'albumArtist' | 'year' | 'genre' | 'trackNumber' | 'art'
-  const suggestLabels: [SuggestField, string][] = [['title', 'Title'], ['artist', 'Artist'], ['album', 'Album'], ['albumArtist', 'Album artist'], ['year', 'Year'], ['genre', 'Genre'], ['trackNumber', 'No.'], ['art', 'Cover']]
-  function suggestedValue(track: Track, field: SuggestField): string { const suggestion = track.suggestion; if (!suggestion) return ''; return field === 'trackNumber' ? (suggestion.trackNumber ? `${suggestion.trackNumber}${suggestion.trackCount ? '/' + suggestion.trackCount : ''}` : '') : field === 'art' ? (suggestion.artUrl ? 'picture' : '') : (suggestion as any)[field] ?? '' }
-  function ownValue(track: Track, field: SuggestField): string { return field === 'trackNumber' ? (track.trackNumber ? `${track.trackNumber}${track.trackCount ? '/' + track.trackCount : ''}` : '') : field === 'art' ? (track.artPath ? 'picture' : '') : ((track as any)[field] ?? '') }
-  const differs = (track: Track, field: SuggestField) => { const suggested = suggestedValue(track, field); return !!suggested && suggested.toLowerCase() !== ownValue(track, field).toLowerCase() }
-  async function takeSuggestion(track: Track, fields: SuggestField[]) {
-    const suggestion = track.suggestion; if (!suggestion) return
-    const patch: Partial<TagFields> = {}
-    for (const field of fields) {
-      if (field === 'trackNumber') { if (suggestion.trackNumber) { patch.trackNumber = String(suggestion.trackNumber); if (suggestion.trackCount) patch.trackCount = String(suggestion.trackCount) } }
-      else if (field === 'art') { if (suggestion.artUrl) { try { const saved = await request<{ path: string; thumb: string }>({ type: 'fetchArt', id: sessionId, url: suggestion.artUrl }); patch.artPath = saved.path; thumbs = Object.assign({}, thumbs, { [saved.path]: saved.thumb }) } catch (error) { toast('No picture for that release: ' + (error as Error).message) } } }
-      else if ((suggestion as any)[field]) (patch as any)[field] = (suggestion as any)[field]
-    }
-    if (Object.keys(patch).length) applyTags([track.id], patch, true)
+  // The album match (SPEC.md › Tags › Album match): the session's albums, in order (one, or several recorded back to back).
+  // Album-wide fields are offered once per album, on its card; each track only gets its title spelling and number from its release
+  type AlbumField = 'album' | 'albumArtist' | 'year' | 'genre'
+  const albumFields: [AlbumField, string][] = [['album', 'Album'], ['albumArtist', 'Album artist'], ['year', 'Year'], ['genre', 'Genre']]
+  const looseTitle = (title: string) => title.toLowerCase().replace(/\s*[\(\[].*?[\)\]]/g, '').replace(/[^\p{L}\p{N}]/gu, '')
+  const albums = $derived(session?.albums ?? [])
+  let albumProgress = $state<{ done: number; total: number } | null>(null)
+  const albumTracks = (match: AlbumMatch) => exportable.filter(track => match.trackIds.includes(track.id))
+  // What an album's tracks have now for a field: one shared value, '' when none have it, or null when they differ
+  function commonValue(list: Track[], field: AlbumField | 'artPath'): string | null { const values = Array.from(new Set(list.map(track => ((track as any)[field] ?? '') as string))); return values.length === 1 ? values[0] : values.length === 0 ? '' : null }
+  function albumOffers(match: AlbumMatch) {
+    const list = albumTracks(match)
+    return albumFields.map(([field, label]) => { const theirs = (match as any)[field] as string, yours = commonValue(list, field); return { field, label, theirs, yours, same: !theirs || (yours ?? '').toLowerCase() === theirs.toLowerCase(), kept: match.kept.includes(field) } })
   }
-  // The album-wide fields a suggestion carries, to every track at once (when the suggestions agree)
-  const albumWide: SuggestField[] = ['album', 'albumArtist', 'year', 'genre', 'art']
-  const sharedSuggestion = $derived.by(() => { const first = tracks.find(track => track.suggestion?.album)?.suggestion; if (!first) return null; const agree = tracks.filter(track => track.suggestion?.album).every(track => track.suggestion!.album.toLowerCase() === first.album.toLowerCase()); return agree ? first : null })
-  async function takeAlbumForAll() {
-    const shared = sharedSuggestion; if (!shared) return
-    let artPath = '', artThumb = ''
-    if (shared.artUrl) { try { const saved = await request<{ path: string; thumb: string }>({ type: 'fetchArt', id: sessionId, url: shared.artUrl }); artPath = saved.path; artThumb = saved.thumb } catch { } }
-    if (artPath) thumbs = Object.assign({}, thumbs, { [artPath]: artThumb })
-    const patch: Partial<TagFields> = { album: shared.album, albumArtist: shared.albumArtist || shared.artist, year: shared.year, genre: shared.genre }
-    if (artPath) patch.artPath = artPath
-    for (const field of Object.keys(patch) as (keyof TagFields)[]) if (!patch[field]) delete patch[field]
-    applyTags(exportable.map(track => track.id), patch, false)
+  let failedCovers = $state<Record<string, boolean>>({})
+  function useAlbumField(match: AlbumMatch, fields: AlbumField[]) {
+    const patch: Partial<TagFields> = {}
+    for (const field of fields) { const value = (match as any)[field]; if (value) (patch as any)[field] = value }
+    if (Object.keys(patch).length) applyTags(albumTracks(match).map(track => track.id), patch, false)
+  }
+  function keepAlbumField(index: number, field: string, keep: boolean) {
+    const match = albums[index]; if (!match) return
+    match.kept = keep ? Array.from(new Set(match.kept.concat([field]))) : match.kept.filter(name => name !== field)
+    sendToShell({ type: 'albumKeep', id: sessionId, album: index, field, keep })
+  }
+  async function useMatchCover(match: AlbumMatch) {
+    if (!match.artUrl) return
+    try { const saved = await request<{ path: string; thumb: string }>({ type: 'fetchArt', id: sessionId, url: match.artUrl }); thumbs = Object.assign({}, thumbs, { [saved.path]: saved.thumb }); applyTags(albumTracks(match).map(track => track.id), { artPath: saved.path }, false) }
+    catch (error) { toast('No picture for that release: ' + (error as Error).message) }
+  }
+  async function useAllAlbum(match: AlbumMatch) {
+    useAlbumField(match, albumOffers(match).filter(offer => !offer.same && !offer.kept).map(offer => offer.field))
+    if (match.artUrl && !failedCovers[match.artUrl] && !match.kept.includes('art') && !commonValue(albumTracks(match), 'artPath')) await useMatchCover(match)
+  }
+  // A picture of your own (a file, or pasted): on the selected tracks, else the album's tracks (else every track)
+  async function chooseCover(paste: boolean, match?: AlbumMatch) {
+    try {
+      const result = await request<{ path: string; thumb: string; error?: string }>({ type: paste ? 'pasteArt' : 'chooseArt', id: sessionId })
+      if (!result.path) { if (result.error) toast(result.error); return }
+      thumbs = Object.assign({}, thumbs, { [result.path]: result.thumb })
+      const keys = selectedIds.length ? selectedIds : match ? albumTracks(match).map(track => track.id) : albums.length === 1 ? albumTracks(albums[0]).map(track => track.id) : exportable.map(track => track.id)
+      applyTags(keys, { artPath: result.path }, false)
+      toast(`Cover set on ${keys.length} track${keys.length === 1 ? '' : 's'}${selectedIds.length ? ' (the selected ones)' : ''}`)
+    } catch (error) { toast('Could not use that picture: ' + (error as Error).message) }
+  }
+  // Which of a release's tracks are here, which are missing
+  function missingFrom(match: AlbumMatch) { const numbers = new Set(albumTracks(match).map(track => track.suggestion?.releaseId === match.releaseId ? track.suggestion.trackNumber : 0)); return match.trackTitles.filter((_, index) => !numbers.has(index + 1)) }
+  // Per track: only the title as the release spells it and its number
+  const trackOffers = $derived(tracks.filter(track => !track.skip && !track.suggestionDismissed && track.suggestion && ((track.suggestion.title && track.suggestion.title !== track.title) || (track.suggestion.trackNumber && (track.suggestion.trackNumber !== track.trackNumber || (track.suggestion.trackCount || 0) !== (track.trackCount || 0))))))
+  const offAlbum = $derived(tracks.filter(track => !track.skip && track.offAlbum && !track.suggestionDismissed))
+  function useTrackOffer(list: Track[]) {
+    const next = copy()
+    for (const track of next) {
+      const suggestion = list.find(candidate => candidate.id === track.id)?.suggestion; if (!suggestion) continue
+      if (suggestion.title) track.title = suggestion.title
+      if (suggestion.trackNumber) { track.trackNumber = suggestion.trackNumber; if (suggestion.trackCount) track.trackCount = suggestion.trackCount }
+      track.exported = false
+    }
+    commit(next, `Titles and numbers from the album on ${list.length} track${list.length === 1 ? '' : 's'}`)
   }
   function dismissSuggestion(track: Track) { const next = copy(); next.find(candidate => candidate.id === track.id)!.suggestionDismissed = true; tracks = next; save() }
-  const pendingSuggestions = $derived(tracks.filter(track => track.suggestion && !track.suggestionDismissed && !track.skip && suggestLabels.some(([field]) => differs(track, field))))
   function openLookup(keys: string[], fields?: TagFields) {
     const first = tracks.find(track => keys.includes(track.id))
     lookingUp = { keys, artist: fields?.artist || first?.artist || '', title: fields?.title || first?.title || '', album: fields?.album || first?.album || '' }
@@ -345,12 +381,14 @@
   function scrollRowIntoView(trackId: string) { requestAnimationFrame(() => document.querySelector(`[data-select-key="${trackId}"]`)?.scrollIntoView({ block: 'nearest' })) }
 
   // ---- Keyboard (Settings › Shortcuts lists these) ----
+  const inTagsStep = () => step === 'tags'
   function onKey(event: KeyboardEvent) {
     if (!session || dialog || (event.target as HTMLElement)?.matches?.('input, textarea, select')) return
     const key = event.key, lower = key.toLowerCase()
     const step = event.ctrlKey ? 1 : Math.max(1, Math.round(view.framesPerPixel)) * (event.shiftKey ? 10 : 1)
     let handled = true
-    if (event.ctrlKey && lower === 'z' && !event.shiftKey) undo()
+    if (event.ctrlKey && lower === 'v' && inTagsStep() && !tagging && !lookingUp) chooseCover(true, albums.length === 1 ? albums[0] : undefined)
+    else if (event.ctrlKey && lower === 'z' && !event.shiftKey) undo()
     else if (event.ctrlKey && (lower === 'y' || (lower === 'z' && event.shiftKey))) redo()
     else if (event.ctrlKey && lower === 'e') exportTracks()
     else if (event.ctrlKey && key === '0') fit()
@@ -434,16 +472,18 @@
         <button class="ghost" onclick={confirmFocused} disabled={!focused && !grab} title="This edge is right: mark it checked and go to the next (Y)">Looks right<kbd>Y</kbd></button>
         <Dropdown label="Between tracks" value={trimSilence ? 'trim' : 'keep'} options={[['trim', 'Trim silence'], ['keep', 'Keep as recorded']]} onchange={(value) => setTrim(value === 'trim')} />
       {:else if step === 'tags'}
-        {#if sharedSuggestion}<button class="primary" onclick={takeAlbumForAll} title={`Album “${sharedSuggestion.album}”${sharedSuggestion.year ? ', ' + sharedSuggestion.year : ''}${sharedSuggestion.genre ? ', ' + sharedSuggestion.genre : ''}, with the cover, to every track (from ${sharedSuggestion.source})`}>Use album details for all</button>{/if}
-        <button class={sharedSuggestion ? 'ghost' : 'primary'} onclick={() => tagging = (untagged.length ? untagged : exportable).map(track => track.id)}>{untagged.length ? `Fill in ${untagged.length}…` : 'Edit tags…'}</button>
-        <button class="ghost" onclick={() => sendToShell({ type: 'suggestAgain', id: sessionId })} title="Look every track up again (MusicBrainz, then iTunes)">Suggest again</button>
+        <button class="primary" onclick={() => tagging = (selectedIds.length ? selectedIds : untagged.length ? untagged.map(track => track.id) : exportable.map(track => track.id))}>{selectedIds.length ? `Edit ${selectedIds.length} selected…` : untagged.length ? `Fill in ${untagged.length}…` : 'Edit tags…'}</button>
+        <button class="ghost" onclick={() => openLookup(exportable.map(track => track.id))} title="Search MusicBrainz, iTunes or Discogs yourself and pick the album">Look up album…</button>
       {:else}
-        <button class="primary" disabled={!!app.status?.exporting || !exportable.length} onclick={() => exportTracks(unexported.length ? unexported.map(track => track.id) : undefined)}>{unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>
+        {#if exportStatus}<span class="export-status">{exportStatus}</span>{/if}
+        {#if outputChoices.length}<Dropdown label="Output profile" value={outputProfileId} options={outputChoices} onchange={(value) => { if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
+        <button class="primary" disabled={!!app.status?.exporting || !exportable.length} onclick={() => exportTracks(selectedIds.length ? selectedIds : unexported.length ? unexported.map(track => track.id) : undefined)} title="Ctrl+E"><Icon name="export" size={16} />{selectedIds.length ? `Export ${selectedIds.length} selected` : unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>
       {/if}
     </div>
   </nav>
   <div class="toolbar">
     <button class="ghost" class:on={playing} onclick={() => playing ? stop() : playFrom(cursor)} title="Play from the playhead (Space)"><Icon name={playing ? 'stop' : 'play'} size={16} />{playing ? 'Stop' : 'Play'}</button>
+    {#if step === 'cuts'}
     <div class="group" title="This track">
       <span class="group-label">This track</span>
       <button class="ghost" onclick={() => hearEdge('start')} title="Hear this track's start (,)"><Icon name="starts" size={16} />Start<kbd>,</kbd></button>
@@ -462,6 +502,13 @@
       <button class="ghost" class:on={snapToZero} onclick={() => { snapToZero = !snapToZero; writeSetting('snapZero', snapToZero ? '1' : '') }} title="Edges land on the nearest zero crossing">Snap to zero</button>
       <button class="ghost" class:on={autoHeight} onclick={() => { autoHeight = !autoHeight; writeSetting('autoHeight', autoHeight ? '1' : '0') }} title="Zoomed in, the wave grows to fill the height, so quiet starts and fades show clearly (Ctrl+wheel overrides)">Auto height</button>
     </div>
+    {:else}
+    <div class="group">
+      <button class="ghost icon" onclick={() => zoomAtCursor(0.5)} title="Zoom in (+, or the wheel)"><Icon name="zoom-in" size={16} /></button>
+      <button class="ghost icon" onclick={() => zoomAtCursor(2)} title="Zoom out (-)"><Icon name="zoom-out" size={16} /></button>
+      <button class="ghost icon" onclick={fit} title="Whole session (Ctrl+0)"><Icon name="fit" size={16} /></button>
+    </div>
+    {/if}
     <div class="group">
       <button class="ghost icon" onclick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={16} /></button>
       <button class="ghost icon" onclick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"><Icon name="redo" size={16} /></button>
@@ -471,14 +518,14 @@
       <button class="ghost" class:on={waveMode === 'wave'} onclick={() => setWaveMode('wave')} title="Waveform: levels, starts and ends">Wave</button>
       <button class="ghost" class:on={waveMode === 'spectrogram'} onclick={() => setWaveMode('spectrogram')} title="Spectrogram: frequency over time. A flat top edge means a lossy source; a vertical gap is a dropout">Spectrogram</button>
     </div>
+    {#if step === 'cuts'}
     <div class="group">
       <button class="ghost icon" onclick={splitAtCursor} title="Split at the playhead (X)"><Icon name="split" size={16} /></button>
       <button class="ghost icon" onclick={() => dialog = { kind: 'redetect' }} title="Find the tracks again with the recording profile's gap settings"><Icon name="redetect" size={16} /></button>
     </div>
+    {/if}
     <div class="spacer"></div>
-    {#if exportStatus}<span class="export-status">{exportStatus}</span>{/if}
-    {#if outputChoices.length}<Dropdown label="Output profile" value={outputProfileId} options={outputChoices} onchange={(value) => { if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
-    <button class="primary export" disabled={!!app.status?.exporting || !tracks.length} onclick={() => exportTracks()} title="Export the selected tracks, or all (Ctrl+E)"><Icon name="export" size={16} />Export {selectedIds.length ? selectedIds.length : 'all'}</button>
+    {#if exportStatus && step !== 'export'}<span class="export-status">{exportStatus}</span>{/if}
   </div>
 
   <Hint id="waveform-basics" text="Check next jumps to each start and end, zoomed in both ways, and plays it: press Y if it sounds right, or drag the line, nudge it with ← →, or press S / E to set it at the playhead. Wheel zooms, Shift+wheel scrolls." />
@@ -490,20 +537,79 @@
 
   {#if step === 'tags'}
     <div class="tags-step">
-      {#if session.albumCheck}
-        {@const check = session.albumCheck}
-        <div class="album-check" class:complete={check.have === check.total}><strong>{check.album}</strong> · {check.artist} · {check.have} of {check.total} tracks here{#if check.missing.length} · missing: {check.missing.join(', ')}{/if}<span class="quiet"> · track list from {check.source}</span></div>
+      {#if !session.albumLooked}
+        <p class="quiet suggest-note">Matching albums from your track names{albumProgress ? ` (${albumProgress.done} of ${albumProgress.total} looked up)` : ''}…</p>
+      {:else if !albums.length}
+        <p class="quiet suggest-note">No album found online for these titles. <button class="link" onclick={() => openLookup(exportable.map(track => track.id))}>Look up album…</button> searches yourself; Edit tags… fills them in by hand.</p>
+      {:else}
+        {#if albums.length > 1}<p class="quiet suggest-note">{albums.length} albums in this session. Each exports to its own folder.</p>{/if}
+        {#each albums as match, albumIndex (albumIndex + match.releaseId)}
+          {@const list = albumTracks(match)}
+          {@const offers = albumOffers(match)}
+          {@const pending = offers.filter(offer => !offer.same && !offer.kept)}
+          {@const ownCover = commonValue(list, 'artPath')}
+          {@const missing = missingFrom(match)}
+          {@const coverShown = !!match.artUrl && !failedCovers[match.artUrl]}
+          <div class="album-card">
+            <div class="cover-col">
+              <div class="covers">
+                <figure><span class="cover-label">Yours</span>{#if ownCover && thumbs[ownCover]}<img src={thumbs[ownCover]} alt="Your cover" />{:else}<div class="no-cover">{ownCover === null ? 'Mixed' : 'None'}</div>{/if}</figure>
+                {#if coverShown}<figure><span class="cover-label">{match.source}</span><img src={match.artUrl} alt="Cover from {match.source}" onerror={() => failedCovers = Object.assign({}, failedCovers, { [match.artUrl]: true })} /></figure>{/if}
+              </div>
+              <div class="cover-buttons">
+                {#if coverShown}<button class="ghost" onclick={() => useMatchCover(match)} title="Download this cover and put it on this album's tracks">Use this cover</button>{/if}
+                <button class="ghost" onclick={() => chooseCover(false, match)} title="A JPEG or PNG of your own, on this album's tracks (or the selected ones)">Choose…</button>
+                <button class="ghost" onclick={() => chooseCover(true, match)} title="The picture on the clipboard, on this album's tracks (or the selected ones)">Paste{#if albums.length === 1}<kbd>Ctrl+V</kbd>{/if}</button>
+              </div>
+            </div>
+            <div class="album-body">
+              <div class="album-head">
+                <span><span class="suggest-source">{match.source}</span> <strong>{match.album}</strong>{match.albumArtist ? ` · ${match.albumArtist}` : ''}{match.detail ? ` · ${match.detail}` : ''}{albums.length > 1 ? ` · your tracks ${tracks.indexOf(list[0]) + 1}–${tracks.indexOf(list[list.length - 1]) + 1}` : ''}</span>
+                <span class="album-actions">
+                  {#if pending.length > 1}<button class="primary" onclick={() => useAllAlbum(match)}>Use all</button>{/if}
+                  <button class="ghost" onclick={() => openLookup(list.map(track => track.id))} title="Pick a different album for these tracks yourself">Not this album?</button>
+                </span>
+              </div>
+              <div class="album-fields">
+                {#each offers as offer (offer.field)}
+                  <span class="field-label">{offer.label}</span>
+                  <span class="field-theirs">{offer.theirs || '—'}</span>
+                  {#if !offer.theirs}<span class="quiet">not given</span><span></span>
+                  {:else if offer.same}<span class="field-state ok">✓ yours matches</span><span></span>
+                  {:else if offer.kept}<span class="field-state">keeping yours: {offer.yours === null ? 'mixed' : offer.yours || 'empty'}</span><button class="ghost" onclick={() => keepAlbumField(albumIndex, offer.field, false)}>Undo</button>
+                  {:else}<span class="field-state">yours: {offer.yours === null ? 'differs between tracks' : offer.yours || 'empty'}</span><span class="field-buttons"><button class="ghost" onclick={() => useAlbumField(match, [offer.field])}>Use</button><button class="ghost" onclick={() => keepAlbumField(albumIndex, offer.field, true)}>Keep mine</button></span>{/if}
+                {/each}
+              </div>
+              {#if match.trackTitles.length}
+                <div class="album-complete" class:complete={missing.length === 0}>{match.trackTitles.length - missing.length} of the release's {match.trackTitles.length} tracks are here{#if missing.length}{' · '}missing: {missing.join(', ')}{/if}</div>
+              {/if}
+            </div>
+          </div>
+        {/each}
+        <div class="match-again"><button class="link" onclick={() => { if (session) session.albumLooked = false; sendToShell({ type: 'suggestAgain', id: sessionId }) }}>Match albums again</button></div>
+        {#if trackOffers.length}
+          <div class="track-offers">
+            <div class="track-offers-head"><span><strong>Titles and numbers</strong><span class="quiet">{' · '}as the release has them</span></span>{#if trackOffers.length > 1}<button class="ghost" onclick={() => useTrackOffer(trackOffers)}>Use for all {trackOffers.length}</button>{/if}</div>
+            {#each trackOffers as track (track.id)}
+              {@const suggestion = track.suggestion!}
+              <div class="suggest">
+                <span class="suggest-track">{tracks.indexOf(track) + 1}. {track.title}</span>
+                <span class="arrow">→</span>
+                {#if suggestion.title !== track.title}<span class="chip-text"><span class="chip-label">Title</span>{suggestion.title}</span>{/if}
+                {#if suggestion.trackNumber}<span class="chip-text"><span class="chip-label">No.</span>{suggestion.trackNumber}{suggestion.trackCount ? '/' + suggestion.trackCount : ''}</span>{/if}
+                <span class="suggest-actions"><button class="ghost" onclick={() => useTrackOffer([track])}>Use</button><button class="ghost" onclick={() => dismissSuggestion(track)}>Keep mine</button></span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+        {#each offAlbum as track (track.id)}
+          <div class="suggest off-album">
+            <span class="suggest-track">{tracks.indexOf(track) + 1}. {track.title}</span>
+            <span>isn't on this release.</span>
+            <span class="suggest-actions"><button class="ghost" onclick={() => openLookup([track.id])}>Look it up…</button><button class="ghost" onclick={() => dismissSuggestion(track)}>It's fine</button></span>
+          </div>
+        {/each}
       {/if}
-      {#if pendingSuggestions.length === 0}<p class="quiet suggest-note">{tracks.some(track => !track.suggestionLooked && track.title && !track.skip) ? 'Looking the tracks up in the background…' : tracks.some(track => track.suggestion) ? 'Nothing more to suggest.' : 'Nothing found online for these titles. Edit tags… fills them in by hand.'}</p>{/if}
-      {#each pendingSuggestions as track (track.id)}
-        {@const suggestion = track.suggestion!}
-        <div class="suggest">
-          <span class="suggest-track">{tracks.indexOf(track) + 1}. {track.title}</span>
-          <span class="suggest-source" title="Where this comes from">{suggestion.source} says</span>
-          {#each suggestLabels as [field, label]}{#if differs(track, field)}<button class="chip" onclick={() => takeSuggestion(track, [field])} title={`Set ${label.toLowerCase()} to “${suggestedValue(track, field)}”${ownValue(track, field) ? ` (yours: “${ownValue(track, field)}”)` : ''}`}><span class="chip-label">{label}</span>{suggestedValue(track, field)}</button>{/if}{/each}
-          <span class="suggest-actions"><button class="ghost" onclick={() => takeSuggestion(track, suggestLabels.map(([field]) => field).filter(field => differs(track, field)))}>Use all</button><button class="ghost" onclick={() => dismissSuggestion(track)} title="Keep your own tags for this track">Keep mine</button></span>
-        </div>
-      {/each}
     </div>
   {/if}
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }}>
@@ -630,6 +736,32 @@
   .tick { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-quiet); }
   .tags-step { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .album-card { display: flex; gap: 14px; padding: 10px 12px; border-radius: 10px; background: var(--panel); }
+  .cover-col { display: flex; flex-direction: column; gap: 6px; flex: none; }
+  .covers { display: flex; gap: 8px; }
+  .covers figure { margin: 0; display: flex; flex-direction: column; gap: 3px; align-items: center; }
+  .covers img, .no-cover { width: 96px; height: 96px; object-fit: cover; border-radius: 6px; background: var(--hover); }
+  .no-cover { display: grid; place-items: center; color: var(--fg-quiet); font-size: 12px; }
+  .cover-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-quiet); font-weight: 600; }
+  .cover-buttons { display: flex; gap: 4px; flex-wrap: wrap; max-width: 210px; }
+  .album-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .album-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+  .album-actions { margin-left: auto; display: flex; gap: 4px; }
+  .album-fields { display: grid; grid-template-columns: max-content minmax(0, max-content) 1fr auto; gap: 4px 12px; align-items: center; font-size: 13px; }
+  .field-label { color: var(--fg-quiet); font-size: 12px; }
+  .field-theirs { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .field-state { color: var(--fg-quiet); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .field-state.ok { color: #3ecf6e; }
+  .field-buttons { display: flex; gap: 4px; }
+  .album-complete { font-size: 12.5px; padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .album-complete.complete { background: rgba(62, 207, 110, 0.12); }
+  .track-offers { display: flex; flex-direction: column; gap: 3px; }
+  .track-offers-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; font-size: 13px; }
+  .arrow { color: var(--fg-quiet); }
+  .chip-text { display: inline-flex; align-items: center; gap: 5px; background: var(--accent-soft); border-radius: 999px; padding: 2px 10px 2px 6px; font-size: 12px; }
+  .off-album { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+  .match-again { display: flex; justify-content: flex-end; font-size: 12px; padding: 0 8px; }
+  .link { background: none; border: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
   .album-check { padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 14%, transparent); border-left: 3px solid var(--warn); font-size: 13px; }
   .album-check.complete { background: rgba(62, 207, 110, 0.12); border-left-color: #3ecf6e; }
   .suggest-note { margin: 2px 8px; font-size: 12.5px; }

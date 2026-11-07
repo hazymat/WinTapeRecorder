@@ -64,6 +64,23 @@ public class AlbumCheck
     public List<string> Missing { get; set; } = new();
 }
 
+// The one release the session's tracks belong to (SPEC.md › Tags › Album match), found from all the track names together.
+// Album-wide fields are offered once from here; each track only gets its title spelling and number from the release's track list
+public class AlbumMatch
+{
+    public string Source { get; set; } = "";
+    public string ReleaseId { get; set; } = "";
+    public string Album { get; set; } = "";
+    public string AlbumArtist { get; set; } = "";
+    public string Year { get; set; } = "";
+    public string Genre { get; set; } = "";
+    public string ArtUrl { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public List<string> TrackTitles { get; set; } = new(); // the release's track list in order; empty when the source doesn't give one
+    public List<string> Kept { get; set; } = new(); // album fields the user chose to keep their own value for
+    public List<string> TrackIds { get; set; } = new(); // the session's tracks this album covers (a session can hold several albums back to back)
+}
+
 public class Track
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
@@ -98,6 +115,7 @@ public class Track
     public TagSuggestion? Suggestion { get; set; }
     public bool SuggestionDismissed { get; set; }
     public bool SuggestionLooked { get; set; } // looked up and nothing found, or found
+    public bool OffAlbum { get; set; } // named, but not on the matched release
 }
 
 // One recording: audio.wav, peaks.bin and session.json in its own folder (SPEC.md › Sessions)
@@ -120,6 +138,8 @@ public class Session
     public List<ClipEvent> Clips { get; set; } = new();
     public List<QualitySample> Quality { get; set; } = new();
     public AlbumCheck? AlbumCheck { get; set; }
+    public List<AlbumMatch> Albums { get; set; } = new();
+    public bool AlbumLooked { get; set; } // the album match has run (found or not)
     public List<Track> Tracks { get; set; } = new();
 
     [JsonIgnore] public string Folder { get; set; } = "";

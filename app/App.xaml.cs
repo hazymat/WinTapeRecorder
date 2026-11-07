@@ -229,27 +229,39 @@ public partial class App : Application
     readonly Dictionary<string, CancellationTokenSource> suggesting = new();
     public event Action<string, Track>? SuggestionFound;
     public event Action<string, AlbumCheck?>? AlbumChecked;
+    public event Action<string, Session>? AlbumMatched;
+    public event Action<string, int, int>? AlbumProgress;
     public void SuggestTags(string sessionId, bool again = false)
     {
         if (!openSessions.TryGetValue(sessionId, out var open)) return;
         if (suggesting.TryGetValue(sessionId, out var running)) { if (!again) return; running.Cancel(); }
-        var cancel = new CancellationTokenSource(); suggesting[sessionId] = cancel;
         var session = open.session;
+        if (session.AlbumLooked && !again) return;
+        var cancel = new CancellationTokenSource(); suggesting[sessionId] = cancel;
         _ = Task.Run(async () =>
         {
             try
             {
-                foreach (var track in session.Tracks.ToList())
+                // The session's albums (SPEC.md › Tags › Album match); tracks get only their title and number from their album
+                var named = session.Tracks.Where(track => track.Title != "" && !track.Skip).ToList();
+                var albums = await TagLookup.MatchAlbumsAsync(named.Select(track => (track.Artist, track.Title)).ToList(), (done, total) => AlbumProgress?.Invoke(sessionId, done, total), cancel.Token);
+                if (cancel.IsCancellationRequested) return;
+                await Dispatcher.InvokeAsync(() =>
                 {
-                    if (cancel.IsCancellationRequested) return;
-                    if (track.Title == "" || track.Skip || (track.SuggestionLooked && !again)) continue;
-                    var suggestion = await TagLookup.SuggestAsync(track.Artist, track.Title, track.Album);
-                    if (cancel.IsCancellationRequested) return;
-                    track.Suggestion = suggestion; track.SuggestionLooked = true; if (again) track.SuggestionDismissed = false;
-                    await Dispatcher.InvokeAsync(() => { session.Save(); SuggestionFound?.Invoke(sessionId, track); });
-                    await Task.Delay(1100, cancel.Token);
-                }
-                await CheckAlbumAsync(session, sessionId, cancel.Token);
+                    session.AlbumCheck = null; session.AlbumLooked = true; session.Albums = new();
+                    foreach (var track in session.Tracks) { track.SuggestionLooked = true; track.SuggestionDismissed = false; track.Suggestion = null; track.OffAlbum = false; }
+                    foreach (var (match, found) in albums)
+                    {
+                        foreach (var (index, entry) in found)
+                        {
+                            var track = named[index]; match.TrackIds.Add(track.Id);
+                            if (entry.number > 0) track.Suggestion = new TagSuggestion { Source = match.Source, Title = entry.title, TrackNumber = entry.number, TrackCount = entry.count, ReleaseId = match.ReleaseId };
+                            else track.OffAlbum = match.TrackTitles.Count > 0;
+                        }
+                        session.Albums.Add(match);
+                    }
+                    session.Save(); AlbumMatched?.Invoke(sessionId, session);
+                });
             }
             catch (OperationCanceledException) { }
             catch (Exception error) { CrashReporter.Write("Tag suggestions", error, false); }

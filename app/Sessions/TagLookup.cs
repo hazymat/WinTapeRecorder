@@ -35,21 +35,21 @@ public static class TagLookup
 
     static string Quote(string text) => "\"" + text.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
-    static async Task<List<TagMatch>> MusicBrainzAsync(string artist, string title, string album)
+    static async Task<List<TagMatch>> MusicBrainzAsync(string artist, string title, string album, int releasesEach = 3, int most = 25)
     {
         var parts = new List<string>();
         if (title != "") parts.Add("recording:" + Quote(title));
         if (artist != "") parts.Add("artist:" + Quote(artist));
         if (album != "") parts.Add("release:" + Quote(album));
         if (parts.Count == 0) return new();
-        using var document = JsonDocument.Parse(await client.GetStringAsync("https://musicbrainz.org/ws/2/recording/?fmt=json&limit=15&query=" + Uri.EscapeDataString(string.Join(" AND ", parts))));
+        using var document = JsonDocument.Parse(await client.GetStringAsync("https://musicbrainz.org/ws/2/recording/?fmt=json&limit={(releasesEach > 3 ? 25 : 15)}&query=" + Uri.EscapeDataString(string.Join(" AND ", parts))));
         var matches = new List<TagMatch>();
         foreach (var recording in document.RootElement.GetProperty("recordings").EnumerateArray())
         {
             var recordingArtist = recording.TryGetProperty("artist-credit", out var credits) ? string.Concat(credits.EnumerateArray().Select(credit => Read(credit, "name") + Read(credit, "joinphrase"))) : "";
             var genre = recording.TryGetProperty("tags", out var tags) ? tags.EnumerateArray().OrderByDescending(tag => tag.TryGetProperty("count", out var count) ? count.GetInt32() : 0).Select(tag => Read(tag, "name")).FirstOrDefault() ?? "" : "";
             if (!recording.TryGetProperty("releases", out var releases) || releases.GetArrayLength() == 0) { matches.Add(new TagMatch("MusicBrainz", Read(recording, "title"), recordingArtist, "", "", Year(Read(recording, "first-release-date")), Capitalise(genre), 0, 0, "", "")); continue; }
-            foreach (var release in releases.EnumerateArray().Take(3))
+            foreach (var release in releases.EnumerateArray().Take(releasesEach))
             {
                 var releaseArtist = release.TryGetProperty("artist-credit", out var releaseCredits) ? string.Concat(releaseCredits.EnumerateArray().Select(credit => Read(credit, "name") + Read(credit, "joinphrase"))) : recordingArtist;
                 int trackNumber = 0, trackCount = 0;
@@ -60,11 +60,12 @@ public static class TagLookup
                     if (medium.TryGetProperty("track", out var trackList) && trackList.GetArrayLength() > 0) int.TryParse(Read(trackList[0], "number"), out trackNumber);
                 }
                 var kind = release.TryGetProperty("release-group", out var group) ? Read(group, "primary-type") : "";
+                if (group.ValueKind == JsonValueKind.Object && group.TryGetProperty("secondary-types", out var secondary) && secondary.ValueKind == JsonValueKind.Array && secondary.GetArrayLength() > 0) kind += " (" + string.Join(", ", secondary.EnumerateArray().Select(type => type.GetString())) + ")";
                 matches.Add(new TagMatch("MusicBrainz", Read(recording, "title"), recordingArtist, Read(release, "title"), releaseArtist, Year(Read(release, "date")), Capitalise(genre), trackNumber, trackCount,
                     $"https://coverartarchive.org/release/{Read(release, "id")}/front-500", string.Join(" · ", new[] { kind, Read(release, "country"), Read(release, "status") }.Where(text => text != "")), Read(release, "id")));
             }
         }
-        return matches.Take(25).ToList();
+        return matches.Take(most).ToList();
     }
 
     static async Task<List<TagMatch>> ITunesAsync(string artist, string title, string album)
@@ -117,6 +118,140 @@ public static class TagLookup
         return best == null ? null : new TagSuggestion { Source = best.Source, Title = best.Title, Artist = best.Artist, Album = best.Album, AlbumArtist = best.AlbumArtist, Year = best.Year, Genre = best.Genre, TrackNumber = best.TrackNumber, TrackCount = best.TrackCount, ArtUrl = best.ArtUrl, ReleaseId = best.ReleaseId };
     }
 
+    // The albums in a session, in order (SPEC.md › Tags › Album match). Every named track is searched (MusicBrainz, one a second);
+    // releases vote by album name so different editions count together. Walking the tracks in order, a run continues while its
+    // tracks still share an album; when the next track shares none, a new album starts (several albums recorded back to back).
+    // For each run the best few releases of its album are fetched, and the one whose track list holds most of the run's titles wins
+    public static async Task<List<(AlbumMatch match, Dictionary<int, (string title, int number, int count)> tracks)>> MatchAlbumsAsync(IReadOnlyList<(string artist, string title)> named, Action<int, int>? progress, CancellationToken cancel)
+    {
+        var results = new List<(AlbumMatch, Dictionary<int, (string, int, int)>)>();
+        if (named.Count == 0) return results;
+        var perTrack = new List<Dictionary<string, List<TagMatch>>>();
+        for (int index = 0; index < named.Count; index++)
+        {
+            cancel.ThrowIfCancellationRequested();
+            var keys = new Dictionary<string, List<TagMatch>>();
+            try
+            {
+                // Every release of every matching recording, so the album the track really came from is among them; "(live)" and such are left out of the search
+                var searchTitle = System.Text.RegularExpressions.Regex.Replace(named[index].title, @"\s*[\(\[].*?[\)\]]", "").Trim();
+                foreach (var match in (await MusicBrainzAsync(named[index].artist, searchTitle == "" ? named[index].title : searchTitle, "", 40, 400)).Where(match => match.Album != "" && match.ReleaseId != ""))
+                {
+                    var key = Loose(match.Album) + "|" + Loose(match.AlbumArtist);
+                    if (!keys.TryGetValue(key, out var list)) keys[key] = list = new();
+                    list.Add(match);
+                }
+            }
+            catch { }
+            perTrack.Add(keys);
+            progress?.Invoke(index + 1, named.Count);
+            await Task.Delay(1100, cancel);
+        }
+        // Runs: tracks with nothing found join the run they sit in
+        var runs = new List<(int from, int to, HashSet<string> keys)>();
+        for (int index = 0; index < named.Count; index++)
+        {
+            var keys = perTrack[index].Keys.ToHashSet();
+            if (runs.Count > 0)
+            {
+                var last = runs[^1];
+                if (keys.Count == 0) { runs[^1] = (last.from, index, last.keys); continue; }
+                var shared = last.keys.Count == 0 ? keys : last.keys.Intersect(keys).ToHashSet();
+                if (shared.Count > 0) { runs[^1] = (last.from, index, shared); continue; }
+                // One track that doesn't fit, with the next one back on the run's album: a stray (a bonus track, a bad name), not a new album
+                if (index + 1 < named.Count && last.keys.Overlaps(perTrack[index + 1].Keys)) { runs[^1] = (last.from, index, last.keys); continue; }
+            }
+            runs.Add((index, index, keys));
+        }
+        foreach (var run in runs)
+        {
+            var indexes = Enumerable.Range(run.from, run.to - run.from + 1).ToList();
+            var matches = indexes.SelectMany(index => perTrack[index].Where(pair => run.keys.Contains(pair.Key)).SelectMany(pair => pair.Value)).ToList();
+            if (matches.Count == 0) continue;
+            // The album name the run shares; an official studio album beats a compilation when they tie
+            var bestKey = run.keys.OrderByDescending(key => indexes.Count(index => perTrack[index].ContainsKey(key)))
+                .ThenBy(key => matches.Count(match => Loose(match.Album) + "|" + Loose(match.AlbumArtist) == key && match.Detail.Contains("Compilation")) > 0 ? 1 : 0)
+                .ThenByDescending(key => matches.Count(match => Loose(match.Album) + "|" + Loose(match.AlbumArtist) == key && match.Detail.StartsWith("Album", StringComparison.OrdinalIgnoreCase)))
+                .ThenByDescending(key => matches.Count(match => Loose(match.Album) + "|" + Loose(match.AlbumArtist) == key && match.Detail.Contains("Official"))).First();
+            var albumMatches = matches.Where(match => Loose(match.Album) + "|" + Loose(match.AlbumArtist) == bestKey).ToList();
+            var candidates = albumMatches.GroupBy(match => match.ReleaseId).OrderByDescending(group => group.Count())
+                .ThenByDescending(group => group.First().Detail.Contains("Official")).Select(group => group.First()).Take(3).ToList();
+            (AlbumMatch match, List<string> titles, double score)? chosen = null;
+            foreach (var candidate in candidates)
+            {
+                cancel.ThrowIfCancellationRequested();
+                try
+                {
+                    var release = await ReleaseAsync(candidate.ReleaseId);
+                    var matched = indexes.Count(index => FindTitle(release.titles, named[index].title) >= 0);
+                    var score = matched - Math.Abs(release.titles.Count - indexes.Count) * 0.05;
+                    if (release.match.Genre == "") release.match.Genre = albumMatches.Select(match => match.Genre).Where(genre => genre != "").GroupBy(genre => genre).OrderByDescending(group => group.Count()).Select(group => group.Key).FirstOrDefault() ?? "";
+                    if (chosen == null || score > chosen.Value.score) chosen = (release.match, release.titles, score);
+                }
+                catch { }
+                await Task.Delay(1100, cancel);
+            }
+            if (chosen is not { } pick) continue;
+            pick.match.TrackTitles = pick.titles;
+            var tracks = new Dictionary<int, (string, int, int)>();
+            foreach (var index in indexes) { var at = FindTitle(pick.titles, named[index].title); tracks[index] = at >= 0 ? (pick.titles[at], at + 1, pick.titles.Count) : ("", 0, 0); }
+            results.Add((pick.match, tracks));
+        }
+        if (results.Count > 0) return results;
+        // Nothing on MusicBrainz: iTunes, by collection, with each track's own number from its result
+        var collections = new Dictionary<string, List<(int index, TagMatch match)>>();
+        foreach (var index in Enumerable.Range(0, Math.Min(named.Count, 8)))
+        {
+            cancel.ThrowIfCancellationRequested();
+            try
+            {
+                foreach (var match in (await ITunesAsync(named[index].artist, named[index].title, "")).Where(match => match.Album != "").Take(5))
+                {
+                    var key = Loose(match.Album) + "|" + Loose(match.AlbumArtist);
+                    if (!collections.TryGetValue(key, out var list)) collections[key] = list = new();
+                    if (!list.Any(entry => entry.index == index)) list.Add((index, match));
+                }
+            }
+            catch { }
+        }
+        var top = collections.Values.OrderByDescending(list => list.Count).FirstOrDefault();
+        if (top == null) return results;
+        var sample = top[0].match;
+        var album = new AlbumMatch { Source = "iTunes", Album = sample.Album, AlbumArtist = sample.AlbumArtist, Year = sample.Year, Genre = sample.Genre, ArtUrl = sample.ArtUrl, Detail = sample.Detail };
+        var numbers = new Dictionary<int, (string, int, int)>();
+        for (int index = 0; index < named.Count; index++) { var hit = top.Where(entry => entry.index == index).Select(entry => entry.match).FirstOrDefault(); numbers[index] = hit != null ? (hit.Title, hit.TrackNumber, hit.TrackCount) : ("", 0, 0); }
+        results.Add((album, numbers));
+        return results;
+    }
+
+    // A title's place in a release's track list: the same loosely, or one containing the other (for "(Remastered)" and such)
+    public static int FindTitle(List<string> titles, string title)
+    {
+        var loose = Loose(title); if (loose == "") return -1;
+        var exact = titles.FindIndex(candidate => Loose(candidate) == loose);
+        if (exact >= 0) return exact;
+        return titles.FindIndex(candidate => { var other = Loose(candidate); return other.Length >= 4 && loose.Length >= 4 && (other.Contains(loose) || loose.Contains(other)); });
+    }
+
+    // A MusicBrainz release with its track list (all discs, in order) and the original year of its release group
+    static async Task<(AlbumMatch match, List<string> titles)> ReleaseAsync(string releaseId)
+    {
+        using var document = JsonDocument.Parse(await client.GetStringAsync($"https://musicbrainz.org/ws/2/release/{releaseId}?inc=recordings+artist-credits+release-groups+genres&fmt=json"));
+        var root = document.RootElement;
+        var titles = new List<string>();
+        if (root.TryGetProperty("media", out var media))
+            foreach (var medium in media.EnumerateArray()) if (medium.TryGetProperty("tracks", out var tracks)) foreach (var track in tracks.EnumerateArray()) titles.Add(Read(track, "title"));
+        var artist = root.TryGetProperty("artist-credit", out var credits) ? string.Concat(credits.EnumerateArray().Select(credit => Read(credit, "name") + Read(credit, "joinphrase"))) : "";
+        var group = root.TryGetProperty("release-group", out var groupElement) ? groupElement : default;
+        var year = Year(group.ValueKind == JsonValueKind.Object ? Read(group, "first-release-date") : "");
+        if (year == "") year = Year(Read(root, "date"));
+        var genre = root.TryGetProperty("genres", out var genres) ? genres.EnumerateArray().OrderByDescending(entry => entry.TryGetProperty("count", out var count) ? count.GetInt32() : 0).Select(entry => Read(entry, "name")).FirstOrDefault() ?? "" : "";
+        var kind = group.ValueKind == JsonValueKind.Object ? Read(group, "primary-type") : "";
+        var match = new AlbumMatch { Source = "MusicBrainz", ReleaseId = releaseId, Album = Read(root, "title"), AlbumArtist = artist, Year = year, Genre = Capitalise(genre),
+            ArtUrl = $"https://coverartarchive.org/release/{releaseId}/front-500", Detail = string.Join(" · ", new[] { kind, Read(root, "country"), Read(root, "status"), titles.Count > 0 ? $"{titles.Count} tracks" : "" }.Where(text => text != "")) };
+        return (match, titles);
+    }
+
     // Loose title comparison: case, punctuation and bracketed asides don't count
     public static string Loose(string title) => new string(System.Text.RegularExpressions.Regex.Replace(title.ToLowerInvariant(), @"\s*[\(\[].*?[\)\]]", "").Where(char.IsLetterOrDigit).ToArray());
 
@@ -128,6 +263,8 @@ public static class TagLookup
         var bytes = await client.GetByteArrayAsync(url);
         return SaveArtBytes(bytes, sessionFolder);
     }
+
+    public static async Task<byte[]> ArtBytesAsync(string url) => await client.GetByteArrayAsync(url);
 
     public static string SaveArtBytes(byte[] bytes, string sessionFolder)
     {
