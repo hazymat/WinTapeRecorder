@@ -14,6 +14,7 @@ public sealed class SessionAudio : IDisposable
     int BytesPerSample => BitsPerSample / 8;
     int BlockAlign => BytesPerSample * Channels;
     long dataOffset;
+    public long DataOffset => dataOffset;
     readonly FileStream stream;
     readonly object readLock = new();
     byte[] readBuffer = Array.Empty<byte>();

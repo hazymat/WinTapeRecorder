@@ -117,6 +117,7 @@ public partial class App : Application
         Updater.Start();
         versionBeforeThisRun = Settings.General.LastRunVersion;
         if (Settings.General.LastRunVersion != Updater.CurrentVersion) { Settings.General.LastRunVersion = Updater.CurrentVersion; Settings.Save(); }
+        ResumeRecordingAfterUpdate();
         // A recording cut off by a crash or power cut: say so; its audio up to the last two seconds is on disk and opens as usual
         _ = Task.Run(async () =>
         {
@@ -142,6 +143,30 @@ public partial class App : Application
     }
 
     public void StopMonitoring() { if (!Recorder.Recording) { Recorder.Stop(); StatusChanged?.Invoke(); } }
+
+    void ResumeRecordingAfterUpdate()
+    {
+        if (!File.Exists(ResumeFile)) return;
+        ResumeNote? note = null;
+        try { note = System.Text.Json.JsonSerializer.Deserialize<ResumeNote>(File.ReadAllText(ResumeFile)); } catch { }
+        try { File.Delete(ResumeFile); } catch { }
+        if (note == null || Session.Load(note.Folder) is not { } session) return;
+        try
+        {
+            var profile = Settings.RecordingProfileOrActive(note.ProfileId);
+            Player.Stop();
+            Recorder.Start(profile, session, resume: true);
+            session.Recording = true; session.Save();
+            RecordingSource = note.Source; lastNameKey = session.Changes.Count > 0 ? "" : lastNameKey;
+            Dispatcher.BeginInvoke(() => ShowTip("Recording paused", $"Updated to {Updater.CurrentVersion}. “{session.Name}” is open again, paused: press the round button to carry on."));
+        }
+        catch (Exception resumeError)
+        {
+            Recorder.Stop();
+            Dispatcher.BeginInvoke(() => ShowTip("Couldn't carry on the recording", resumeError.Message + " Everything recorded so far is kept: open it from the list."));
+        }
+        StatusChanged?.Invoke(); SessionsChanged?.Invoke();
+    }
 
     public void StartRecording(string profileId, string source, string name, bool armed = false)
     {
@@ -556,9 +581,25 @@ public partial class App : Application
     }
 
     // An update restart never cuts a recording or export short
+    // Updating mid-recording (SPEC.md › Recording › Updating): the recording pauses, the session is saved with a note of how to carry on,
+    // and the updated app reopens it paused. Nothing is recorded while the app restarts
+    static string ResumeFile => Path.Combine(AppPaths.DataFolder, "resume-recording.json");
+    record ResumeNote(string Folder, string ProfileId, string Source);
     public bool CanRestart()
     {
-        if (Recorder.Recording) { MessageBox.Show("Stop the recording first, then restart to update.", "WinTapeRecorder", MessageBoxButton.OK, MessageBoxImage.Information); return false; }
+        if (Recorder.Recording && Recorder.WaitingForSound) { MessageBox.Show("The recording is still waiting for sound. Start over or let it start, then restart to update.", "WinTapeRecorder", MessageBoxButton.OK, MessageBoxImage.Information); return false; }
+        if (Recorder.Recording)
+        {
+            if (MessageBox.Show("The recording pauses, WinTapeRecorder updates and reopens this session paused. Press the round button to carry on.\n\nPause your music too: nothing is recorded during the restart.", "Update during a recording", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return false;
+            if (Exporting) { MessageBox.Show("Wait for the export to finish, then restart to update.", "WinTapeRecorder", MessageBoxButton.OK, MessageBoxImage.Information); return false; }
+            Recorder.Paused = true;
+            var session = Recorder.Session;
+            if (session == null) return false;
+            var note = new ResumeNote(session.Folder, session.RecordingProfileId, RecordingSource);
+            Recorder.Stop(); // the audio, waveform and notes reach the disk; the session is left as it is, not finished
+            try { File.WriteAllText(ResumeFile, System.Text.Json.JsonSerializer.Serialize(note)); } catch { }
+            return true;
+        }
         if (Exporting) { MessageBox.Show("Wait for the export to finish, then restart to update.", "WinTapeRecorder", MessageBoxButton.OK, MessageBoxImage.Information); return false; }
         return true;
     }

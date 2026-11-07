@@ -72,7 +72,9 @@ public sealed class Recorder : IDisposable
     public bool Capturing => capture != null;
 
     // With a session: records into it. Without: only watches the input level (the Record view's level check before recording)
-    public void Start(RecordingProfile profile, Session? session)
+    // resume: carry on writing into a session recorded before a restart (an update while paused, SPEC.md › Recording › Updating);
+    // it comes back paused, with its notes, waveform and issues as they were
+    public void Start(RecordingProfile profile, Session? session, bool resume = false)
     {
         var device = AudioDevices.Find(profile.DeviceId, profile.DeviceName, profile.Loopback) ?? throw new InvalidOperationException(profile.DeviceId == "" ? "No default audio device." : $"{profile.DeviceName} isn't connected.");
         capture = profile.Loopback ? new LoopbackCapture(device) : new WasapiCapture(device, true, 200);
@@ -82,15 +84,15 @@ public sealed class Recorder : IDisposable
         bitDepth = profile.BitDepth is 16 or 24 or 32 ? profile.BitDepth : 24;
         WaitingForSound = ArmNext && session != null; ArmNext = false; Paused = false; preRoll.Clear(); preRollFrames = 0;
         heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; lastSoundFrame = 0; KeepThroughSilence = false; HitSizeLimit = false; Problem = ""; Dropouts.Clear(); lock (Gaps) Gaps.Clear(); gapStart = -1; previousLoudest = 0; shortfallFrames = 0; detecting = false;
-        Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null; Clips.Clear(); clipBurstFrame = -1; FlacRatio = 0; flacSamples = 0;
+        Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null; Clips.Clear(); priorOtherSounds = new(); clipBurstFrame = -1; FlacRatio = 0; flacSamples = 0;
         DeviceName = device.FriendlyName;
         try { DeviceVolume = profile.Loopback ? device.AudioEndpointVolume.MasterVolumeLevelScalar : -1; } catch { DeviceVolume = -1; }
         if (session != null)
         {
             session.Device = device.FriendlyName; session.Loopback = profile.Loopback; session.SampleRate = sampleRate; session.Channels = channels; session.BitDepth = bitDepth;
             session.Save();
-            Peaks = new Peaks(channels);
-            OpenWav(session.AudioPath, sampleRate);
+            if (resume) Reopen(session);
+            else { Peaks = new Peaks(channels); OpenWav(session.AudioPath, sampleRate); }
             writeQueue = new BlockingCollection<(byte[], int)>();
             writerThread = new Thread(WriteLoop) { IsBackground = true, Name = "WAV writer", Priority = ThreadPriority.AboveNormal };
             writerThread.Start();
@@ -105,7 +107,30 @@ public sealed class Recorder : IDisposable
         capture.DataAvailable += OnData;
         capture.RecordingStopped += (sender, args) => { if (args.Exception != null && capture != null) { Problem = args.Exception.Message; Stop(); Stopped?.Invoke(); } };
         wallClock.Restart(); lastWallSeconds = 0; framesSeen = 0;
+        if (resume) Paused = true;
         capture.StartRecording();
+    }
+
+    List<OtherSound> priorOtherSounds = new();
+    void Reopen(Session session)
+    {
+        long frames, offset; int blockAlign;
+        using (var audio = SessionAudio.Open(session.AudioPath))
+        {
+            if (audio.SampleRate != sampleRate || audio.Channels != channels || audio.BitsPerSample != bitDepth)
+                throw new InvalidOperationException($"The device now runs at {sampleRate / 1000.0:0.#} kHz, {channels} channels; this session was recorded at {audio.SampleRate / 1000.0:0.#} kHz, {audio.Channels} channels, so it can't carry on in the same file.");
+            frames = audio.TotalFrames; offset = audio.DataOffset; blockAlign = audio.Channels * audio.BitsPerSample / 8;
+            Peaks = Peaks.Load(session.PeaksPath, frames) ?? Peaks.Build(audio);
+        }
+        output = new FileStream(session.AudioPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read, 1 << 18);
+        headerWriter = new BinaryWriter(output, System.Text.Encoding.ASCII, true);
+        dataStart = offset; output.SetLength(offset + frames * blockAlign); output.Position = output.Length;
+        framesWritten = frames; lastSoundFrame = frames; clippedSamples = session.ClippedSamples;
+        lock (Dropouts) Dropouts.AddRange(session.Dropouts);
+        lock (Gaps) Gaps.AddRange(session.Gaps);
+        lock (Quality) Quality.AddRange(session.Quality);
+        lock (Clips) Clips.AddRange(session.Clips);
+        priorOtherSounds = session.OtherSounds.ToList();
     }
 
     void OpenWav(string path, int rate)
@@ -307,7 +332,7 @@ public sealed class Recorder : IDisposable
         silenceKeeper = null;
         var session = Session; var peaks = Peaks; Session = null;
         var others = otherSounds; otherSounds = null; others?.Dispose();
-        if (session != null && others != null) session.OtherSounds = others.Snapshot();
+        if (session != null && others != null) session.OtherSounds = priorOtherSounds.Concat(others.Snapshot()).ToList();
         var queue = writeQueue; writeQueue = null;
         if (queue != null)
         {
@@ -338,13 +363,13 @@ public sealed class Recorder : IDisposable
         lock (Gaps) session.Gaps = Gaps.ToList();
         lock (Quality) session.Quality = Quality.ToList();
         lock (Clips) session.Clips = Clips.ToList();
-        if (otherSounds != null) session.OtherSounds = otherSounds.Snapshot();
+        if (otherSounds != null) session.OtherSounds = priorOtherSounds.Concat(otherSounds.Snapshot()).ToList();
         session.Save();
     }
 
     Session? lastStopped;
     OtherSounds? otherSounds;
-    public List<OtherSound> OtherSoundsSoFar => otherSounds?.Snapshot() ?? new();
+    public List<OtherSound> OtherSoundsSoFar => priorOtherSounds.Concat(otherSounds?.Snapshot() ?? new()).ToList();
     // The session a stop from the audio side finished (size guard, device gone), taken once by whoever finishes up
     public Session? TakeLastStopped() { var taken = lastStopped; lastStopped = null; return taken; }
     public bool HitSizeLimit { get; private set; } // set when the WAV filled up; cleared by the next start
