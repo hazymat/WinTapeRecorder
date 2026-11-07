@@ -73,6 +73,7 @@ public sealed class Recorder : IDisposable
         channels = captureFormat.Channels; captureBits = captureFormat.BitsPerSample; sampleRate = captureFormat.SampleRate;
         captureFloat = captureFormat.Encoding == WaveFormatEncoding.IeeeFloat || (captureFormat is WaveFormatExtensible extensible && extensible.SubFormat == NAudio.Dmo.AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT);
         bitDepth = profile.BitDepth is 16 or 24 or 32 ? profile.BitDepth : 24;
+        WaitingForSound = ArmNext && session != null; ArmNext = false; preRoll.Clear(); preRollFrames = 0;
         heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; lastSoundFrame = 0; KeepThroughSilence = false; HitSizeLimit = false; Problem = ""; Dropouts.Clear(); shortfallFrames = 0; detecting = false;
         Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null; Clips.Clear(); clipBurstFrame = -1; FlacRatio = 0; flacSamples = 0;
         DeviceName = device.FriendlyName;
@@ -139,6 +140,30 @@ public sealed class Recorder : IDisposable
         GatherQuality(samples, frames);
         var queue = writeQueue;
         if (queue == null || queue.IsAddingCompleted) return; // level check only, or stopping
+        // Armed (SPEC.md › Recording): nothing is kept until sound arrives, apart from half a second before it so the attack is whole
+        if (WaitingForSound)
+        {
+            preRoll.Enqueue(samples.ToArray()); preRollFrames += frames;
+            while (preRoll.Count > 1 && preRollFrames - preRoll.Peek().Length / channels >= sampleRate / 2) preRollFrames -= preRoll.Dequeue().Length / channels;
+            if (loudest < ArmLevel) return;
+            WaitingForSound = false;
+            var held = preRoll.ToArray(); preRoll.Clear(); preRollFrames = 0;
+            foreach (var block in held) Keep(block.AsSpan(), queue);
+            lastSoundFrame = FramesWritten;
+            return;
+        }
+        Keep(samples, queue);
+    }
+
+    const float ArmLevel = 0.003f; // about -50 dBFS: real sound, not the noise of a silent stream
+    readonly Queue<float[]> preRoll = new();
+    int preRollFrames;
+    public bool ArmNext { get; set; } // set before Start: the recording waits for sound
+    public bool WaitingForSound { get; private set; }
+
+    void Keep(Span<float> samples, BlockingCollection<(byte[], int)> queue)
+    {
+        var sampleCount = samples.Length; var frames = sampleCount / channels;
         var byteCount = sampleCount * (bitDepth / 8);
         var bytes = ArrayPool<byte>.Shared.Rent(byteCount);
         SampleConvert.FromFloat(samples, bytes.AsSpan(0, byteCount), bitDepth);

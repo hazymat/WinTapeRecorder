@@ -176,8 +176,18 @@ public partial class MainWindow : Window
                 case "applyUpdate": await App.Updater.RestartToUpdateAsync(); break;
                 // ---- Recording ----
                 case "monitor": if (message.GetProperty("on").GetBoolean()) App.StartMonitoring(Text(message, "profileId")); else App.StopMonitoring(); break;
-                case "record": App.StartRecording(Text(message, "profileId"), Text(message, "source") is { Length: > 0 } source ? source : "auto", Text(message, "name")); break;
+                case "record": App.StartRecording(Text(message, "profileId"), Text(message, "source") is { Length: > 0 } source ? source : "auto", Text(message, "name"), message.TryGetProperty("armed", out var armed) && armed.GetBoolean()); break;
                 case "keepThroughSilence": App.Recorder.KeepThroughSilence = true; break;
+                // Start over (SPEC.md › Recording): the recording so far is thrown away, and optionally a new one starts straight away
+                case "discardRecording":
+                    {
+                        var restartSource = App.RecordingSource; var restartProfile = App.Recorder.Session?.RecordingProfileId ?? "";
+                        var thrown = App.StopRecording();
+                        if (thrown != null) { try { App.DeleteSession(thrown.Id); } catch { } }
+                        if (message.TryGetProperty("restart", out var restart) && restart.GetBoolean()) App.StartRecording(restartProfile, restartSource, "");
+                        Push(App.StatusJson());
+                    }
+                    break;
                 case "stopRecording": var stopped = App.StopRecording(); Reply(message, new { sessionId = stopped?.Id ?? "" }); break;
                 case "marker": App.AddMarker(); break;
                 case "editChange": App.EditChange((int)Number(message, "index", -1), message.TryGetProperty("frame", out var frameValue) && frameValue.ValueKind == JsonValueKind.Number ? (long)frameValue.GetDouble() : null, message.TryGetProperty("artist", out _) ? Text(message, "artist") : null, message.TryGetProperty("title", out _) ? Text(message, "title") : null, message.TryGetProperty("album", out _) ? Text(message, "album") : null, message.TryGetProperty("year", out _) ? Text(message, "year") : null); break;

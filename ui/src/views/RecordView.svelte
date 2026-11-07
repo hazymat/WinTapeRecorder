@@ -1,6 +1,6 @@
 <script lang="ts">
   import { request, sendToShell } from '../bridge'
-  import { app, nav, toast, formatTime, writeSetting } from '../state.svelte'
+  import { app, nav, toast, formatTime, writeSetting, readSetting } from '../state.svelte'
   import LevelMeter from '../parts/LevelMeter.svelte'
   import Dropdown from '../parts/Dropdown.svelte'
   import Dialog from '../parts/Dialog.svelte'
@@ -23,7 +23,7 @@
 
   export function toggleRecording() {
     if (recording) stopRecording()
-    else { sendToShell({ type: 'record', profileId, source, name: sessionName.trim() }); sessionName = '' }
+    else { sendToShell({ type: 'record', profileId, source, name: sessionName.trim(), armed: startOnSound }); sessionName = '' }
   }
   async function stopRecording() {
     const result = await request<{ sessionId: string }>({ type: 'stopRecording' })
@@ -225,6 +225,10 @@
   })
   const firstEstimate = $derived(estimates.find(estimate => app.outputProfiles.find(profile => profile.name === estimate.name)?.id === app.activeOutput) ?? estimates[0])
   const current = $derived(app.status?.current)
+  let startingOver = $state(false)
+  // Start now, or arm: recording waits for sound and drops the silence before it (SPEC.md › Recording); remembered
+  let startOnSound = $state(readSetting('startOnSound', '') === '1')
+  function setStartOnSound(on: boolean) { startOnSound = on; writeSetting('startOnSound', on ? '1' : '') }
   // Albums so far (SPEC.md › Recording › Live editing): runs of markers sharing artist and album, in order. Track numbers count up
   // within each (a marker set for a retake doesn't count); the list below and the strip above both use these
   type Change = NonNullable<typeof app.status>['changes'][number]
@@ -262,6 +266,9 @@
 </script>
 
 <svelte:window onkeydown={onLiveKey} />
+{#if startingOver}
+  <Dialog title="Start over?" text={`This throws away the recording so far (${formatTime(app.levels.seconds * 1000, 1000, false)}) and its markers. It can't be undone.`} danger confirmLabel="Throw away and record again" altLabel="Throw away and stop" onconfirm={() => { startingOver = false; sendToShell({ type: 'discardRecording', restart: true }) }} onalt={() => { startingOver = false; sendToShell({ type: 'discardRecording', restart: false }) }} oncancel={() => startingOver = false} />
+{/if}
 <div class="record" class:recording>
   {#if !recording}
     <h2>Record</h2>
@@ -282,13 +289,18 @@
     <button class="record-button" class:on={recording} onclick={toggleRecording} title={recording ? 'Stop (Ctrl+R)' : 'Record (Ctrl+R)'} aria-label={recording ? 'Stop recording' : 'Start recording'}><Icon name={recording ? 'stop' : 'record'} size={recording ? 16 : 34} /></button>
     <div class="deck-info">
       {#if recording}
-        <div class="clock">{formatTime(app.levels.seconds * 1000, 1000, false)}</div>
+        <div class="clock" class:armed-clock={app.status?.waitingForSound}>{app.status?.waitingForSound ? 'Armed' : formatTime(app.levels.seconds * 1000, 1000, false)}</div>
+        {#if app.status?.waitingForSound}<div class="quiet info">waiting for sound: press play in your player; the silence before it isn't kept</div>{/if}
         <div class="quiet info">{app.status?.sessionName} · {sizeText} WAV{#if firstEstimate}{' · '}<span class="estimate" title={estimates.map(estimate => `${estimate.name}: ${estimate.text}`).join(String.fromCharCode(10))}>{firstEstimate.text} as {firstEstimate.name}{estimates.length > 1 ? ` (+${estimates.length - 1} more)` : ''}</span>{/if}</div>
       {:else}
         <input class="session-name" bind:value={sessionName} placeholder="Session name (optional)" onkeydown={(event) => { if (event.key === 'Enter') toggleRecording() }} />
+        <div class="start-mode" role="group" aria-label="When recording starts">
+          <button class:on={!startOnSound} onclick={() => setStartOnSound(false)} title="Recording starts the moment you press the button">Start now</button><button class:on={startOnSound} onclick={() => setStartOnSound(true)} title="Armed: recording starts with the first sound, so you can press record, switch to your player and press play">Start on sound</button>
+        </div>
         <div class="quiet">Ctrl+R starts and stops recording from anywhere in the app.</div>
       {/if}
     </div>
+    {#if recording}<button class="ghost start-over" onclick={() => startingOver = true} title="Throw this recording away and start again">Start over…</button>{/if}
     {#if recording}<button class="ghost marker" onclick={() => sendToShell({ type: 'marker' })} title="Mark a new track here (M)"><Icon name="marker" size={14} />New track here<kbd>M</kbd></button>{/if}
   </div>
 
@@ -441,6 +453,13 @@
   .deck.live .deck-info { flex-direction: row; align-items: baseline; gap: 10px; min-width: 0; }
   .deck.live .clock { font-size: 20px; font-weight: 700; }
   .deck.live .info { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .start-mode { display: flex; margin: 2px 0; }
+  .start-mode button { padding: 3px 12px; font: inherit; font-size: 12px; background: var(--panel); color: var(--fg-quiet); border: 1px solid var(--line); cursor: pointer; }
+  .start-mode button:first-child { border-radius: 7px 0 0 7px; } .start-mode button:last-child { border-radius: 0 7px 7px 0; border-left: 0; }
+  .start-mode button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .armed-clock { color: var(--warn) !important; text-shadow: none !important; animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: 0.45; } }
+  .deck.live .start-over { padding: 3px 10px; font-size: 12px; color: var(--fg-quiet); }
   .deck.live .marker { padding: 3px 10px; font-size: 12px; }
   .record-button { flex: none; width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; border: 2px solid color-mix(in srgb, var(--danger) 60%, transparent); background: var(--panel-strong); color: var(--danger); cursor: pointer; transition: transform 120ms, background 120ms, width 300ms ease, height 300ms ease; }
   .record-button:hover { transform: scale(1.04); }

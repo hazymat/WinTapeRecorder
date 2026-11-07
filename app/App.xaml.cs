@@ -134,9 +134,10 @@ public partial class App : Application
 
     public void StopMonitoring() { if (!Recorder.Recording) { Recorder.Stop(); StatusChanged?.Invoke(); } }
 
-    public void StartRecording(string profileId, string source, string name)
+    public void StartRecording(string profileId, string source, string name, bool armed = false)
     {
         if (Recorder.Recording) return;
+        Recorder.ArmNext = armed;
         Player.Stop();
         var profile = Settings.RecordingProfileOrActive(profileId);
         Recorder.Stop();
@@ -169,8 +170,10 @@ public partial class App : Application
     }
     DateTime lastCheckpoint = DateTime.UtcNow;
     int otherSoundsShown;
+    bool wasWaiting;
     public void CheckSilence()
     {
+        if (Recorder.Recording && Recorder.WaitingForSound != wasWaiting) { wasWaiting = Recorder.WaitingForSound; StatusChanged?.Invoke(); }
         if (Recorder.Recording) { var others = Recorder.OtherSoundsSoFar.Count; if (others != otherSoundsShown) { otherSoundsShown = others; StatusChanged?.Invoke(); } } else otherSoundsShown = 0;
         if (Recorder.Recording && DateTime.UtcNow - lastCheckpoint > TimeSpan.FromSeconds(30)) { lastCheckpoint = DateTime.UtcNow; try { Recorder.Checkpoint(); } catch { } }
         if (SilenceStopIn() != 0) return;
@@ -494,6 +497,7 @@ public partial class App : Application
         playing = Player.Playing,
         playingSession = Player.SessionId,
         exporting = Exporting,
+        waitingForSound = Recorder.Recording && Recorder.WaitingForSound,
         exportingSession = ExportingSessionId, exportDone = ExportDone, exportTotal = ExportTotal, exportQueue = ExportQueue,
         version = Updater.CurrentVersion,
         updateReady = Updater.ReadyVersion,
