@@ -7,9 +7,9 @@
   import { request } from '../bridge'
   import { formatTime, type Track, type NameChange } from '../state.svelte'
   // The session's waveform (SPEC.md › Editing): an overview of the whole session, and a detail view that zooms with the wheel down to single samples
-  let { sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', autoHeight = true, selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onPickTrack, onZoomTrack }: {
+  let { sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', autoHeight = true, selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onRelease, onPickTrack, onZoomTrack }: {
     sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; dropouts?: { frame: number; ms: number }[]; mode?: 'wave' | 'spectrogram'; autoHeight?: boolean; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
-    view: WaveView; onCursor: (frame: number) => void; onEdge: (grab: NonNullable<Grab>, frame: number) => void; onEdgeDone: (grab: NonNullable<Grab>) => void; onPickTrack: (trackId: string, additive: boolean) => void; onZoomTrack: (trackId: string) => void
+    view: WaveView; onCursor: (frame: number) => void; onEdge: (grab: NonNullable<Grab>, frame: number) => void; onEdgeDone: (grab: NonNullable<Grab>) => void; onRelease?: () => void; onPickTrack: (trackId: string, additive: boolean) => void; onZoomTrack: (trackId: string) => void
   } = $props()
 
   let detailCanvas = $state<HTMLCanvasElement>(), overviewCanvas = $state<HTMLCanvasElement>()
@@ -250,7 +250,7 @@
     for (const track of tracks) for (const edge of ['start', 'end'] as const) { const distance = Math.abs(frameToX(track[edge]) - x); if (distance < bestDistance) { bestDistance = distance; best = { trackId: track.id, edge } } }
     return best
   }
-  let drag: null | { kind: 'edge'; grab: NonNullable<Grab> } | { kind: 'pan'; startX: number; startView: number; moved: boolean } | { kind: 'pin'; grab: NonNullable<Grab>; pinX: number; startX: number; startView: number } = null
+  let drag: null | { kind: 'edge'; grab: NonNullable<Grab>; startX: number; wasGrabbed: boolean } | { kind: 'pan'; startX: number; startView: number; moved: boolean } | { kind: 'pin'; grab: NonNullable<Grab>; pinX: number; startX: number; startView: number } = null
   let hoverCursor = $state('default'), hoverTitle = $state('')
   // Hovering a dotted line says what it is
   function changeTitle(x: number) { const dropout = dropouts.find(candidate => Math.abs(frameToX(candidate.frame) - x) < 6); if (dropout) return `Dropout: about ${dropout.ms} ms of audio was lost here because the PC was too busy`; const change = changes.find(candidate => Math.abs(frameToX(candidate.frame) - x) < 5); return change ? `Where the playing name changed while recording${change.title ? ` to “${change.title}”${change.artist ? ` by ${change.artist}` : ''}` : ''}. The track's green start snaps to the quietest point near it.` : '' }
@@ -258,15 +258,15 @@
     if (event.button !== 0) return
     detailCanvas?.setPointerCapture(event.pointerId)
     const handle = handleAt(event.offsetX, event.offsetY)
-    if (handle) { drag = { kind: 'edge', grab: handle }; onEdge(handle, tracks.find(track => track.id === handle.trackId)![handle.edge]); return }
+    if (handle) { drag = { kind: 'edge', grab: handle, startX: event.offsetX, wasGrabbed: grab?.trackId === handle.trackId && grab.edge === handle.edge }; onEdge(handle, tracks.find(track => track.id === handle.trackId)![handle.edge]); return }
     // A grabbed edge stays put on screen while the audio is dragged under it (SPEC.md › Editing): the easy way to place a cut roughly
     const pinnedTrack = grab ? tracks.find(track => track.id === grab!.trackId) : null
     if (grab && pinnedTrack && event.offsetY >= flagHeight) { const pinX = frameToX(pinnedTrack[grab.edge]); if (pinX >= 0 && pinX <= width) { drag = { kind: 'pin', grab, pinX, startX: event.offsetX, startView: view.start }; onEdge(grab, pinnedTrack[grab.edge]); return } }
     drag = { kind: 'pan', startX: event.offsetX, startView: view.start, moved: false }
   }
   function onMove(event: PointerEvent) {
-    if (!drag) { const handle = handleAt(event.offsetX, event.offsetY); hoverCursor = handle ? 'ew-resize' : grab && event.offsetY >= flagHeight ? 'grab' : 'text'; hoverTitle = handle ? (handle.edge === 'start' ? 'Track start: drag to move' : 'Track end: drag to move') : changeTitle(event.offsetX); return }
-    if (drag.kind === 'edge') { onEdge(drag.grab, Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX))))); return }
+    if (!drag) { const handle = handleAt(event.offsetX, event.offsetY); hoverCursor = handle ? 'ew-resize' : grab && event.offsetY >= flagHeight ? 'grab' : 'text'; hoverTitle = handle ? (grab?.trackId === handle.trackId && grab.edge === handle.edge ? 'Grabbed: drag the audio under it, or click it to let go' : handle.edge === 'start' ? 'Track start: click to grab it, or drag to move' : 'Track end: click to grab it, or drag to move') : changeTitle(event.offsetX); return }
+    if (drag.kind === 'edge') { if (Math.abs(event.offsetX - drag.startX) < 3) return; onEdge(drag.grab, Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX))))); return }
     if (drag.kind === 'pin') { hoverCursor = 'grabbing'; view = clampView({ start: drag.startView - (event.offsetX - drag.startX) * view.framesPerPixel, framesPerPixel: view.framesPerPixel }); onEdge(drag.grab, Math.round(Math.max(0, Math.min(totalFrames, xToFrame(drag.pinX))))); return }
     if (Math.abs(event.offsetX - drag.startX) > 3) drag.moved = true
     if (drag.moved) { hoverCursor = 'grabbing'; view = clampView({ start: drag.startView - (event.offsetX - drag.startX) * view.framesPerPixel, framesPerPixel: view.framesPerPixel }) }
@@ -274,6 +274,8 @@
   function onUp(event: PointerEvent) {
     const finished = drag; drag = null
     if (!finished) return
+    // Clicking the grabbed line again (without moving it) lets go of it
+    if (finished.kind === 'edge' && finished.wasGrabbed && Math.abs(event.offsetX - finished.startX) < 3 && onRelease) { hoverCursor = 'ew-resize'; onRelease(); return }
     if (finished.kind === 'edge' || finished.kind === 'pin') { hoverCursor = 'grab'; onEdgeDone(finished.grab); return }
     if (!finished.moved) {
       const frame = Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX))))

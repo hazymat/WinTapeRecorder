@@ -11,6 +11,8 @@ public class NameChange
     public string Artist { get; set; } = "";
     public string Title { get; set; } = "";
     public string Album { get; set; } = "";
+    public string AlbumArtist { get; set; } = "";
+    public int TrackNumber { get; set; }
     public string Source { get; set; } = "";
     public bool Manual { get; set; } // M pressed while recording
     public string Problem { get; set; } = ""; // "dropout", "clipping" or "retake": this take is damaged or unwanted; a later take with the same name replaces it

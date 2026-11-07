@@ -8,7 +8,8 @@ using WinTapeRecorder.Settings;
 namespace WinTapeRecorder.Detection;
 
 // One place a track name can come from: a media session Windows knows about, or a browser window's title
-public record NameSource(string Key, string Kind, string App, string Label, string Artist, string Title, string Album, bool Playing, string Rule)
+// Everything Windows' media info gives is kept (SPEC.md › Recording › Now playing), so the Record view can show exactly what arrives
+public record NameSource(string Key, string Kind, string App, string Label, string Artist, string Title, string Album, bool Playing, string Rule, string AlbumArtist = "", int TrackNumber = 0, int TrackCount = 0, string Subtitle = "", string Genres = "", bool Picture = false)
 {
     public bool HasName => Title != "";
     public string NameKey => Artist + "\u0001" + Title;
@@ -97,7 +98,8 @@ public sealed class NowPlayingWatcher
             var properties = await Limited(session.TryGetMediaPropertiesAsync());
             var playing = session.GetPlaybackInfo()?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
             var key = "media:" + session.SourceAppUserModelId; var app = FriendlyApp(session.SourceAppUserModelId);
-            var source = new NameSource(key, "media", app, $"Media info: {app}", properties?.Artist?.Trim() ?? "", properties?.Title?.Trim() ?? "", properties?.AlbumTitle?.Trim() ?? "", playing, "");
+            var source = new NameSource(key, "media", app, $"Media info: {app}", properties?.Artist?.Trim() ?? "", properties?.Title?.Trim() ?? "", properties?.AlbumTitle?.Trim() ?? "", playing, "",
+                properties?.AlbumArtist?.Trim() ?? "", properties?.TrackNumber ?? 0, properties?.AlbumTrackCount ?? 0, properties?.Subtitle?.Trim() ?? "", properties?.Genres is { Count: > 0 } genres ? string.Join(", ", genres) : "", properties?.Thumbnail != null);
             lock (sourcesLock)
             {
                 var wasPlaying = mediaSources.TryGetValue(key, out var previous) && previous.Playing;

@@ -362,7 +362,7 @@ public partial class MainWindow : Window
     }
 
     // The name sources the Record view offers, with what each says now
-    public void PushSources() => Push(JsonSerializer.Serialize(new { type = "sources", sources = App.Watcher.Sources.Select(source => new { source.Key, source.Kind, source.Label, source.Artist, source.Title, source.Playing, source.Rule }), current = App.CurrentName == null ? null : new { App.CurrentName.Key, App.CurrentName.Artist, App.CurrentName.Title } }, camel));
+    public void PushSources() => Push(JsonSerializer.Serialize(new { type = "sources", sources = App.Watcher.Sources.Select(source => new { source.Key, source.Kind, source.App, source.Label, source.Artist, source.Title, source.Album, source.AlbumArtist, source.TrackNumber, source.TrackCount, source.Subtitle, source.Genres, source.Picture, source.Playing, source.Rule }), current = App.CurrentName == null ? null : new { App.CurrentName.Key, App.CurrentName.Artist, App.CurrentName.Title } }, camel));
 
     void PushSettings()
     {

@@ -181,7 +181,7 @@ public partial class App : Application
     public void AddMarker()
     {
         if (Recorder.Session is not { } session) return;
-        session.Changes.Add(new NameChange { Frame = Recorder.FramesWritten, Artist = CurrentName?.Artist ?? "", Title = CurrentName?.Title ?? "", Album = CurrentName?.Album ?? "", Source = "marker", Manual = true });
+        session.Changes.Add(new NameChange { Frame = Recorder.FramesWritten, Artist = CurrentName?.Artist ?? "", Title = CurrentName?.Title ?? "", Album = CurrentName?.Album ?? "", AlbumArtist = CurrentName?.AlbumArtist ?? "", TrackNumber = CurrentName?.TrackNumber ?? 0, Source = "marker", Manual = true });
         session.Save(); StatusChanged?.Invoke();
     }
 
@@ -207,7 +207,7 @@ public partial class App : Application
         if (CurrentName is not { HasName: true } name || name.NameKey == lastNameKey) return;
         lastNameKey = name.NameKey;
         var frame = Math.Max(0, Recorder.FramesWritten - (long)profile.LatencyMs * session.SampleRate / 1000);
-        session.Changes.Add(new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, Source = name.Label });
+        session.Changes.Add(new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, AlbumArtist = name.AlbumArtist, TrackNumber = name.TrackNumber, Source = name.Label });
         session.Save();
         StatusChanged?.Invoke();
     }
@@ -351,7 +351,7 @@ public partial class App : Application
         changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Manual, change.Problem }) ?? Enumerable.Empty<object>(),
         dropoutList = Recorder.Dropouts.Select(dropout => new { dropout.Frame, dropout.Ms }),
         clips = Recorder.Clips.Select(clip => new { clip.Frame, clip.Samples }),
-        current = CurrentName == null ? null : new { CurrentName.Label, CurrentName.Artist, CurrentName.Title },
+        current = CurrentName == null ? null : new { CurrentName.Key, CurrentName.Label, CurrentName.Artist, CurrentName.Title, CurrentName.Album },
         source = RecordingSource,
         playing = Player.Playing,
         playingSession = Player.SessionId,

@@ -29,22 +29,38 @@
     if (result?.sessionId) { nav.view = 'session'; nav.sessionId = result.sessionId; writeSetting('session', result.sessionId); toast('Recording saved. Check the tracks, then export.') }
   }
 
-  // The live waveform (SPEC.md › Recording › Live editing). Overview: the whole recording fitted to the width, with a 10 s gap at the
-  // right that fills before the view rescales. Inspect: one marker pinned at the centre; drag the audio under it and let go to move it
+  // The live waveform (SPEC.md › Recording › Live editing). Following: the whole recording fitted to the width, with a 10 s gap at
+  // the right that fills before the view rescales. Grab it (drag) or zoom it (wheel) and it stops following: pan and zoom freely while
+  // recording carries on. Hover a marker and click it to select it: it stays put on screen and dragging moves the audio under it;
+  // letting go places it. Click it again or Esc to let go of it; Catch up (or Esc again) goes back to following
   let liveCanvas = $state<HTMLCanvasElement>(), liveWidth = $state(600)
   const liveHeight = 110
   let liveTimer = 0
-  let liveMode = $state<'overview' | 'inspect'>('overview')
+  let following = $state(true)
+  let viewStart = 0, viewSpan = 0 // the paused view, in frames
+  let selected = $state(-1) // the selected marker's index
+  let hovered = $state(-1)
   let secondsToWiden = $state(10)
-  let inspect = $state<{ index: number; centre: number } | null>(null)
-  let overviewSpan = 0 // frames shown; grows in steps of 10 s as the recording reaches the edge
-  const inspectSeconds = 8
+  let overviewSpan = 0 // frames shown while following; grows in steps of 10 s as the recording reaches the edge
+  let dragging: null | { startX: number; startViewStart: number; pinX: number; moved: boolean; onMarker: number } = null
   function liveRange() {
     const status = app.status!; const rate = status.sampleRate, recorded = app.levels.seconds * rate
-    if (liveMode === 'inspect' && inspect) { const span = inspectSeconds * rate; return { start: inspect.centre - span / 2, span } }
     if (recorded >= overviewSpan) overviewSpan = recorded + 10 * rate
-    return { start: 0, span: overviewSpan }
+    return following ? { start: 0, span: overviewSpan } : { start: viewStart, span: viewSpan }
   }
+  // Where a marker is: the selected one being dragged follows the audio under its fixed screen position
+  function markerFrame(index: number) { const change = app.status?.changes[index]; if (!change) return 0; if (dragging && dragging.moved && index === selected) { const { span } = liveRange(); return Math.max(0, Math.min(app.levels.seconds * (app.status?.sampleRate ?? 48000), viewStart + dragging.pinX * span / liveWidth)) } return change.frame }
+  function markerX(index: number) { const { start, span } = liveRange(); return (markerFrame(index) - start) / span * liveWidth }
+  function markerAt(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((_, index) => { const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
+  function pause() { if (!following || !app.status) return; const { start, span } = liveRange(); viewStart = start; viewSpan = span; following = false }
+  export function catchUp() { following = true; selected = -1; dragging = null; drawLive() }
+  function selectMarker(index: number, centre = false) {
+    const status = app.status; if (!status) return
+    pause()
+    if (centre) { const rate = status.sampleRate; viewSpan = Math.min(viewSpan || 8 * rate, 8 * rate); viewStart = status.changes[index].frame - viewSpan / 2 }
+    selected = index; drawLive()
+  }
+  function deselect() { selected = -1; drawLive() }
   let drawing = false
   async function drawLive() {
     const status = app.status
@@ -52,60 +68,89 @@
     drawing = true
     try {
       const rate = status.sampleRate, recorded = app.levels.seconds * rate, { start, span } = liveRange()
-      const data = await request<{ mode: string; channels: number[][] }>({ type: 'peaks', id: status.sessionId, start: Math.max(0, start), end: start + span, columns: Math.round(liveWidth) })
+      const data = await request<{ mode: string; channels: number[][] }>({ type: 'peaks', id: status.sessionId, start: Math.max(0, start), end: Math.max(start + span, 1), columns: Math.round(liveWidth) })
       if (!liveCanvas || data.mode !== 'peaks') return
+      const now = liveRange() // the view may have moved while the peaks were on their way
       const ratio = devicePixelRatio, height = liveHeight, context = liveCanvas.getContext('2d')!
       if (liveCanvas.width !== Math.round(liveWidth * ratio)) { liveCanvas.width = Math.round(liveWidth * ratio); liveCanvas.height = height * ratio }
       context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, liveWidth, height)
       const style = getComputedStyle(document.documentElement), colour = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback
-      const toX = (frame: number) => (frame - start) / span * liveWidth
-      // Inspect: the audio before the view's start (start < 0 at the very beginning) is simply blank
+      const toX = (frame: number) => (frame - now.start) / now.span * liveWidth
+      // The audio before the start (a view starting before 0) is simply blank
       const dataStart = Math.max(0, start), lanes = data.channels.length, laneHeight = height / lanes, columns = data.channels[0]?.length / 2 || 0, framesPerColumn = (start + span - dataStart) / columns
       context.fillStyle = colour('--wave', '#5ccfff')
-      data.channels.forEach((values, lane) => { const middle = laneHeight * (lane + 0.5); for (let column = 0; column < columns; column++) { const at = dataStart + column * framesPerColumn; if (at > recorded) break; const x = toX(at), low = values[column * 2], high = values[column * 2 + 1]; context.fillRect(x, middle - high * (laneHeight / 2 - 1), Math.max(1, liveWidth / columns), Math.max(1, (high - low) * (laneHeight / 2 - 1))) } })
-      // The gap still to fill, and where "now" is
-      if (liveMode === 'overview') { context.fillStyle = colour('--panel-strong', 'rgba(255,255,255,0.1)'); context.fillRect(toX(recorded), 0, liveWidth - toX(recorded), height); secondsToWiden = Math.max(0, Math.round((span - recorded) / rate)) }
-      // Markers: the one being inspected stays pinned at the centre
+      data.channels.forEach((values, lane) => { const middle = laneHeight * (lane + 0.5); for (let column = 0; column < columns; column++) { const at = dataStart + column * framesPerColumn; if (at > recorded) break; const x = toX(at), low = values[column * 2], high = values[column * 2 + 1]; context.fillRect(x, middle - high * (laneHeight / 2 - 1), Math.max(1, liveWidth * framesPerColumn / now.span), Math.max(1, (high - low) * (laneHeight / 2 - 1))) } })
+      // What's still to come, and where "now" is
+      context.fillStyle = colour('--panel-strong', 'rgba(255,255,255,0.1)'); const nowX = toX(recorded); if (nowX < liveWidth) context.fillRect(Math.max(0, nowX), 0, liveWidth - Math.max(0, nowX), height)
+      if (following) secondsToWiden = Math.max(0, Math.round((now.span - recorded) / rate))
+      // Markers: the selected one in the accent colour with a band; the hovered one brighter
       context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'
       status.changes.forEach((change, index) => {
-        const pinned = liveMode === 'inspect' && inspect?.index === index
-        const x = pinned ? liveWidth / 2 : toX(change.frame); if (x < -2 || x > liveWidth + 2) return
-        context.fillStyle = pinned ? colour('--accent', '#5ccfff') : colour('--warn', '#ffb74d')
-        if (pinned) { context.globalAlpha = 0.18; context.fillRect(x - 8, 0, 16, height); context.globalAlpha = 1 }
-        context.fillRect(x - 1, 0, pinned ? 3 : 2, height); context.fillText(`${index + 1} ${change.title || ''}`.trim(), x + 5, 3)
+        const x = markerX(index); if (x < -2 || x > liveWidth + 2) return
+        const isSelected = index === selected, isHovered = index === hovered && !isSelected
+        context.fillStyle = isSelected ? colour('--accent', '#5ccfff') : colour('--warn', '#ffb74d')
+        if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.2 : 0.12; context.fillRect(x - 8, 0, 16, height); context.globalAlpha = 1 }
+        context.fillRect(x - 1, 0, isSelected || isHovered ? 3 : 2, height); context.fillText(`${index + 1} ${change.title || ''}`.trim(), x + 5, 3)
       })
       // The time scale
       context.fillStyle = colour('--fg-quiet', '#888'); context.textBaseline = 'bottom'; context.font = '10px "Segoe UI Variable Text", "Segoe UI", sans-serif'
-      const stepSeconds = [1, 2, 5, 10, 30, 60, 120, 300, 600, 900, 1800].find(step => step * rate / span * liveWidth >= 70) ?? 1800
-      for (let second = Math.ceil(Math.max(0, start) / rate / stepSeconds) * stepSeconds; second * rate < start + span; second += stepSeconds) { const x = toX(second * rate); context.fillRect(x, height - 10, 1, 4); context.fillText(formatTime(second * rate, rate, false), x + 3, height - 1) }
+      const stepSeconds = [0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600, 900, 1800].find(step => step * rate / now.span * liveWidth >= 70) ?? 1800
+      for (let second = Math.ceil(Math.max(0, now.start) / rate / stepSeconds) * stepSeconds; second * rate < now.start + now.span; second += stepSeconds) { const x = toX(second * rate); context.fillRect(x, height - 10, 1, 4); context.fillText(stepSeconds < 1 ? `${formatTime(second * rate, rate, false)}.${Math.round((second % 1) * 10)}` : formatTime(second * rate, rate, false), x + 3, height - 1) }
     } catch { } finally { drawing = false }
   }
-  $effect(() => { if (recording) { liveTimer = window.setInterval(drawLive, 300); return () => clearInterval(liveTimer) } else { liveMode = 'overview'; inspect = null; overviewSpan = 0 } })
-  function markerAt(x: number) { const status = app.status; if (!status?.sampleRate) return -1; const { start, span } = liveRange(); return status.changes.findIndex((change, index) => Math.abs((liveMode === 'inspect' && inspect?.index === index ? liveWidth / 2 : (change.frame - start) / span * liveWidth) - x) < 8) }
-  function inspectMarker(index: number) { const change = app.status?.changes[index]; if (!change) return; liveMode = 'inspect'; inspect = { index, centre: change.frame }; drawLive() }
-  function leaveInspect() { liveMode = 'overview'; inspect = null; drawLive() }
-  // Inspect: dragging the audio moves it under the pinned marker; letting go places the marker there
-  let dragging: null | { startX: number; startCentre: number } = null
+  $effect(() => { if (recording) { liveTimer = window.setInterval(drawLive, 250); return () => clearInterval(liveTimer) } else { following = true; selected = -1; overviewSpan = 0; dragging = null } })
   function onLiveDown(event: PointerEvent) {
-    if (event.button !== 0) return
-    if (liveMode === 'overview') { const index = markerAt(event.offsetX); if (index >= 0) inspectMarker(index); return }
-    if (!inspect) return
-    dragging = { startX: event.offsetX, startCentre: inspect.centre }; liveCanvas?.setPointerCapture(event.pointerId)
+    if (event.button !== 0 || !app.status) return
+    const onMarker = markerAt(event.offsetX)
+    pause()
+    dragging = { startX: event.offsetX, startViewStart: viewStart, pinX: selected >= 0 ? markerX(selected) : 0, moved: false, onMarker }
+    liveCanvas?.setPointerCapture(event.pointerId)
   }
   function onLiveMove(event: PointerEvent) {
-    if (liveCanvas) liveCanvas.style.cursor = liveMode === 'inspect' ? (dragging ? 'grabbing' : 'grab') : markerAt(event.offsetX) >= 0 ? 'pointer' : 'default'
-    if (!dragging || !inspect || !app.status) return
-    const framesPerPixel = inspectSeconds * app.status.sampleRate / liveWidth
-    inspect = { index: inspect.index, centre: Math.max(0, Math.min(app.levels.seconds * app.status.sampleRate, dragging.startCentre - (event.offsetX - dragging.startX) * framesPerPixel)) }
+    if (!dragging) {
+      const index = markerAt(event.offsetX)
+      if (index !== hovered) { hovered = index; drawLive() }
+      if (liveCanvas) liveCanvas.style.cursor = index >= 0 ? 'pointer' : 'grab'
+      liveCanvas?.setAttribute('title', index >= 0 ? (index === selected ? `Marker ${index + 1} is selected: drag the audio under it, click it to let go` : `Click to select marker ${index + 1}, then drag the audio under it`) : following ? 'Drag to stop following and look around; the wheel zooms' : 'Drag to pan, wheel to zoom')
+      return
+    }
+    if (!app.status) return
+    if (!dragging.moved && Math.abs(event.offsetX - dragging.startX) < 3) return
+    dragging.moved = true
+    if (liveCanvas) liveCanvas.style.cursor = 'grabbing'
+    viewStart = dragging.startViewStart - (event.offsetX - dragging.startX) * viewSpan / liveWidth
     drawLive()
   }
   function onLiveUp() {
-    if (!dragging || !inspect) { dragging = null; return }
-    dragging = null
-    sendToShell({ type: 'editChange', index: inspect.index, frame: Math.round(inspect.centre) })
-    setTimeout(leaveInspect, 400)
+    const drag = dragging; if (!drag) return
+    if (drag.moved && selected >= 0) {
+      const frame = Math.round(markerFrame(selected)); const index = selected
+      dragging = null
+      sendToShell({ type: 'editChange', index, frame })
+    } else {
+      dragging = null
+      // A click (no drag): on a marker selects it, or lets go of it when it's the selected one
+      if (!drag.moved && drag.onMarker >= 0) { if (drag.onMarker === selected) deselect(); else selectMarker(drag.onMarker) }
+    }
+    if (liveCanvas) liveCanvas.style.cursor = 'grab'
+    drawLive()
   }
-  function onLiveKey(event: KeyboardEvent) { if (event.key === 'Escape' && liveMode === 'inspect') { event.preventDefault(); leaveInspect() } }
+  function onLiveWheel(event: WheelEvent) {
+    if (!app.status) return
+    event.preventDefault()
+    pause()
+    const rate = app.status.sampleRate, factor = Math.exp(event.deltaY * 0.0015)
+    const anchorX = selected >= 0 ? markerX(selected) : event.offsetX
+    const anchorFrame = viewStart + anchorX * viewSpan / liveWidth
+    viewSpan = Math.max(0.2 * rate, Math.min(Math.max(overviewSpan, 20 * rate) * 1.5, viewSpan * factor))
+    viewStart = anchorFrame - anchorX * viewSpan / liveWidth
+    drawLive()
+  }
+  $effect(() => { const canvas = liveCanvas; if (!canvas) return; canvas.addEventListener('wheel', onLiveWheel, { passive: false }); return () => canvas.removeEventListener('wheel', onLiveWheel) })
+  function onLiveKey(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !recording || (event.target as HTMLElement)?.matches?.('input, textarea')) return
+    if (selected >= 0) { event.preventDefault(); deselect() } else if (!following) { event.preventDefault(); catchUp() }
+  }
 
   function nudge(index: number, frame: number, seconds: number) { sendToShell({ type: 'editChange', index, frame: Math.max(0, frame + seconds * (app.status?.sampleRate ?? 48000)) }) }
   function setTime(index: number, text: string, rate: number) {
@@ -149,6 +194,8 @@
   })
   const firstEstimate = $derived(estimates.find(estimate => app.outputProfiles.find(profile => profile.name === estimate.name)?.id === app.activeOutput) ?? estimates[0])
   const current = $derived(app.status?.current)
+  // Every field the chosen source gives, so it's clear what is picked up (SPEC.md › Recording › Now playing)
+  const currentSource = $derived(current?.title ? (app.sources.find(candidate => candidate.key === current.key) ?? { key: '', kind: '', label: current.label, artist: current.artist, title: current.title, album: current.album ?? '', playing: true, rule: '' }) : null)
 </script>
 
 <svelte:window onkeydown={onLiveKey} />
@@ -197,21 +244,43 @@
   <h3>Source quality</h3>
   <p class="source">{#if app.status?.cutoffHz}<strong>Spectrum stops at {(app.status.cutoffHz / 1000).toFixed(1)} kHz</strong><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">{app.status?.capturing ? 'Measuring: needs a couple of seconds of sound.' : 'Measured from the sound as it arrives.'}</span>{/if}</p>
   <h3>Now playing</h3>
-  <p class="now">{#if current?.title}<strong>{current.title}</strong>{#if current.artist}{' · '}{current.artist}{/if}<span class="quiet">{' · '}{current.label}</span>{:else}<span class="quiet">Nothing named yet. {source === 'none' ? 'Tracks will be split on gaps.' : 'Play something in a browser or app; gaps split tracks when there are no names.'}</span>{/if}</p>
+  {#if currentSource}
+    {@const missing = 'not provided'}
+    <table class="now-table">
+      <tbody>
+        <tr><th>From</th><td>{currentSource.label}{currentSource.playing ? '' : ' (paused)'}</td></tr>
+        <tr><th>Title</th><td class:none={!currentSource.title}>{currentSource.title || missing}</td></tr>
+        <tr><th>Artist</th><td class:none={!currentSource.artist}>{currentSource.artist || missing}</td></tr>
+        <tr><th>Album</th><td class:none={!currentSource.album}>{currentSource.album || missing}</td></tr>
+        {#if currentSource.kind === 'media'}
+          <tr><th>Album artist</th><td class:none={!currentSource.albumArtist}>{currentSource.albumArtist || missing}</td></tr>
+          <tr><th>Track no.</th><td class:none={!currentSource.trackNumber}>{currentSource.trackNumber ? `${currentSource.trackNumber}${currentSource.trackCount ? ' of ' + currentSource.trackCount : ''}` : missing}</td></tr>
+          {#if currentSource.subtitle}<tr><th>Subtitle</th><td>{currentSource.subtitle}</td></tr>{/if}
+          {#if currentSource.genres}<tr><th>Genre</th><td>{currentSource.genres}</td></tr>{/if}
+          <tr><th>Picture</th><td class:none={!currentSource.picture}>{currentSource.picture ? 'provided' : missing}</td></tr>
+        {:else if currentSource.rule}<tr><th>Rule</th><td>{currentSource.rule}</td></tr>{/if}
+        <tr><th>Year</th><td class="none">Windows media info has no year; the album match in the Tags step fills it in</td></tr>
+      </tbody>
+    </table>
+  {:else}
+    <p class="now"><span class="quiet">Nothing named yet. {source === 'none' ? 'Tracks will be split on gaps.' : 'Play something in a browser or app; gaps split tracks when there are no names.'}</span></p>
+  {/if}
 
   {#if recording}
     <div class="live-head">
-      {#if liveMode === 'inspect'}<span><strong>Marker {(inspect?.index ?? 0) + 1}</strong><span class="quiet">{' · '}drag the audio under the line and let go to place it</span></span><button class="ghost" onclick={leaveInspect}>Back to whole recording<kbd>Esc</kbd></button>
-      {:else}<span><strong>Whole recording</strong><span class="quiet">{' · '}click a marker, or its number below, to zoom in and move it</span></span><span class="quiet">{secondsToWiden} s until the view widens</span>{/if}
+      {#if selected >= 0}<span><strong>Marker {selected + 1} selected</strong><span class="quiet">{' · '}drag the audio under it and let go to place it; click it or press Esc to let go of it</span></span>
+      {:else if !following}<span><strong>Paused view</strong><span class="quiet">{' · '}recording carries on. Drag to pan, wheel to zoom, click a marker to select it</span></span>
+      {:else}<span><strong>Following the recording</strong><span class="quiet">{' · '}drag or zoom to stop and look around; click a marker to select it</span></span><span class="quiet">{secondsToWiden} s until the view widens</span>{/if}
+      {#if !following}<button class="primary catch-up" onclick={catchUp} title="Back to the whole recording, following as it grows (Esc)">Catch up</button>{/if}
     </div>
-    <canvas class="live-wave" bind:this={liveCanvas} bind:clientWidth={liveWidth} tabindex="-1" onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp} onpointercancel={onLiveUp} onkeydown={onLiveKey}></canvas>
+    <canvas class="live-wave" bind:this={liveCanvas} bind:clientWidth={liveWidth} tabindex="-1" onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp} onpointercancel={onLiveUp} onpointerleave={() => { if (!dragging && hovered >= 0) { hovered = -1; drawLive() } }}></canvas>
     <h3>Tracks marked so far</h3>
     <Hint id="live-edit" text="Obvious slips can be fixed while the recording runs: retype a name, nudge a marker with the arrows or a typed time, or click its number to zoom in and drag the audio under the line. Fine listening comes afterwards, in Check the cuts." />
     <div class="changes">
       {#each app.status?.changes ?? [] as change, index (index + ':' + change.frame)}
         {@const rate = app.status?.sampleRate ?? 48000}
         <div class="change">
-          <button class="number" class:on={liveMode === 'inspect' && inspect?.index === index} onclick={() => liveMode === 'inspect' && inspect?.index === index ? leaveInspect() : inspectMarker(index)} title="Zoom in on this marker and drag the audio under it">{index + 1}</button>
+          <button class="number" class:on={selected === index} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Select this marker, zoomed in around it, to drag the audio under it">{index + 1}</button>
           <span class="nudge"><button onclick={() => nudge(index, change.frame, -5)} title="5 s earlier">«</button><button onclick={() => nudge(index, change.frame, -1)} title="1 s earlier">‹</button></span>
           <input class="time-box" value={formatTime(change.frame, rate, false)} onchange={(event) => setTime(index, (event.target as HTMLInputElement).value, rate)} title="Where this track starts (m:ss)" aria-label="Start time" />
           <span class="nudge"><button onclick={() => nudge(index, change.frame, 1)} title="1 s later">›</button><button onclick={() => nudge(index, change.frame, 5)} title="5 s later">»</button></span>
@@ -243,7 +312,12 @@
   .warn { color: var(--danger); font-size: 12.5px; margin: 8px 0 0; }
   .now, .source { margin: 0; }
   .estimate { border-bottom: 1px dotted var(--fg-quiet); cursor: help; }
-  .live-wave { display: block; width: 100%; height: 110px; border-radius: 8px; background: var(--panel); outline: none; }
+  .live-wave { display: block; width: 100%; height: 110px; border-radius: 8px; background: var(--panel); outline: none; cursor: grab; touch-action: none; }
+  .catch-up { flex: none; }
+  .now-table { border-collapse: collapse; font-size: 13px; margin: 2px 0 6px; }
+  .now-table th { text-align: left; font-weight: 500; color: var(--fg-quiet); padding: 2px 16px 2px 0; white-space: nowrap; vertical-align: top; }
+  .now-table td { padding: 2px 0; }
+  .now-table td.none { color: var(--fg-quiet); font-style: italic; }
   .live-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 4px; font-size: 12px; }
   .changes { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
   .change { display: grid; grid-template-columns: 30px auto 76px auto minmax(90px, 1fr) minmax(120px, 1.4fr) minmax(90px, 1fr) auto 28px; gap: 6px; align-items: center; }
