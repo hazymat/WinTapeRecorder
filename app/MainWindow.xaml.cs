@@ -40,6 +40,8 @@ public partial class MainWindow : Window
         App.HintsChanged += PushSettings;
         App.SettingsChanged += PushSettings;
         App.Tip += (title, text) => Push(JsonSerializer.Serialize(new { type = "tip", title, text }));
+        App.SuggestionFound += (sessionId, track) => Push(JsonSerializer.Serialize(new { type = "suggestion", id = sessionId, trackId = track.Id, suggestion = track.Suggestion, looked = track.SuggestionLooked }, camel));
+        App.AlbumChecked += (sessionId, check) => Push(JsonSerializer.Serialize(new { type = "albumCheck", id = sessionId, check }, camel));
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += (sender, args) => Dispatcher.BeginInvoke(RestoreBoundsForDisplays);
         levelTimer.Tick += (sender, args) => PushLevels();
         playheadTimer.Tick += (sender, args) => { if (!App.Player.Playing) { playheadTimer.Stop(); Push(App.StatusJson()); Push("{\"type\":\"playhead\",\"frame\":-1}"); return; } Push(JsonSerializer.Serialize(new { type = "playhead", frame = App.Player.Position, session = App.Player.SessionId })); };
@@ -115,7 +117,9 @@ public partial class MainWindow : Window
                     var sessionId = Text(message, "id");
                     var opened = await App.OpenSessionAsync(sessionId, fraction => Push(JsonSerializer.Serialize(new { type = "openProgress", id = sessionId, fraction })));
                     Reply(message, SessionDetail(opened.session));
+                    App.SuggestTags(sessionId);
                     break;
+                case "suggestAgain": App.SuggestTags(Text(message, "id"), true); break;
                 case "peaks": Reply(message, await Task.Run(() => PeaksFor(Text(message, "id"), Number(message, "start"), Number(message, "end"), (int)Number(message, "columns", 800)))); break;
                 case "saveSession":
                     if (App.TryGetOpen(Text(message, "id"), out var saving))
@@ -240,7 +244,7 @@ public partial class MainWindow : Window
     static object SessionDetail(Session session) => new
     {
         id = session.Id, name = session.Name, created = session.Created, device = session.Device, loopback = session.Loopback, sampleRate = session.SampleRate, channels = session.Channels, bitDepth = session.BitDepth,
-        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, clips = session.Clips, quality = session.Quality, tracks = session.Tracks, folder = session.Folder,
+        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, clips = session.Clips, quality = session.Quality, albumCheck = session.AlbumCheck, tracks = session.Tracks, folder = session.Folder,
     };
 
     // Waveform data for [start, end) in columns: min/max per column for each channel, or the samples themselves when zoomed in that far
@@ -341,7 +345,7 @@ public partial class MainWindow : Window
             type = "settings",
             hints = new { hidden = settings.General.HideHints, dismissed = settings.General.DismissedHints },
             recordingProfiles = settings.RecordingProfiles.Select(profile => new { profile.Id, profile.Name, profile.Loopback, profile.DeviceName, profile.BitDepth, TrimSilence = profile.Gaps.TrimSilence }),
-            outputProfiles = settings.OutputProfiles.Select(profile => new { profile.Id, profile.Name, profile.Format, profile.Template }),
+            outputProfiles = settings.OutputProfiles.Select(profile => new { profile.Id, profile.Name, profile.Format, profile.Template, profile.BitrateKbps }),
             activeRecording = settings.ActiveRecordingProfile.Id, activeOutput = settings.ActiveOutputProfile.Id, auditionSeconds = settings.Audio.AuditionSeconds,
         }, camel));
     }

@@ -7,7 +7,7 @@ using System.Windows.Media.Imaging;
 namespace WinTapeRecorder.Sessions;
 
 // One candidate from an online lookup (SPEC.md › Tags): what it would fill in, and where its cover is
-public record TagMatch(string Source, string Title, string Artist, string Album, string AlbumArtist, string Year, string Genre, int TrackNumber, int TrackCount, string ArtUrl, string Detail);
+public record TagMatch(string Source, string Title, string Artist, string Album, string AlbumArtist, string Year, string Genre, int TrackNumber, int TrackCount, string ArtUrl, string Detail, string ReleaseId = "");
 
 // Online tag lookup: MusicBrainz (with Cover Art Archive covers) and iTunes need no account; Discogs needs the user's own token
 public static class TagLookup
@@ -61,7 +61,7 @@ public static class TagLookup
                 }
                 var kind = release.TryGetProperty("release-group", out var group) ? Read(group, "primary-type") : "";
                 matches.Add(new TagMatch("MusicBrainz", Read(recording, "title"), recordingArtist, Read(release, "title"), releaseArtist, Year(Read(release, "date")), Capitalise(genre), trackNumber, trackCount,
-                    $"https://coverartarchive.org/release/{Read(release, "id")}/front-500", string.Join(" · ", new[] { kind, Read(release, "country"), Read(release, "status") }.Where(text => text != ""))));
+                    $"https://coverartarchive.org/release/{Read(release, "id")}/front-500", string.Join(" · ", new[] { kind, Read(release, "country"), Read(release, "status") }.Where(text => text != "")), Read(release, "id")));
             }
         }
         return matches.Take(25).ToList();
@@ -91,6 +91,34 @@ public static class TagLookup
             return new TagMatch("Discogs", title, artist, split > 0 ? heading[(split + 3)..] : heading, split > 0 ? heading[..split] : "", Read(result, "year"), genre, 0, 0, Read(result, "cover_image"), string.Join(" · ", new[] { formats, Read(result, "country"), Read(result, "label") }.Where(text => text != "")));
         }).ToList();
     }
+
+    // The titles on a MusicBrainz release, in order (for the album check)
+    public static async Task<List<string>> ReleaseTracksAsync(string releaseId)
+    {
+        using var document = JsonDocument.Parse(await client.GetStringAsync($"https://musicbrainz.org/ws/2/release/{releaseId}?inc=recordings&fmt=json"));
+        var titles = new List<string>();
+        if (document.RootElement.TryGetProperty("media", out var media))
+            foreach (var medium in media.EnumerateArray()) if (medium.TryGetProperty("tracks", out var tracks)) foreach (var track in tracks.EnumerateArray()) titles.Add(Read(track, "title"));
+        return titles;
+    }
+
+    // Background suggestion for one track (SPEC.md › Tags › Suggestions): MusicBrainz first (an album release if there is one), iTunes when it has nothing
+    public static async Task<TagSuggestion?> SuggestAsync(string artist, string title, string album)
+    {
+        TagMatch? best = null;
+        try
+        {
+            var matches = await MusicBrainzAsync(artist, title, "");
+            var albums = matches.Where(match => match.Detail.StartsWith("Album", StringComparison.OrdinalIgnoreCase) && match.Album != "").ToList();
+            best = (album != "" ? matches.FirstOrDefault(match => string.Equals(match.Album, album, StringComparison.OrdinalIgnoreCase)) : null) ?? albums.FirstOrDefault(match => match.Detail.Contains("Official")) ?? albums.FirstOrDefault() ?? matches.FirstOrDefault(match => match.Album != "");
+        }
+        catch { }
+        if (best == null) { try { best = (await ITunesAsync(artist, title, album)).FirstOrDefault(); } catch { } }
+        return best == null ? null : new TagSuggestion { Source = best.Source, Title = best.Title, Artist = best.Artist, Album = best.Album, AlbumArtist = best.AlbumArtist, Year = best.Year, Genre = best.Genre, TrackNumber = best.TrackNumber, TrackCount = best.TrackCount, ArtUrl = best.ArtUrl, ReleaseId = best.ReleaseId };
+    }
+
+    // Loose title comparison: case, punctuation and bracketed asides don't count
+    public static string Loose(string title) => new string(System.Text.RegularExpressions.Regex.Replace(title.ToLowerInvariant(), @"\s*[\(\[].*?[\)\]]", "").Where(char.IsLetterOrDigit).ToArray());
 
     static string Capitalise(string text) => text == "" ? "" : char.ToUpperInvariant(text[0]) + text[1..];
 

@@ -222,10 +222,60 @@ public partial class App : Application
         return samples;
     }
 
+    // ---- Suggestions (SPEC.md › Tags): looked up in the background once a session is open, one track at a time, MusicBrainz's one-a-second limit respected ----
+    readonly Dictionary<string, CancellationTokenSource> suggesting = new();
+    public event Action<string, Track>? SuggestionFound;
+    public event Action<string, AlbumCheck?>? AlbumChecked;
+    public void SuggestTags(string sessionId, bool again = false)
+    {
+        if (!openSessions.TryGetValue(sessionId, out var open)) return;
+        if (suggesting.TryGetValue(sessionId, out var running)) { if (!again) return; running.Cancel(); }
+        var cancel = new CancellationTokenSource(); suggesting[sessionId] = cancel;
+        var session = open.session;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                foreach (var track in session.Tracks.ToList())
+                {
+                    if (cancel.IsCancellationRequested) return;
+                    if (track.Title == "" || track.Skip || (track.SuggestionLooked && !again)) continue;
+                    var suggestion = await TagLookup.SuggestAsync(track.Artist, track.Title, track.Album);
+                    if (cancel.IsCancellationRequested) return;
+                    track.Suggestion = suggestion; track.SuggestionLooked = true; if (again) track.SuggestionDismissed = false;
+                    await Dispatcher.InvokeAsync(() => { session.Save(); SuggestionFound?.Invoke(sessionId, track); });
+                    await Task.Delay(1100, cancel.Token);
+                }
+                await CheckAlbumAsync(session, sessionId, cancel.Token);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception error) { CrashReporter.Write("Tag suggestions", error, false); }
+            finally { if (suggesting.TryGetValue(sessionId, out var mine) && mine == cancel) suggesting.Remove(sessionId); }
+        });
+    }
+
+    // The album most tracks point at, against its track list: how many are here, which are missing
+    async Task CheckAlbumAsync(Session session, string sessionId, CancellationToken cancel)
+    {
+        var releases = session.Tracks.Where(track => !track.Skip && track.Suggestion is { ReleaseId.Length: > 0 }).GroupBy(track => track.Suggestion!.ReleaseId).OrderByDescending(group => group.Count()).FirstOrDefault();
+        AlbumCheck? check = null;
+        if (releases != null)
+        {
+            var sample = releases.First().Suggestion!;
+            var titles = await TagLookup.ReleaseTracksAsync(releases.Key);
+            if (cancel.IsCancellationRequested) return;
+            var have = session.Tracks.Where(track => !track.Skip).Select(track => TagLookup.Loose(track.Title)).ToHashSet();
+            var missing = titles.Where(title => !have.Contains(TagLookup.Loose(title))).ToList();
+            check = new AlbumCheck { Source = "MusicBrainz", Album = sample.Album, Artist = sample.AlbumArtist != "" ? sample.AlbumArtist : sample.Artist, Total = titles.Count, Have = titles.Count - missing.Count, Missing = missing };
+        }
+        await Dispatcher.InvokeAsync(() => { session.AlbumCheck = check; session.Save(); AlbumChecked?.Invoke(sessionId, check); });
+    }
+
     public bool TryGetOpen(string sessionId, out (Session session, SessionAudio audio, Peaks peaks) open) => openSessions.TryGetValue(sessionId, out open);
 
     void CloseOpen(string sessionId)
     {
+        if (suggesting.Remove(sessionId, out var running)) running.Cancel();
         if (!openSessions.Remove(sessionId, out var open)) return;
         if (Player.SessionId == sessionId) Player.Stop();
         open.audio.Dispose();
@@ -255,6 +305,9 @@ public partial class App : Application
         deviceVolume = Recorder.DeviceVolume,
         dropouts = Recorder.Dropouts.Count,
         cutoffHz = Recorder.CurrentCutoffHz,
+        flacRatio = Recorder.FlacRatio,
+        bitDepth = Recorder.Session?.BitDepth ?? 0,
+        channels = Recorder.Session?.Channels ?? 0,
         cutoffText = SpectralCutoff.Describe(Recorder.CurrentCutoffHz),
         sampleRate = Recorder.Session?.SampleRate ?? 0,
         changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Manual, change.Problem }) ?? Enumerable.Empty<object>(),

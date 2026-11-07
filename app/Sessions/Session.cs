@@ -37,6 +37,33 @@ public class QualitySample
     public int Hz { get; set; }
 }
 
+// What an online database says about a track (SPEC.md › Tags › Suggestions), kept apart from the tags until the user takes it
+public class TagSuggestion
+{
+    public string Source { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Artist { get; set; } = "";
+    public string Album { get; set; } = "";
+    public string AlbumArtist { get; set; } = "";
+    public string Year { get; set; } = "";
+    public string Genre { get; set; } = "";
+    public int TrackNumber { get; set; }
+    public int TrackCount { get; set; }
+    public string ArtUrl { get; set; } = "";
+    public string ReleaseId { get; set; } = "";
+}
+
+// The album these tracks seem to be from, against the database's track list (SPEC.md › Tags › Album check)
+public class AlbumCheck
+{
+    public string Source { get; set; } = "";
+    public string Album { get; set; } = "";
+    public string Artist { get; set; } = "";
+    public int Total { get; set; }
+    public int Have { get; set; }
+    public List<string> Missing { get; set; } = new();
+}
+
 public class Track
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
@@ -67,6 +94,9 @@ public class Track
     public bool Skip { get; set; } // left out of exports (a damaged take that was recorded again, or the user's choice)
     public string SkipReason { get; set; } = "";
     public bool Verified { get; set; } // the exported file was read back and checked
+    public TagSuggestion? Suggestion { get; set; }
+    public bool SuggestionDismissed { get; set; }
+    public bool SuggestionLooked { get; set; } // looked up and nothing found, or found
 }
 
 // One recording: audio.wav, peaks.bin and session.json in its own folder (SPEC.md › Sessions)
@@ -88,6 +118,7 @@ public class Session
     public List<Dropout> Dropouts { get; set; } = new();
     public List<ClipEvent> Clips { get; set; } = new();
     public List<QualitySample> Quality { get; set; } = new();
+    public AlbumCheck? AlbumCheck { get; set; }
     public List<Track> Tracks { get; set; } = new();
 
     [JsonIgnore] public string Folder { get; set; } = "";

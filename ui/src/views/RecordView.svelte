@@ -131,6 +131,17 @@
     return list.sort((first, second) => second.frame - first.frame)
   })
   const sizeText = $derived(app.levels.bytes > 1e9 ? `${(app.levels.bytes / 1e9).toFixed(2)} GB` : `${(app.levels.bytes / 1e6).toFixed(0)} MB`)
+  // What each output profile would make of the recording so far: FLAC from the encoder's running estimate, lossy from bitrate × time, WAV as is (SPEC.md › Recording)
+  const megabytes = (bytes: number) => bytes > 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${(bytes / 1e6).toFixed(0)} MB`
+  const estimates = $derived.by(() => {
+    const status = app.status; if (!status?.recording) return [] as { name: string; text: string }[]
+    const seconds = app.levels.seconds, bits = status.bitDepth === 32 ? 24 : status.bitDepth || 24, pcmBytes = seconds * status.sampleRate * (status.channels || 2) * bits / 8
+    return app.outputProfiles.map(profile => {
+      const bytes = profile.format === 'flac' ? pcmBytes * (status.flacRatio || 0.6) : profile.format === 'wav' ? pcmBytes : seconds * (profile.bitrateKbps || 320) * 125
+      return { name: profile.name, text: `~${megabytes(bytes)}${profile.format === 'flac' && !status.flacRatio ? ' (measuring)' : ''}` }
+    })
+  })
+  const firstEstimate = $derived(estimates.find(estimate => app.outputProfiles.find(profile => profile.name === estimate.name)?.id === app.activeOutput) ?? estimates[0])
   const current = $derived(app.status?.current)
 </script>
 
@@ -139,7 +150,7 @@
   <h2>Record</h2>
   <Hint id="record-intro" text="Record a whole listening session into one file. Each time the playing track's name changes, a new track is marked; with no names, gaps split them. You fine-tune and export afterwards." />
   <div class="settings-row">
-    <Dropdown label="Profile" value={profileId} options={profileChoices} align="left" onchange={(value) => { if (!recording) sendToShell({ type: 'setActiveProfile', kind: 'recording', profileId: value }) }} />
+    <Dropdown label="Recording profile" value={profileId} options={profileChoices} align="left" onchange={(value) => { if (!recording) sendToShell({ type: 'setActiveProfile', kind: 'recording', profileId: value }) }} />
     <Dropdown label="Track names" value={source} options={sourceChoices} align="left" onchange={(value) => source = value} />
     <button class="ghost" onclick={() => sendToShell({ type: 'openSettings', tab: 'Recording' })}>Edit profiles…</button>
   </div>
@@ -151,7 +162,7 @@
     <div class="deck-info">
       {#if recording}
         <div class="clock">{formatTime(app.levels.seconds * 1000, 1000, false)}</div>
-        <div class="quiet">{app.status?.sessionName} · {sizeText}{app.levels.minutesLeft >= 0 && app.levels.minutesLeft < 15 ? ` · WAV limit in ${Math.max(0, Math.floor(app.levels.minutesLeft))} min` : ''}</div>
+        <div class="quiet">{app.status?.sessionName} · {sizeText} WAV{#if firstEstimate}{' · '}<span class="estimate" title={estimates.map(estimate => `${estimate.name}: ${estimate.text}`).join('\n')}>{firstEstimate.text} as {firstEstimate.name}{estimates.length > 1 ? ` (+${estimates.length - 1} more)` : ''}</span>{/if}{app.levels.minutesLeft >= 0 && app.levels.minutesLeft < 15 ? ` · WAV limit in ${Math.max(0, Math.floor(app.levels.minutesLeft))} min` : ''}</div>
       {:else}
         <input class="session-name" bind:value={sessionName} placeholder="Session name (optional)" onkeydown={(event) => { if (event.key === 'Enter') toggleRecording() }} />
         <div class="quiet">Ctrl+R starts and stops recording from anywhere in the app.</div>
@@ -224,6 +235,7 @@
   .marker { flex: none; }
   .warn { color: var(--danger); font-size: 12.5px; margin: 8px 0 0; }
   .now, .source { margin: 0; }
+  .estimate { border-bottom: 1px dotted var(--fg-quiet); cursor: help; }
   .live-wave { display: block; width: 100%; height: 110px; border-radius: 8px; background: var(--panel); outline: none; }
   .live-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 4px; font-size: 12px; }
   .changes { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }

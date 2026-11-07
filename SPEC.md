@@ -19,6 +19,7 @@ A Windows tape recorder for listening sessions. Record one long session to a sin
 - Live editing: while recording, every marker noted so far can be moved (nudge buttons, a typed time, or the live waveform), its artist, title and album retyped, or removed. Capture is never interrupted. The live waveform shows the whole recording with a 10 s gap at the right that fills before the view widens; clicking a marker zooms in on it with the marker pinned at the centre, and dragging the audio under it then letting go places it. This is for obvious slips: careful listening happens afterwards in Check the cuts.
 - Output devices are recorded through WASAPI loopback; the app plays silence to that device while recording so gaps in the audio keep their real length.
 - WAV size limit (4 GB): the app warns before it and stops cleanly at it.
+- Beside the WAV size while recording, the size each output profile would make of it so far: FLAC from the encoder's own cost model on the latest audio, lossy from bitrate × time; the active profile inline, the rest on hover.
 
 ## Track detection
 
@@ -61,7 +62,9 @@ The session view is a step bar that says what is left and what to do next: **1 C
 
 - Tick boxes on every track and a select-all box; the selection bar acts on the ticked tracks.
 - Tags per track: title, artist, album, album artist, genre, year, composer, track number and count, comment, cover picture. Several tracks can be tagged at once (empty fields stay as each track has them).
-- Online lookup: MusicBrainz (covers from the Cover Art Archive) and iTunes need no account; Discogs uses the user's own token (Settings › General). Amazon has no public catalogue API. Pick a result and choose which fields to take.
+- Suggestions: once a session is open, every named track is looked up in the background (MusicBrainz first, one request a second as its terms require, iTunes when it has nothing). In the Tags step each suggestion is shown with its source, as one chip per field that differs from the track's own tags: click a chip to take that field, Use all, or Keep mine. When the suggestions agree on an album, one button puts the album, album artist, year, genre and cover on every track. Suggest again repeats the lookup.
+- Album check: the release most tracks point at is fetched from MusicBrainz and its track list compared with the session, shown as "9 of 11 tracks here, missing: …".
+- Online lookup by hand: MusicBrainz (covers from the Cover Art Archive) and iTunes need no account; Discogs uses the user's own token (Settings › General). Amazon has no public catalogue API. Pick a result and choose which fields to take.
 - Cover pictures are fetched or chosen from disk (JPEG or PNG), kept in the session folder, and on export embedded in the tags and/or saved beside the tracks as a picture file (output profile: on/off and its name, default folder.jpg).
 
 ## Export

@@ -58,6 +58,8 @@ public sealed class Recorder : IDisposable
     readonly float[] qualityWindow = new float[SpectralCutoff.WindowFrames * 8]; int qualityFill; long nextQualityFrame; bool qualityBusy;
     public List<QualitySample> Quality { get; } = new();
     public int? CurrentCutoffHz { get; private set; }
+    public double FlacRatio { get; private set; } // running estimate of FLAC size / WAV size for this recording
+    int flacSamples;
     public event Action? QualityMeasured;
 
     public bool Capturing => capture != null;
@@ -72,7 +74,7 @@ public sealed class Recorder : IDisposable
         captureFloat = captureFormat.Encoding == WaveFormatEncoding.IeeeFloat || (captureFormat is WaveFormatExtensible extensible && extensible.SubFormat == NAudio.Dmo.AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT);
         bitDepth = profile.BitDepth is 16 or 24 or 32 ? profile.BitDepth : 24;
         heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; Problem = ""; Dropouts.Clear(); shortfallFrames = 0; detecting = false;
-        Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null; Clips.Clear(); clipBurstFrame = -1;
+        Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null; Clips.Clear(); clipBurstFrame = -1; FlacRatio = 0; flacSamples = 0;
         DeviceName = device.FriendlyName;
         try { DeviceVolume = profile.Loopback ? device.AudioEndpointVolume.MasterVolumeLevelScalar : -1; } catch { DeviceVolume = -1; }
         if (session != null)
@@ -175,6 +177,8 @@ public sealed class Recorder : IDisposable
             {
                 var cutoff = SpectralCutoff.Measure(copy, channelCount, rate);
                 CurrentCutoffHz = cutoff;
+                var ratio = FlacWriter.EstimateRatio(copy, channelCount, bitDepth == 32 ? 24 : bitDepth); // a float session exports as 24-bit
+                FlacRatio = flacSamples == 0 ? ratio : (FlacRatio * flacSamples + ratio) / (flacSamples + 1); flacSamples = Math.Min(flacSamples + 1, 200);
                 if (Session != null) { lock (Quality) Quality.Add(new QualitySample { Frame = at, Hz = cutoff ?? 0 }); }
                 QualityMeasured?.Invoke();
             }

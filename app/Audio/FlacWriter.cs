@@ -198,6 +198,25 @@ public sealed class FlacWriter : IDisposable
     static byte Crc8(ReadOnlySpan<byte> data) { byte crc = 0; foreach (var dataByte in data) { crc ^= dataByte; for (var bit = 0; bit < 8; bit++) crc = (byte)((crc & 0x80) != 0 ? (crc << 1) ^ 0x07 : crc << 1); } return crc; }
     static uint Crc16(ReadOnlySpan<byte> data) { uint crc = 0; foreach (var dataByte in data) { crc ^= (uint)dataByte << 8; for (var bit = 0; bit < 8; bit++) crc = (crc & 0x8000) != 0 ? ((crc << 1) ^ 0x8005) & 0xFFFF : (crc << 1) & 0xFFFF; } return crc; }
 
+    // How small FLAC would make this audio (bytes per byte of PCM), from the encoder's cost model: no file written
+    public static double EstimateRatio(ReadOnlySpan<float> interleaved, int channels, int bitsPerSample)
+    {
+        var frames = interleaved.Length / channels; if (frames < 64 || channels < 1) return 0.6;
+        var block = Enumerable.Range(0, channels).Select(_ => new int[frames]).ToArray();
+        for (var frame = 0; frame < frames; frame++) for (var channel = 0; channel < channels; channel++) block[channel][frame] = SampleConvert.ToInteger(interleaved[frame * channels + channel], bitsPerSample);
+        double bits;
+        if (channels == 2)
+        {
+            var mid = new int[frames]; var side = new int[frames];
+            for (var index = 0; index < frames; index++) { mid[index] = (block[0][index] + block[1][index]) >> 1; side[index] = block[0][index] - block[1][index]; }
+            double left = EstimateCost(block[0], frames), right = EstimateCost(block[1], frames), midCost = EstimateCost(mid, frames), sideCost = EstimateCost(side, frames);
+            bits = Math.Min(Math.Min(left + right, left + sideCost), Math.Min(sideCost + right, midCost + sideCost));
+        }
+        else bits = block.Sum(signal => (double)EstimateCost(signal, frames));
+        bits += 100 * Math.Ceiling(frames / 4096.0); // frame headers and such
+        return Math.Clamp(bits / ((double)frames * channels * bitsPerSample), 0.1, 1.05);
+    }
+
     public void Dispose()
     {
         EncodeBlock(); // the partial last block, at its own size

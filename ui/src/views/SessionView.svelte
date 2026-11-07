@@ -75,6 +75,8 @@
   function readFlag(name: string) { try { return localStorage.getItem('wtr.' + name) === '1' } catch { return false } }
 
   onShellMessage('openProgress', message => { if (message.id === sessionId) loadProgress = message.fraction })
+  onShellMessage('suggestion', message => { if (message.id !== sessionId) return; const track = tracks.find(candidate => candidate.id === message.trackId); if (track) { track.suggestion = message.suggestion; track.suggestionLooked = message.looked } })
+  onShellMessage('albumCheck', message => { if (message.id === sessionId && session) session.albumCheck = message.check })
   onShellMessage('exportProgress', message => exportStatus = message.total ? `Exporting ${Math.min(message.done + 1, message.total)} of ${message.total}${message.current ? ': ' + message.current : ''}` : '')
 
   async function load() {
@@ -219,6 +221,37 @@
     applyTags(keys, fields, keys.length === 1)
     lookingUp = null
   }
+  // Suggestions (SPEC.md › Tags): take one field, or all that differ, from what the database found
+  type SuggestField = 'title' | 'artist' | 'album' | 'albumArtist' | 'year' | 'genre' | 'trackNumber' | 'art'
+  const suggestLabels: [SuggestField, string][] = [['title', 'Title'], ['artist', 'Artist'], ['album', 'Album'], ['albumArtist', 'Album artist'], ['year', 'Year'], ['genre', 'Genre'], ['trackNumber', 'No.'], ['art', 'Cover']]
+  function suggestedValue(track: Track, field: SuggestField): string { const suggestion = track.suggestion; if (!suggestion) return ''; return field === 'trackNumber' ? (suggestion.trackNumber ? `${suggestion.trackNumber}${suggestion.trackCount ? '/' + suggestion.trackCount : ''}` : '') : field === 'art' ? (suggestion.artUrl ? 'picture' : '') : (suggestion as any)[field] ?? '' }
+  function ownValue(track: Track, field: SuggestField): string { return field === 'trackNumber' ? (track.trackNumber ? `${track.trackNumber}${track.trackCount ? '/' + track.trackCount : ''}` : '') : field === 'art' ? (track.artPath ? 'picture' : '') : ((track as any)[field] ?? '') }
+  const differs = (track: Track, field: SuggestField) => { const suggested = suggestedValue(track, field); return !!suggested && suggested.toLowerCase() !== ownValue(track, field).toLowerCase() }
+  async function takeSuggestion(track: Track, fields: SuggestField[]) {
+    const suggestion = track.suggestion; if (!suggestion) return
+    const patch: Partial<TagFields> = {}
+    for (const field of fields) {
+      if (field === 'trackNumber') { if (suggestion.trackNumber) { patch.trackNumber = String(suggestion.trackNumber); if (suggestion.trackCount) patch.trackCount = String(suggestion.trackCount) } }
+      else if (field === 'art') { if (suggestion.artUrl) { try { const saved = await request<{ path: string; thumb: string }>({ type: 'fetchArt', id: sessionId, url: suggestion.artUrl }); patch.artPath = saved.path; thumbs = Object.assign({}, thumbs, { [saved.path]: saved.thumb }) } catch (error) { toast('No picture for that release: ' + (error as Error).message) } } }
+      else if ((suggestion as any)[field]) (patch as any)[field] = (suggestion as any)[field]
+    }
+    if (Object.keys(patch).length) applyTags([track.id], patch, true)
+  }
+  // The album-wide fields a suggestion carries, to every track at once (when the suggestions agree)
+  const albumWide: SuggestField[] = ['album', 'albumArtist', 'year', 'genre', 'art']
+  const sharedSuggestion = $derived.by(() => { const first = tracks.find(track => track.suggestion?.album)?.suggestion; if (!first) return null; const agree = tracks.filter(track => track.suggestion?.album).every(track => track.suggestion!.album.toLowerCase() === first.album.toLowerCase()); return agree ? first : null })
+  async function takeAlbumForAll() {
+    const shared = sharedSuggestion; if (!shared) return
+    let artPath = '', artThumb = ''
+    if (shared.artUrl) { try { const saved = await request<{ path: string; thumb: string }>({ type: 'fetchArt', id: sessionId, url: shared.artUrl }); artPath = saved.path; artThumb = saved.thumb } catch { } }
+    if (artPath) thumbs = Object.assign({}, thumbs, { [artPath]: artThumb })
+    const patch: Partial<TagFields> = { album: shared.album, albumArtist: shared.albumArtist || shared.artist, year: shared.year, genre: shared.genre }
+    if (artPath) patch.artPath = artPath
+    for (const field of Object.keys(patch) as (keyof TagFields)[]) if (!patch[field]) delete patch[field]
+    applyTags(exportable.map(track => track.id), patch, false)
+  }
+  function dismissSuggestion(track: Track) { const next = copy(); next.find(candidate => candidate.id === track.id)!.suggestionDismissed = true; tracks = next; save() }
+  const pendingSuggestions = $derived(tracks.filter(track => track.suggestion && !track.suggestionDismissed && !track.skip && suggestLabels.some(([field]) => differs(track, field))))
   function openLookup(keys: string[], fields?: TagFields) {
     const first = tracks.find(track => keys.includes(track.id))
     lookingUp = { keys, artist: fields?.artist || first?.artist || '', title: fields?.title || first?.title || '', album: fields?.album || first?.album || '' }
@@ -400,8 +433,9 @@
         <button class="ghost" onclick={confirmFocused} disabled={!focused && !grab} title="This edge is right: mark it checked and go to the next (Y)">Looks right<kbd>Y</kbd></button>
         <Dropdown label="Between tracks" value={trimSilence ? 'trim' : 'keep'} options={[['trim', 'Trim silence'], ['keep', 'Keep as recorded']]} onchange={(value) => setTrim(value === 'trim')} />
       {:else if step === 'tags'}
-        <button class="primary" onclick={() => tagging = (untagged.length ? untagged : exportable).map(track => track.id)}>{untagged.length ? `Fill in ${untagged.length}…` : 'Edit tags…'}</button>
-        <button class="ghost" onclick={() => openLookup((untagged.length ? untagged : exportable).map(track => track.id))}>Look up online…</button>
+        {#if sharedSuggestion}<button class="primary" onclick={takeAlbumForAll} title={`Album “${sharedSuggestion.album}”${sharedSuggestion.year ? ', ' + sharedSuggestion.year : ''}${sharedSuggestion.genre ? ', ' + sharedSuggestion.genre : ''}, with the cover, to every track (from ${sharedSuggestion.source})`}>Use album details for all</button>{/if}
+        <button class={sharedSuggestion ? 'ghost' : 'primary'} onclick={() => tagging = (untagged.length ? untagged : exportable).map(track => track.id)}>{untagged.length ? `Fill in ${untagged.length}…` : 'Edit tags…'}</button>
+        <button class="ghost" onclick={() => sendToShell({ type: 'suggestAgain', id: sessionId })} title="Look every track up again (MusicBrainz, then iTunes)">Suggest again</button>
       {:else}
         <button class="primary" disabled={!!app.status?.exporting || !exportable.length} onclick={() => exportTracks(unexported.length ? unexported.map(track => track.id) : undefined)}>{unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>
       {/if}
@@ -442,7 +476,7 @@
     </div>
     <div class="spacer"></div>
     {#if exportStatus}<span class="export-status">{exportStatus}</span>{/if}
-    {#if outputChoices.length}<Dropdown label="As" value={outputProfileId} options={outputChoices} onchange={(value) => { if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
+    {#if outputChoices.length}<Dropdown label="Output profile" value={outputProfileId} options={outputChoices} onchange={(value) => { if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
     <button class="primary export" disabled={!!app.status?.exporting || !tracks.length} onclick={() => exportTracks()} title="Export the selected tracks, or all (Ctrl+E)"><Icon name="export" size={16} />Export {selectedIds.length ? selectedIds.length : 'all'}</button>
   </div>
 
@@ -453,6 +487,24 @@
   </div>
   <div class="readout"><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
 
+  {#if step === 'tags'}
+    <div class="tags-step">
+      {#if session.albumCheck}
+        {@const check = session.albumCheck}
+        <div class="album-check" class:complete={check.have === check.total}><strong>{check.album}</strong> · {check.artist} · {check.have} of {check.total} tracks here{#if check.missing.length} · missing: {check.missing.join(', ')}{/if}<span class="quiet"> · track list from {check.source}</span></div>
+      {/if}
+      {#if pendingSuggestions.length === 0}<p class="quiet suggest-note">{tracks.some(track => !track.suggestionLooked && track.title && !track.skip) ? 'Looking the tracks up in the background…' : tracks.some(track => track.suggestion) ? 'Nothing more to suggest.' : 'Nothing found online for these titles. Edit tags… fills them in by hand.'}</p>{/if}
+      {#each pendingSuggestions as track (track.id)}
+        {@const suggestion = track.suggestion!}
+        <div class="suggest">
+          <span class="suggest-track">{tracks.indexOf(track) + 1}. {track.title}</span>
+          <span class="suggest-source" title="Where this comes from">{suggestion.source} says</span>
+          {#each suggestLabels as [field, label]}{#if differs(track, field)}<button class="chip" onclick={() => takeSuggestion(track, [field])} title={`Set ${label.toLowerCase()} to “${suggestedValue(track, field)}”${ownValue(track, field) ? ` (yours: “${ownValue(track, field)}”)` : ''}`}><span class="chip-label">{label}</span>{suggestedValue(track, field)}</button>{/if}{/each}
+          <span class="suggest-actions"><button class="ghost" onclick={() => takeSuggestion(track, suggestLabels.map(([field]) => field).filter(field => differs(track, field)))}>Use all</button><button class="ghost" onclick={() => dismissSuggestion(track)} title="Keep your own tags for this track">Keep mine</button></span>
+        </div>
+      {/each}
+    </div>
+  {/if}
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }}>
     <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span class="hear-head">Hear <select class="hear-style no-hold" value={hearStyle} onchange={(event) => { hearStyle = (event.target as HTMLSelectElement).value; writeSetting('hearStyle', hearStyle) }} title="Try the button styles (temporary, while you choose)"><option value="pills">A</option><option value="split">B</option><option value="coloured">C</option></select></span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Title</span><span>Album</span><span>Year</span><span>Genre</span><span>Source</span><span>Fades</span><span></span></div>
     {#each tracks as track, index (track.id)}
@@ -584,6 +636,17 @@
   .header-actions { margin-left: auto; display: flex; gap: 6px; }
   .tick { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-quiet); }
+  .tags-step { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .album-check { padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 14%, transparent); border-left: 3px solid var(--warn); font-size: 13px; }
+  .album-check.complete { background: rgba(62, 207, 110, 0.12); border-left-color: #3ecf6e; }
+  .suggest-note { margin: 2px 8px; font-size: 12.5px; }
+  .suggest { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 5px 8px; border-radius: 8px; background: var(--panel); font-size: 12.5px; }
+  .suggest-track { font-weight: 600; min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .suggest-source { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; background: var(--accent-soft); color: var(--fg); border: 1px solid transparent; border-radius: 999px; padding: 2px 10px 2px 6px; font: inherit; font-size: 12px; cursor: pointer; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip:hover { border-color: var(--accent); }
+  .chip-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); font-weight: 700; }
+  .suggest-actions { margin-left: auto; display: flex; gap: 4px; }
   .history { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
   .snapshot { display: grid; grid-template-columns: 70px 1fr auto auto; gap: 10px; align-items: center; padding: 3px 6px; border-radius: 6px; font-size: 13px; }
   .snapshot:hover { background: var(--hover); }
