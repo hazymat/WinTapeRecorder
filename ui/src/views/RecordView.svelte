@@ -167,7 +167,7 @@
   function onLiveWheel(event: WheelEvent) {
     if (!app.status) return
     event.preventDefault()
-    if (event.ctrlKey) { liveScale = Math.max(1, Math.min(64, liveScale * Math.pow(1.0025, -event.deltaY))); drawLive(); return }
+    if (event.ctrlKey) { liveScale = Math.max(1, Math.min(10000, liveScale * Math.pow(1.0025, -event.deltaY))); drawLive(); return }
     pause()
     const rate = app.status.sampleRate, factor = Math.exp(event.deltaY * 0.0015)
     const anchorX = selected >= 0 ? markerX(selected) : event.offsetX
