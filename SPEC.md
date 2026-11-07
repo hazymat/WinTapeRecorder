@@ -114,6 +114,8 @@ No start with Windows, no tray.
 - Hints around the app, dismissable, all hidden or reset from Settings › General.
 - Keyboard shortcuts (Settings › Shortcuts lists them): Ctrl+R record/stop, M new track while recording, Space play/stop, S and E set start and end at the playhead, X split, N new track, +/- or the wheel zoom (and reset the height), Ctrl+wheel waveform height, Ctrl+0 fit, Z zoom to track, [ ] previous/next track, , and . hear this track's start or end, Left/Right nudge the playhead or a grabbed edge (Shift: 10×, Ctrl: one sample), Ctrl+E export, Ctrl+Z/Y undo/redo, Del remove, Ctrl+, settings, Esc clear.
 
+- Right-click in any text field gives Cut, Copy, Paste and Select all; elsewhere only the app's own menus.
+
 ## Updates and versions
 
 As WinSqueeze:

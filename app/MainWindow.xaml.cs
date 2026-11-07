@@ -67,7 +67,16 @@ public partial class MainWindow : Window
         webView.DefaultBackgroundColor = glassActive || App.Settings.General.Frameless ? System.Drawing.Color.Transparent : System.Drawing.Color.FromArgb(16, 17, 20);
         webView.CoreWebView2.SetVirtualHostNameToFolderMapping(uiHost, Path.Combine(AppContext.BaseDirectory, "wwwroot"), CoreWebView2HostResourceAccessKind.DenyCors);
         webView.CoreWebView2.WebMessageReceived += async (sender, args) => await OnUiMessageAsync(args.WebMessageAsJson);
-        webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+        // Right-click in a text field gives Cut, Copy, Paste and Select all; elsewhere the app's own menus (or none)
+        webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+        webView.CoreWebView2.ContextMenuRequested += (sender, args) =>
+        {
+            if (!args.ContextMenuTarget.IsEditable) { args.Handled = true; return; }
+            var keep = new HashSet<string> { "undo", "redo", "cut", "copy", "paste", "pasteAndMatchStyle", "selectAll" };
+            for (var index = args.MenuItems.Count - 1; index >= 0; index--) if (!keep.Contains(args.MenuItems[index].Name) || args.MenuItems[index].Name == "pasteAndMatchStyle") args.MenuItems.RemoveAt(index);
+            // no separators left at the ends or doubled
+            while (args.MenuItems.Count > 0 && args.MenuItems[0].Kind == Microsoft.Web.WebView2.Core.CoreWebView2ContextMenuItemKind.Separator) args.MenuItems.RemoveAt(0);
+        };
         webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
         webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
         webView.CoreWebView2.Settings.IsZoomControlEnabled = false; // Ctrl+wheel zooms the waveform, not the page
