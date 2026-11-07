@@ -41,7 +41,7 @@
   let following = $state(true)
   let viewStart = 0, viewSpan = 0 // the paused view, in frames
   let selected = $state(-1) // the selected marker's index
-  let liveScale = 1 // Ctrl+wheel: wave height, as in the session's waveform; kept while zooming
+  let liveScale = $state(1) // Ctrl+wheel: wave height, as in the session's waveform; kept while zooming
   let hovered = $state(-1)
   let followSeconds = $state(60) // following: the latest minute, newest at the right; Catch up comes back to it
   let overviewSpan = 0 // the whole recording so far, for the strip above
@@ -58,7 +58,7 @@
   function markerX(index: number) { const { start, span } = liveRange(); return (markerFrame(index) - start) / span * liveWidth }
   function markerAt(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((_, index) => { const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
   function pause() { if (!following || !app.status) return; const { start, span } = liveRange(); viewStart = start; viewSpan = span; following = false }
-  export function catchUp() { followSeconds = 60; following = true; selected = -1; dragging = null; drawLive() }
+  export function catchUp() { followSeconds = 60; liveScale = 1; following = true; selected = -1; dragging = null; drawLive() }
   function selectMarker(index: number, centre = false) {
     const status = app.status; if (!status) return
     pause()
@@ -208,7 +208,7 @@
   $effect(() => { const canvas = liveCanvas; if (!canvas) return; canvas.addEventListener('wheel', onLiveWheel, { passive: false }); return () => canvas.removeEventListener('wheel', onLiveWheel) })
   function onLiveKey(event: KeyboardEvent) {
     if (event.key !== 'Escape' || !recording || (event.target as HTMLElement)?.matches?.('input, textarea')) return
-    if (selected >= 0) { event.preventDefault(); deselect() } else if (!following) { event.preventDefault(); catchUp() }
+    if (selected >= 0) { event.preventDefault(); deselect() } else if (!following || liveScale > 1.05 || followSeconds !== 60) { event.preventDefault(); catchUp() }
   }
 
   function nudge(index: number, frame: number, seconds: number) { sendToShell({ type: 'editChange', index, frame: Math.max(0, frame + seconds * (app.status?.sampleRate ?? 48000)) }) }
@@ -488,9 +488,9 @@
       {#if selected >= 0}<span><strong>Marker {selected + 1} selected</strong></span>
       {:else if !following}<span><strong>Paused view</strong><span class="quiet">{' · '}recording carries on</span></span>
       {:else}<span><strong>Following</strong><span class="quiet">{' · '}the last minute</span></span>{/if}
-      {#if !following}<button class="primary catch-up" onclick={catchUp} title="Back to following the last minute (Esc)">Catch up</button>{/if}
+      {#if !following || liveScale > 1.05 || followSeconds !== 60}<button class="primary catch-up" onclick={catchUp} title="Back to following the last minute at normal height (Esc)">Catch up</button>{/if}
     </div>
-    <Hint id="live-wave" text="Drag or zoom (wheel) the wave to stop following and look around; Ctrl+wheel sets its height. Click a marker to select it, then drag the audio under it and let go to place it; click it again or press Esc to let go. Catch up goes back to the last minute. The strip above is the whole recording: click it to look there." />
+    <Hint id="live-wave" text="Drag or zoom (wheel) the wave to stop following and look around; Ctrl+wheel sets its height. Click a marker to select it, then drag the audio under it and let go to place it; click it again or press Esc to let go. Catch up goes back to the last minute at normal height. The strip above is the whole recording: click it to look there." />
     <canvas class="live-strip" bind:this={stripCanvas} title="The whole recording so far: click or drag to look there" onpointerdown={onStrip} onpointermove={onStrip}></canvas>
     <canvas class="live-wave" onclick={(event) => { if (event.detail === 2 && event.offsetY < flagZone) { const index = markerAt(event.offsetX); if (index >= 0) { sendToShell({ type: 'editChanges', indexes: [index], confirmed: !app.status?.changes[index]?.confirmed }); lastFlagClick = null } } }} bind:this={liveCanvas} bind:clientWidth={liveWidth} tabindex="-1" onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp} onpointercancel={onLiveUp} onpointerleave={() => { if (!dragging && hovered >= 0) { hovered = -1; drawLive() } }}></canvas>
 
