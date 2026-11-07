@@ -6,6 +6,7 @@
   import Dialog from '../parts/Dialog.svelte'
   import Hint from '../parts/Hint.svelte'
   import Icon from '../parts/Icon.svelte'
+  import { selection, selectKeys, clearSelection, type SelectionAction } from '../lib/selection.svelte'
   // The recorder (SPEC.md › Recording): choose a profile and where track names come from, check the level, record
   let sessionName = $state('')
   let source = $state('auto')
@@ -119,12 +120,12 @@
       status.changes.forEach((change, index) => {
         const x = markerX(index); if (x < -2 || x > liveWidth + 2) return
         const isSelected = index === selected, isHovered = index === hovered && !isSelected
-        context.fillStyle = isSelected ? colour('--accent', '#5ccfff') : colour('--warn', '#ffb74d')
-        if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.12 + 0.3 * pulse() : 0.12; context.fillRect(x - 8, 0, 16, height); context.globalAlpha = 1 }
+        context.fillStyle = colour('--warn', '#ffb74d')
+        if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.1 + 0.3 * pulse() : 0.12; context.fillRect(x - 6, 0, 12, height); context.globalAlpha = 1 }
         context.fillRect(x - 1, 0, isSelected || isHovered ? 3 : 2, height)
         context.fillStyle = change.confirmed ? '#3ecf6e' : context.fillStyle; context.fillRect(x, 0, 11, 13) // the flag: drag it to move the marker, double-click it to confirm the cut
         if (change.confirmed) { context.fillStyle = '#fff'; context.fillText('✓', x + 1, 1) }
-        context.fillStyle = isSelected ? colour('--accent', '#5ccfff') : colour('--warn', '#ffb74d')
+        context.fillStyle = colour('--warn', '#ffb74d')
         context.fillText(`${index + 1} ${change.title || ''}`.trim(), x + 15, 3)
       })
       if (liveScale > 1.05) { context.fillStyle = colour('--fg-quiet', '#888'); context.textBaseline = 'top'; context.fillText(`Height ×${liveScale < 10 ? liveScale.toFixed(1) : Math.round(liveScale)} (Ctrl+wheel)`, liveWidth - 120, 3) }
@@ -251,6 +252,37 @@
   const firstEstimate = $derived(estimates.find(estimate => app.outputProfiles.find(profile => profile.name === estimate.name)?.id === app.activeOutput) ?? estimates[0])
   const current = $derived(app.status?.current)
   let startingOver = $state(false)
+  // The track list: the same columns as Albums & cuts, minus artwork, source and fades
+  const recColumns = '48px 150px minmax(80px, 1fr) minmax(80px, 1fr) 60px 36px minmax(110px, 1.4fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) 72px 26px'
+  // Ticked tracks (by marker index) act together through the bar at the bottom
+  const ticked = $derived(selection.scope === 'record' ? selection.keys : [])
+  const recActions: SelectionAction[] = [
+    { label: 'Problem…', single: true, run: keys => { problemFor = Number(keys[0]); problemNote = changes[problemFor]?.note ?? '' } },
+    { label: 'Remove markers', key: 'Delete', danger: true, run: keys => { for (const key of keys.map(Number).sort((first, second) => second - first)) sendToShell({ type: 'removeChange', index: key }); clearSelection() } },
+  ]
+  function tickIndexes(indexes: number[], on: boolean) { const keys = new Set(ticked); for (const index of indexes) { if (on) keys.add(String(index)); else keys.delete(String(index)) } if (keys.size) selectKeys('record', Array.from(keys).sort((first, second) => Number(first) - Number(second)), recActions, 'track'); else clearSelection() }
+  function tickAll(on: boolean) { tickIndexes(changes.map((_, index) => index), on) }
+  // Press and hold a track to pick it up; drop it on another album's header to join that album, or in the gap to give it its own
+  let liftingIndex = $state(-1), liftedIndex = $state(-1), dropOn = $state(''), liftTimer = 0, liftStart = { x: 0, y: 0 }
+  function liftDown(index: number, event: PointerEvent) {
+    if (event.button !== 0 || (event.target as HTMLElement)?.closest?.('button, select, input[type=checkbox]')) return
+    liftingIndex = index; liftStart = { x: event.clientX, y: event.clientY }; clearTimeout(liftTimer)
+    const cancelOnMove = (move: PointerEvent) => { if (Math.abs(move.clientX - liftStart.x) + Math.abs(move.clientY - liftStart.y) > 5) { clearTimeout(liftTimer); liftingIndex = -1; window.removeEventListener('pointermove', cancelOnMove) } }
+    window.addEventListener('pointermove', cancelOnMove)
+    liftTimer = window.setTimeout(() => { window.removeEventListener('pointermove', cancelOnMove); (document.activeElement as HTMLElement | null)?.blur?.(); liftedIndex = index; liftingIndex = -1; window.addEventListener('pointermove', liftMove); window.addEventListener('pointerup', liftUp, { once: true }) }, 350)
+    window.addEventListener('pointerup', () => { clearTimeout(liftTimer); liftingIndex = -1; window.removeEventListener('pointermove', cancelOnMove) }, { once: true })
+  }
+  function liftMove(event: PointerEvent) { const target = (document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null)?.closest?.('[data-drop]') as HTMLElement | null; dropOn = target?.dataset.drop ?? '' }
+  function liftUp() {
+    window.removeEventListener('pointermove', liftMove)
+    const index = liftedIndex, target = dropOn; liftedIndex = -1; dropOn = ''
+    if (index < 0 || !target) return
+    const change = changes[index]; if (!change) return
+    if (target === 'split') { sendToShell({ type: 'editChanges', indexes: [index], album: change.album ? `${change.album} (${change.title || 'single'})` : change.title }); return }
+    const group = albums.find(candidate => 'album:' + candidate.indexes[0] === target); if (!group || group.indexes.includes(index)) return
+    // Straight in, with that album's names; the track keeps its own artist unless the album has no name
+    sendToShell({ type: 'editChanges', indexes: [index], album: group.album, year: group.year, genre: group.genre, composer: group.composer, ...(group.album ? {} : { artist: group.artist }) })
+  }
   // Problem with a track (SPEC.md › Recording › Problems)
   let problemFor = $state(-1), problemNote = $state('')
   const problemLabel = (problem: string) => problem === 'note' ? 'Noted' : problem === 'skip' ? 'Left out' : problem === 'dropout' ? 'Dropout' : problem === 'clipping' ? 'Clipping' : 'Retake'
@@ -443,41 +475,37 @@
       <Dropdown label="Track names" value={source} options={sourceChoices} align="right" onchange={(value) => source = value} />
     </div>
     <Hint id="live-edit-albums" text="Tracks are grouped by album; numbers count up by themselves. Edit an album's artist, name or year in its header to change all its tracks. A track that should belong to the album above or below: drag it by ⋮⋮ onto that album, or use ⤒ / ⤓." />
-    <div class="changes">
+    <!-- The same list as Albums & cuts (SPEC.md › Recording › Live editing), without auditioning: Start | Length find the line in the wave -->
+    <div class="list rec-list" style:--columns={recColumns}>
+      <div class="row head"><span><input type="checkbox" class="tick" checked={changes.length > 0 && ticked.length === changes.length} indeterminate={ticked.length > 0 && ticked.length < changes.length} onchange={() => tickAll(ticked.length !== changes.length)} aria-label="Select all tracks" /></span><span class="head-cell">Start · Length</span><span class="head-cell">Artist</span><span class="head-cell">Album</span><span class="head-cell">Year</span><span class="head-cell">No.</span><span class="head-cell">Title</span><span class="head-cell">Genre</span><span class="head-cell">Composer</span><span></span><span></span></div>
       {#each albums as group, groupIndex (group.key + group.indexes[0])}
-        {@const above = albums[groupIndex - 1]}
-        {@const below = albums[groupIndex + 1]}
-        <div class="album-head" id={'album-' + group.indexes[0]} role="group" aria-label={albumLine(group)}
-          ondragover={(event) => { if (dragIndex >= 0 && !group.indexes.includes(dragIndex)) event.preventDefault() }}
-          ondrop={(event) => { event.preventDefault(); if (dragIndex >= 0 && !group.indexes.includes(dragIndex)) joining = { index: dragIndex, target: group }; dragIndex = -1 }}>
-          <span class="head-name"><span class="disc small" style:--hue={hue(group.key)}>{initials(group)}</span><span class="quiet small">{group.indexes.length}</span></span>
-          <span class="head-field c-artist"><input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'artist', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'artist', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'artist', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this artist on every track in the album">↓</button></span>
-          <span class="head-field c-album"><input value={group.album} placeholder="Album" title="This album's album, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'album', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'album', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'album', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this album on every track in the album">↓</button></span>
-          <span class="head-field c-year"><input value={group.year} placeholder="Year" title="This album's year, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'year', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'year', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'year', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this year on every track in the album">↓</button></span>
-          <span class="head-field c-genre"><input value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'genre', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'genre', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'genre', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this genre on every track in the album">↓</button></span>
-          <span class="head-field c-composer"><input value={group.composer} placeholder="Composer" title="This album's composer, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'composer', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'composer', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'composer', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this composer on every track in the album">↓</button></span>
+        {@const allTicked = group.indexes.every(index => ticked.includes(String(index)))}
+        <div class="album-row open row-grid" class:over={dropOn === 'album:' + group.indexes[0]} data-drop={'album:' + group.indexes[0]} id={'album-' + group.indexes[0]} role="group" aria-label={albumLine(group)}>
+          <span class="album-label"><input type="checkbox" class="tick" checked={allTicked} indeterminate={!allTicked && group.indexes.some(index => ticked.includes(String(index)))} onchange={() => tickIndexes(group.indexes, !allTicked)} aria-label="Select this album's tracks" /><span class="album-name"><strong>{group.album || 'No album'}</strong> - {group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}</span><span class="quiet album-count">{group.indexes.length}</span></span>
+          <span class="head-field cell-artist"><input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'artist', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'artist', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'artist', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this artist on every track in the album">↓</button></span>
+          <span class="head-field cell-album"><input value={group.album} placeholder="Album" title="This album's album, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'album', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'album', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'album', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this album on every track in the album">↓</button></span>
+          <span class="head-field cell-year"><input value={group.year} placeholder="Year" title="This album's year, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'year', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'year', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'year', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this year on every track in the album">↓</button></span>
+          <span class="head-field cell-genre"><input value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'genre', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'genre', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'genre', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this genre on every track in the album">↓</button></span>
+          <span class="head-field cell-composer"><input value={group.composer} placeholder="Composer" title="This album's composer, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'composer', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'composer', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'composer', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this composer on every track in the album">↓</button></span>
         </div>
-        {#each group.indexes as index, position (index + ':' + changes[index].frame)}
+        {#each group.indexes as index (index + ':' + changes[index].frame)}
           {@const change = changes[index]}
           {@const rate = app.status?.sampleRate ?? 48000}
-          <div class="change" role="listitem">
-            <span class="handle" draggable="true" ondragstart={(event) => { dragIndex = index; event.dataTransfer?.setData('text/plain', String(index)) }} ondragend={() => dragIndex = -1} title="Drag onto another album to move this track into it">⋮⋮</span>
-            <button class="number" class:on={selected === index} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Select this marker in the wave above, zoomed in around it">{index + 1}</button>
-            <input class="time-box" value={formatTime(change.frame, rate, false)} onchange={(event) => setTime(index, (event.target as HTMLInputElement).value, rate)} title="Where this track starts (m:ss)" aria-label="Start time" />
+          {@const nextFrame = changes[index + 1]?.frame ?? app.levels.seconds * rate}
+          <div class="row" class:lifting={liftingIndex === index} class:lifted={liftedIndex === index} class:current={selected === index} onpointerdown={(event) => liftDown(index, event)} role="listitem">
+            <span class="number"><input type="checkbox" class="tick" checked={ticked.includes(String(index))} onchange={() => tickIndexes([index], !ticked.includes(String(index)))} aria-label="Select track {index + 1}" /> {index + 1}</span>
+            <span class="hear"><button class="hear-start locate" class:grabbed={selected === index} class:checked={change.confirmed} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Find this start in the wave above, zoomed in (click again to let go)"><span class="pill-time">{formatTime(change.frame, rate, false)}</span><span class="locate-icon">⌖</span></button><button class="hear-end locate" onclick={() => selectMarker(index, true)} title="Length so far"><span class="pill-time">{formatTime(Math.max(0, nextFrame - change.frame), rate, false)}</span></button></span>
             <input value={change.artist} placeholder="Artist" onchange={(event) => sendToShell({ type: 'editChange', index, artist: (event.target as HTMLInputElement).value.trim() })} />
             <input value={change.album} placeholder="Album" onchange={(event) => sendToShell({ type: 'editChange', index, album: (event.target as HTMLInputElement).value.trim() })} />
-            <input class="year" value={change.year ?? ''} placeholder={group.year || 'Year'} title={group.year && !change.year ? `The album's year (${group.year}) goes on this track too` : 'Year'} onchange={(event) => sendToShell({ type: 'editChange', index, year: (event.target as HTMLInputElement).value.trim() })} />
-            <span class="track-no" title="Track number: counts up within the album">{trackNumber(group, index) || '–'}</span>
+            <input value={change.year ?? ''} placeholder={group.year || 'Year'} onchange={(event) => sendToShell({ type: 'editChange', index, year: (event.target as HTMLInputElement).value.trim() })} />
+            <span class="track-no" title="Track number: counts up within the album">{trackNumber(group, index) || '-'}</span>
             <input value={change.title} placeholder={change.manual ? 'Title (marked by hand)' : 'Title'} onchange={(event) => sendToShell({ type: 'editChange', index, title: (event.target as HTMLInputElement).value.trim() })} />
             <input value={change.genre ?? ''} placeholder={group.genre || 'Genre'} onchange={(event) => sendToShell({ type: 'editChanges', indexes: [index], genre: (event.target as HTMLInputElement).value.trim() })} />
-            <span></span>
-            <span class="joins">
-              {#if position === 0 && above}<button onclick={() => joining = { index, target: above }} title={`Move into the album above: ${albumLine(above)}`}>⤒</button>{/if}
-              {#if position === group.indexes.length - 1 && below}<button onclick={() => joining = { index, target: below }} title={`Move into the album below: ${albumLine(below)}`}>⤓</button>{/if}
-            </span>
+            <input value={change.composer ?? ''} placeholder={group.composer || 'Composer'} onchange={(event) => sendToShell({ type: 'editChanges', indexes: [index], composer: (event.target as HTMLInputElement).value.trim() })} />
             <button class="retake" class:on={!!change.problem} onclick={() => { problemFor = index; problemNote = change.note ?? '' }} title={change.problem ? `${problemLabel(change.problem)}${change.note ? ': ' + change.note : ''}. Click to change it` : 'Problem with this track? Note it, play it again or leave it out'}>{change.problem ? problemLabel(change.problem) : 'Problem?'}</button>
             <button class="remove" onclick={() => sendToShell({ type: 'removeChange', index })} title="Remove this marker (the audio stays)" aria-label="Remove marker">✕</button>
           </div>
+          {#if liftedIndex >= 0 && group.indexes.includes(liftedIndex) && group.indexes[group.indexes.length - 1] === index}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
         {/each}
       {:else}<p class="quiet">None yet. Press M to mark where a track starts.</p>{/each}
     </div>
@@ -510,6 +538,63 @@
   .choice:hover { border-color: var(--accent); background: var(--accent-soft); }
   .choice span { font-size: 12px; color: var(--fg-quiet); }
   .problem-foot { display: flex; gap: 8px; margin-top: 4px; } .problem-foot .spacer { flex: 1; }
+  .row { display: grid; grid-template-columns: var(--columns); gap: 8px; align-items: center; padding: 0 8px; border-radius: 4px; cursor: default; font-size: 12.5px; min-height: 26px; }
+  .row:not(.head):hover { background: var(--hover); }
+  .row.current { box-shadow: inset 3px 0 0 var(--accent); }
+  .number, .time, .fades { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
+  .row input { background: transparent; border-color: transparent; padding: 1px 6px; min-width: 0; font-size: 12.5px; }
+  .row input:hover { border-color: var(--line); }
+  .row input:focus { background: var(--panel); }
+  .hear { display: flex; gap: 0; white-space: nowrap; }
+  .hear .hear-start, .hear .hear-end { width: 82px; padding: 0 6px; justify-content: space-between; font-family: var(--font-display); font-weight: 500; }
+  .hear .hear-start.doubt, .hear .hear-end.doubt { color: var(--warn); }
+  .pill-time { font-size: 12px; }
+  .head-cell { position: relative; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .col-resize { position: absolute; top: -4px; right: -6px; width: 9px; bottom: -4px; cursor: col-resize; z-index: 2; }
+  .col-resize::after { content: ''; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 1px; background: var(--line); }
+  .col-resize:hover::after { background: var(--accent); width: 2px; }
+  .hear button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 20px; padding: 0 9px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  .hear .hear-start { border-radius: 7px 0 0 7px; } .hear .hear-end { border-radius: 0 7px 7px 0; border-left: 0; }
+  .hear button:hover { background: var(--accent); color: var(--on-accent); }
+  .hear button.checked { background: rgba(62, 207, 110, 0.18); color: #2e9e57; border-color: rgba(62, 207, 110, 0.5); }
+  .number-cell { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); width: 34px; text-align: center; }
+  .album-row.open { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); cursor: grab; }
+  .album-row.row-grid { margin-top: 10px; display: grid; grid-template-columns: var(--columns); gap: 8px; padding: 3px 8px; }
+  .row-grid .album-label .album-count { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .row-grid .album-label > .tick { margin: 0 4px 0 0; }
+  .row-grid .album-name { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .row-grid .album-label { grid-column: 1 / 4; display: flex; gap: 10px; align-items: baseline; white-space: nowrap; overflow: hidden; }
+  .row-grid .cell-artist { grid-column: 4; } .row-grid .cell-album { grid-column: 5; } .row-grid .cell-year { grid-column: 6; } .row-grid .cell-genre { grid-column: 9; } .row-grid .cell-composer { grid-column: 10; }
+  .head-field { position: relative; display: flex; align-items: center; min-width: 0; }
+  .head-field input { flex: 1; min-width: 0; padding-right: 24px !important; }
+  .fill-down { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; border-color: transparent !important; background: transparent !important; opacity: 0.6; padding: 0; border-radius: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--fg-quiet); cursor: pointer; font-size: 12px; }
+  .fill-down:hover { opacity: 1; background: var(--accent) !important; color: var(--on-accent); }
+  .track-number { text-align: center; padding-left: 2px !important; padding-right: 2px !important; }
+  .album-row.lifted { opacity: 0.85; box-shadow: 0 8px 22px var(--shadow); cursor: grabbing; }
+  .row.lifting { animation: wiggle 350ms ease-in-out; }
+  @keyframes wiggle { 0%, 100% { transform: none; } 25% { transform: rotate(-0.4deg); } 75% { transform: rotate(0.4deg); } }
+  .row.lifted :global(*) { user-select: none; }
+  .row.lifted { opacity: 0.85; box-shadow: 0 8px 22px var(--shadow); transform: scale(1.01); background: var(--panel-solid); cursor: grabbing; position: relative; z-index: 2; }
+  .edge-cell { display: flex; align-items: center; gap: 2px; min-width: 0; white-space: nowrap; } /* never wraps: rows keep their shape whatever their state */
+  .hear button.heard { box-shadow: inset 0 -3px 0 0 var(--accent); }
+  .hear .hear-start.grabbed { outline: 2px solid #3ecf6e; outline-offset: 1px; z-index: 1; }
+  .hear .hear-end.grabbed { outline: 2px solid #e5484d; outline-offset: 1px; z-index: 1; }
+  .row:has(.skipped) { opacity: 0.55; }
+  .tick { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .row:not(.head):hover { background: var(--hover); }
+  .rec-list .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
+  .rec-list .head { top: 0; }
+  .rec-list { overflow: visible; border-top: 1px solid var(--line); }
+  .rec-list .row-grid .album-label { grid-column: 1 / 3; }
+  .rec-list .row-grid .cell-artist { grid-column: 3; } .rec-list .row-grid .cell-album { grid-column: 4; } .rec-list .row-grid .cell-year { grid-column: 5; } .rec-list .row-grid .cell-genre { grid-column: 8; } .rec-list .row-grid .cell-composer { grid-column: 9; }
+  .rec-list .hear .hear-start, .rec-list .hear .hear-end { width: 70px; }
+  .locate-icon { font-size: 11px; opacity: 0.7; }
+  .rec-list .album-row.over { background: var(--accent-soft); border-color: var(--accent); }
+  .split-zone { margin: 6px 0; padding: 10px; border: 2px dashed var(--line); border-radius: 8px; text-align: center; font-size: 12.5px; color: var(--fg-quiet); }
+  .split-zone.over { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .album-row.row-grid { border-radius: 8px; background: var(--panel); border: 1px solid var(--line); align-items: center; }
+  .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
+  .track-no { font-family: var(--font-display); font-size: 12px; text-align: center; color: var(--fg-quiet); }
   .start-mode { display: flex; margin: 2px 0; }
   .start-mode button { padding: 3px 12px; font: inherit; font-size: 12px; background: var(--panel); color: var(--fg-quiet); border: 1px solid var(--line); cursor: pointer; }
   .start-mode button:first-child { border-radius: 7px 0 0 7px; } .start-mode button:last-child { border-radius: 0 7px 7px 0; border-left: 0; }

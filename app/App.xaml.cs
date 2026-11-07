@@ -42,11 +42,11 @@ public partial class App : Application
     // The playing album's year (SPEC.md › Recording › Now playing): Windows media info has none, so it's looked up once per album
     readonly Dictionary<string, string> albumYears = new();
     readonly HashSet<string> yearsAsked = new();
-    public string YearFor(NameSource? name) { if (name == null || name.Album == "") return ""; lock (albumYears) return albumYears.TryGetValue(name.Artist + "|" + name.Album, out var year) ? year : ""; }
+    public string YearFor(NameSource? name) { if (name == null || name.Album == "") return ""; lock (albumYears) return albumYears.TryGetValue(name.Album, out var year) ? year : ""; } // by album: a featured artist on one track mustn't lose the year
     void LookUpYear(NameSource? name)
     {
         if (name == null || name.Album == "") return;
-        var key = name.Artist + "|" + name.Album;
+        var key = name.Album;
         lock (albumYears) if (!yearsAsked.Add(key)) return;
         _ = Task.Run(async () =>
         {
@@ -58,7 +58,7 @@ public partial class App : Application
                 if (year != "" && Recorder.Session is { } session)
                 {
                     var changed = false;
-                    foreach (var change in session.Changes) if (change.Year == "" && change.Artist == name.Artist && change.Album == name.Album) { change.Year = year; changed = true; }
+                    foreach (var change in session.Changes) if (change.Year == "" && change.Album == name.Album) { change.Year = year; changed = true; }
                     if (changed) session.Save();
                 }
                 StatusChanged?.Invoke();
@@ -344,6 +344,8 @@ public partial class App : Application
             return;
         }
         var change = new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, AlbumArtist = name.AlbumArtist, TrackNumber = name.TrackNumber, Year = YearFor(name), Source = name.Label };
+        // The same album as the marker before: its year, genre and composer carry on (typed or looked up)
+        if (session.Changes.LastOrDefault() is { } before && before.Album != "" && string.Equals(before.Album, change.Album, StringComparison.OrdinalIgnoreCase)) { if (change.Year == "") change.Year = before.Year; change.Genre = before.Genre; change.Composer = before.Composer; }
         session.Changes.Add(change);
         if (name.Picture) _ = SavePlayerArtAsync(session, change, name.Key);
         session.Save();
