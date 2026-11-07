@@ -81,6 +81,15 @@ public partial class App : Application
         Watcher.Updated += () => Dispatcher.BeginInvoke(OnNamesUpdated);
         Recorder.QualityMeasured += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
         Recorder.DropoutFound += () => Dispatcher.BeginInvoke(() => { NoteProblem("dropout"); StatusChanged?.Invoke(); });
+        // A gap right at a track change is the player moving on, not a stall: checked a few seconds later, once the new name has arrived
+        Recorder.GapFound += gap => Dispatcher.BeginInvoke(async () =>
+        {
+            await Task.Delay(4000);
+            if (Recorder.Session is not { } session) return;
+            var near = 3L * session.SampleRate;
+            if (session.Changes.Any(change => change.Frame > gap.Frame - near && change.Frame < gap.Frame + gap.Ms * (long)session.SampleRate / 1000 + near)) { lock (Recorder.Gaps) Recorder.Gaps.Remove(gap); StatusChanged?.Invoke(); return; }
+            NoteProblem("gap", gap.Frame); StatusChanged?.Invoke();
+        });
         Recorder.ClipFound += () => Dispatcher.BeginInvoke(() => { NoteProblem("clipping"); StatusChanged?.Invoke(); });
         Recorder.Stopped += () => Dispatcher.BeginInvoke(() =>
         {
@@ -230,10 +239,10 @@ public partial class App : Application
     // M while recording: a marker here, named by whatever is playing
     // Live editing while recording (SPEC.md › Recording): the markers and names noted so far can be moved, retyped or removed; capture carries on untouched
     // A dropout or clipping burst marks the track playing at the time as damaged (SPEC.md › Recording › Issues); a later take with the same name replaces it
-    void NoteProblem(string kind)
+    void NoteProblem(string kind, long? frame = null)
     {
         if (Recorder.Session is not { } session) return;
-        var at = Recorder.FramesWritten;
+        var at = frame ?? Recorder.FramesWritten;
         var change = session.Changes.Where(candidate => candidate.Frame <= at).OrderByDescending(candidate => candidate.Frame).FirstOrDefault();
         if (change == null || change.Problem != "") return;
         change.Problem = kind; session.Save();
@@ -508,6 +517,7 @@ public partial class App : Application
         sampleRate = Recorder.Session?.SampleRate ?? 0,
         changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Year, change.Genre, change.Composer, change.Confirmed, change.Manual, change.Problem, change.Note }) ?? Enumerable.Empty<object>(),
         dropoutList = Recorder.Dropouts.Select(dropout => new { dropout.Frame, dropout.Ms }),
+        gapList = Recorder.GapsNow().Select(gap => new { gap.Frame, gap.Ms }),
         otherSounds = Recorder.OtherSoundsSoFar,
         clips = Recorder.Clips.Select(clip => new { clip.Frame, clip.Samples }),
         current = CurrentName == null ? null : new { CurrentName.Key, CurrentName.Label, CurrentName.Artist, CurrentName.Title, CurrentName.Album, year = YearFor(CurrentName) },

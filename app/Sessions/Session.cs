@@ -159,6 +159,7 @@ public class Session
     public int ClippedSamples { get; set; }
     public List<NameChange> Changes { get; set; } = new();
     public List<Dropout> Dropouts { get; set; } = new();
+    public List<Dropout> Gaps { get; set; } = new(); // playback stalls: the sound cut dead mid-song, then came back
     public List<OtherSound> OtherSounds { get; set; } = new();
     public List<ClipEvent> Clips { get; set; } = new();
     public List<QualitySample> Quality { get; set; } = new();

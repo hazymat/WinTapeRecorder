@@ -130,8 +130,8 @@ public static class TrackBuilder
             if (track.SkipReason == "" || track.Title == "" || track.Skip) continue;
             var again = tracks.Skip(index + 1).Any(later => string.Equals(later.Title, track.Title, StringComparison.OrdinalIgnoreCase) && string.Equals(later.Artist, track.Artist, StringComparison.OrdinalIgnoreCase));
             track.Skip = again;
-            track.SkipReason = again ? track.SkipReason switch { "dropout" => "Dropout during this take; recorded again later", "clipping" => "Clipping during this take; recorded again later", _ => "Marked for a retake; recorded again later" }
-                : track.SkipReason switch { "dropout" => "A dropout happened during this take", "clipping" => "Clipping during this take", _ => "Marked for a retake, but not recorded again" };
+            track.SkipReason = again ? track.SkipReason switch { "dropout" => "Dropout during this take; recorded again later", "gap" => "The sound cut out during this take; recorded again later", "clipping" => "Clipping during this take; recorded again later", _ => "Marked for a retake; recorded again later" }
+                : track.SkipReason switch { "dropout" => "A dropout happened during this take", "gap" => "The sound cut out during this take (the player stalled)", "clipping" => "Clipping during this take", _ => "Marked for a retake, but not recorded again" };
         }
         return tracks;
     }

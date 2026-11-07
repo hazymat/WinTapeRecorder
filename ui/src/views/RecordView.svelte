@@ -219,7 +219,7 @@
     sendToShell({ type: 'editChange', index, frame: Math.round(seconds * rate) })
   }
   // Issues while recording (SPEC.md › Recording › Issues): each one names the track it hit and what to do about it
-  type Issue = { kind: 'dropout' | 'clipping' | 'noname' | 'retake' | 'silence' | 'other'; frame: number; index: number; text: string; action: string }
+  type Issue = { kind: 'dropout' | 'gap' | 'clipping' | 'noname' | 'retake' | 'silence' | 'other'; frame: number; index: number; text: string; action: string }
   const issues = $derived.by<Issue[]>(() => {
     const status = app.status; if (!status?.recording) return []
     const rate = status.sampleRate || 48000, recorded = app.levels.seconds * rate
@@ -227,6 +227,7 @@
     const name = (index: number) => { const change = status.changes[index]; return change?.title ? `“${change.title}”` : index >= 0 ? `track ${index + 1}` : 'the recording' }
     const list: Issue[] = []
     for (const dropout of status.dropoutList ?? []) { const index = trackAt(dropout.frame); list.push({ kind: 'dropout', frame: dropout.frame, index, text: `Dropout at ${formatTime(dropout.frame, rate, false)} in ${name(index)}: about ${dropout.ms} ms lost.`, action: 'Play that track again; the new take replaces this one.' }) }
+    for (const gap of status.gapList ?? []) { const index = trackAt(gap.frame); list.push({ kind: 'gap', frame: gap.frame, index, text: `The sound cut out at ${formatTime(gap.frame, rate, false)} in ${name(index)} for ${gap.ms < 1000 ? gap.ms + ' ms' : (gap.ms / 1000).toFixed(1) + ' s'}: the player stalled (a busy PC?).`, action: 'The gap is in the recording: play that track again; the new take replaces this one.' }) }
     for (const other of status.otherSounds ?? []) { const index = trackAt(other.frame); list.push({ kind: 'other', frame: other.frame, index, text: `${other.app} made a sound at ${formatTime(other.frame, rate, false)} in ${name(index)} (${(other.ms / 1000).toFixed(1)} s, peak ${other.peakDb} dB).`, action: 'It is in the recording: play that track again, or turn on Do not disturb so it does not happen again.' }) }
     for (const clip of status.clips ?? []) { const index = trackAt(clip.frame); list.push({ kind: 'clipping', frame: clip.frame, index, text: `Clipping at ${formatTime(clip.frame, rate, false)} in ${name(index)}: ${clip.samples} samples at full scale.`, action: 'Turn the source down a little and play that track again.' }) }
     status.changes.forEach((change, index) => {
@@ -301,7 +302,7 @@
   }
   // Problem with a track (SPEC.md › Recording › Problems)
   let problemFor = $state(-1), problemNote = $state('')
-  const problemLabel = (problem: string) => problem === 'note' ? 'Noted' : problem === 'skip' ? 'Left out' : problem === 'dropout' ? 'Dropout' : problem === 'clipping' ? 'Clipping' : 'Retake'
+  const problemLabel = (problem: string) => problem === 'note' ? 'Noted' : problem === 'skip' ? 'Left out' : problem === 'dropout' ? 'Dropout' : problem === 'gap' ? 'Cut out' : problem === 'clipping' ? 'Clipping' : 'Retake'
   function setProblem(problem: string, restartNow = false) {
     const index = problemFor; problemFor = -1; if (index < 0) return
     sendToShell({ type: 'setProblem', index, problem, note: problemNote.trim() })

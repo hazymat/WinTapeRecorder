@@ -44,6 +44,13 @@ public sealed class Recorder : IDisposable
     public double DeviceVolume { get; private set; } = -1; // the Windows volume of a loopback device (0..1), -1 when unknown: loopback may record at that level
     public event Action? Stopped; // by itself: device gone, disk full, size limit
     public event Action? DropoutFound;
+    // Gap detection (SPEC.md › Recording › Issues): when the player itself stalls (a busy PC), the sound cuts dead in the middle of a
+    // wave and comes back a moment later. Music fades; this drops from loud to digital silence within one buffer
+    public List<Dropout> Gaps { get; } = new();
+    public event Action<Dropout>? GapFound;
+    public List<Dropout> GapsNow() { lock (Gaps) return Gaps.ToList(); }
+    long gapStart = -1; float previousLoudest;
+    const float GapLevel = 0.0001f, GapCutFrom = 0.03f; // under -80 dBFS; from above -30 dBFS
     public event Action? ClipFound;
     public List<ClipEvent> Clips { get; } = new();
     long clipBurstFrame = -1; int clipBurstSamples;
@@ -74,7 +81,7 @@ public sealed class Recorder : IDisposable
         captureFloat = captureFormat.Encoding == WaveFormatEncoding.IeeeFloat || (captureFormat is WaveFormatExtensible extensible && extensible.SubFormat == NAudio.Dmo.AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT);
         bitDepth = profile.BitDepth is 16 or 24 or 32 ? profile.BitDepth : 24;
         WaitingForSound = ArmNext && session != null; ArmNext = false; Paused = false; preRoll.Clear(); preRollFrames = 0;
-        heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; lastSoundFrame = 0; KeepThroughSilence = false; HitSizeLimit = false; Problem = ""; Dropouts.Clear(); shortfallFrames = 0; detecting = false;
+        heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; lastSoundFrame = 0; KeepThroughSilence = false; HitSizeLimit = false; Problem = ""; Dropouts.Clear(); lock (Gaps) Gaps.Clear(); gapStart = -1; previousLoudest = 0; shortfallFrames = 0; detecting = false;
         Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null; Clips.Clear(); clipBurstFrame = -1; FlacRatio = 0; flacSamples = 0;
         DeviceName = device.FriendlyName;
         try { DeviceVolume = profile.Loopback ? device.AudioEndpointVolume.MasterVolumeLevelScalar : -1; } catch { DeviceVolume = -1; }
@@ -154,6 +161,23 @@ public sealed class Recorder : IDisposable
             return;
         }
         Keep(samples, queue);
+        NoteGap(loudest, frames);
+    }
+
+    void NoteGap(float loudest, int frames)
+    {
+        var at = FramesWritten - frames; // where this buffer starts
+        if (gapStart < 0) { if (loudest < GapLevel && previousLoudest > GapCutFrom && at > sampleRate) gapStart = at; }
+        else if (loudest >= GapLevel)
+        {
+            var length = at - gapStart; gapStart = -1;
+            if (length >= sampleRate / 10 && length <= sampleRate * 5 && loudest > GapCutFrom / 3)
+            {
+                var gap = new Dropout { Frame = at - length, Ms = (int)(length * 1000 / sampleRate) };
+                if (Session != null) { lock (Gaps) Gaps.Add(gap); GapFound?.Invoke(gap); }
+            }
+        }
+        previousLoudest = loudest;
     }
 
     const float ArmLevel = 0.003f; // about -50 dBFS: real sound, not the noise of a silent stream
@@ -296,6 +320,7 @@ public sealed class Recorder : IDisposable
         peaks?.Finish();
         session.TotalFrames = FramesWritten; session.Recording = false; session.ClippedSamples = (int)Math.Min(int.MaxValue, ClippedSamples);
         lock (Dropouts) session.Dropouts = Dropouts.ToList();
+        lock (Gaps) session.Gaps = Gaps.ToList();
         lock (Quality) session.Quality = Quality.ToList();
         lock (Clips) session.Clips = Clips.ToList();
         try { peaks?.Save(session.PeaksPath); } catch { }
@@ -310,6 +335,7 @@ public sealed class Recorder : IDisposable
         if (Session is not { } session) return;
         session.TotalFrames = FramesWritten; session.ClippedSamples = (int)Math.Min(int.MaxValue, ClippedSamples);
         lock (Dropouts) session.Dropouts = Dropouts.ToList();
+        lock (Gaps) session.Gaps = Gaps.ToList();
         lock (Quality) session.Quality = Quality.ToList();
         lock (Clips) session.Clips = Clips.ToList();
         if (otherSounds != null) session.OtherSounds = otherSounds.Snapshot();
