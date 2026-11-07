@@ -61,6 +61,7 @@ public static class Exporter
         foreach (var track in tracks.OrderBy(track => track.Start))
         {
             if (cancel.IsCancellationRequested) break;
+            if (track.Skip) continue; // a damaged take recorded again later, or left out on purpose
             var number = allTracks.IndexOf(track) + 1;
             var relative = NameTemplate.Expand(profile.Template.Replace('\\', '/'), track, number, allTracks.Count, session, true);
             var parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(part => part.Trim()).Where(part => part != "").ToArray();

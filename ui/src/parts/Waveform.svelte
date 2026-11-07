@@ -7,8 +7,8 @@
   import { request } from '../bridge'
   import { formatTime, type Track, type NameChange } from '../state.svelte'
   // The session's waveform (SPEC.md › Editing): an overview of the whole session, and a detail view that zooms with the wheel down to single samples
-  let { sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onPickTrack, onZoomTrack }: {
-    sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; dropouts?: { frame: number; ms: number }[]; mode?: 'wave' | 'spectrogram'; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
+  let { sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', autoHeight = true, selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onPickTrack, onZoomTrack }: {
+    sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; dropouts?: { frame: number; ms: number }[]; mode?: 'wave' | 'spectrogram'; autoHeight?: boolean; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
     view: WaveView; onCursor: (frame: number) => void; onEdge: (grab: NonNullable<Grab>, frame: number) => void; onEdgeDone: (grab: NonNullable<Grab>) => void; onPickTrack: (trackId: string, additive: boolean) => void; onZoomTrack: (trackId: string) => void
   } = $props()
 
@@ -18,7 +18,7 @@
   type PeakData = { mode: 'peaks' | 'samples' | 'none'; start: number; end: number; channels: number[][] }
   let detailData = $state<PeakData | null>(null), overviewData = $state<PeakData | null>(null)
   // Ctrl+wheel makes the waveform taller (quiet passages, fades); a plain wheel zoom puts it back
-  let verticalScale = $state(1)
+  let verticalScale = $state(1), manualHeight = $state(false)
   const minVerticalScale = 1, maxVerticalScale = 32
   let css = $state({ wave: '#5ccfff', waveDim: '#5ccfff', shade: 'rgba(92,207,255,0.08)', shadeOn: 'rgba(92,207,255,0.16)', start: '#4cd964', end: '#ff7a6b', playhead: '#fff', fg: '#eceef3', quiet: '#8e94a0', line: 'rgba(255,255,255,0.08)', accent: '#5ccfff', panel: 'rgba(255,255,255,0.06)', warn: '#ffb74d' })
   function readColours() { const style = getComputedStyle(document.documentElement), previous = untrack(() => css), read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback; css = { wave: read('--wave', previous.wave), waveDim: read('--wave-rms', previous.waveDim), shade: read('--track-shade', previous.shade), shadeOn: read('--track-shade-on', previous.shadeOn), start: read('--start', previous.start), end: read('--end', previous.end), playhead: read('--playhead', previous.playhead), fg: read('--fg', previous.fg), quiet: read('--fg-quiet', previous.quiet), line: read('--line', previous.line), accent: read('--accent', previous.accent), panel: read('--panel', previous.panel), warn: read('--warn', previous.warn) } }
@@ -44,7 +44,7 @@
     try {
       const columns = Math.min(4000, Math.ceil(width * devicePixelRatio))
       const data = await request<PeakData>({ type: 'peaks', id: sessionId, start: view.start, end: view.start + width * view.framesPerPixel, columns })
-      if (data?.mode && data.mode !== 'none') detailData = data
+      if (data?.mode && data.mode !== 'none') { detailData = data; fitHeight(data) }
     } catch { }
     requesting = false
     if (wanted && wanted !== '') fetchDetail()
@@ -87,6 +87,15 @@
     context.textAlign = 'left'
   }
   $effect(() => { sessionId; totalFrames; width; request<PeakData>({ type: 'peaks', id: sessionId, start: 0, end: Math.max(1, totalFrames), columns: Math.min(4000, Math.ceil(width * devicePixelRatio)) }).then(data => { if (data?.mode === 'peaks') overviewData = data }).catch(() => { }) })
+
+  // Auto height (SPEC.md › Editing): zoomed in, the wave grows to fill the lanes, so quiet starts and fades are easy to see
+  function fitHeight(data: PeakData) {
+    if (!autoHeight || manualHeight || view.framesPerPixel >= fitFramesPerPixel * 0.98) { if (!manualHeight) verticalScale = 1; return }
+    let loudest = 0
+    for (const values of data.channels) for (const value of values) { const level = Math.abs(value); if (level > loudest) loudest = level }
+    verticalScale = loudest > 0 ? Math.max(minVerticalScale, Math.min(maxVerticalScale, 0.92 / loudest)) : 1
+  }
+  $effect(() => { autoHeight; manualHeight = false; if (detailData) fitHeight(detailData) })
 
   // ---- Drawing ----
   function prepare(canvas: HTMLCanvasElement, height: number) {
@@ -155,6 +164,7 @@
       for (const [edge, x, colour] of [['start', left, css.start], ['end', right, css.end]] as const) {
         if (x < -2 || x > width + 2) continue
         const grabbed = grab?.trackId === track.id && grab.edge === edge
+        if (grabbed) { context.fillStyle = colour; context.globalAlpha = 0.18; context.fillRect(x - 6, 0, 12, waveTop + waveHeight); context.globalAlpha = 1 }
         context.fillStyle = colour; context.fillRect(x - (grabbed ? 1.5 : 0.75), 0, grabbed ? 3 : 1.5, waveTop + waveHeight)
         context.beginPath(); if (edge === 'start') { context.moveTo(x, 0); context.lineTo(x + 7, 0); context.lineTo(x, 8) } else { context.moveTo(x, 0); context.lineTo(x - 7, 0); context.lineTo(x, 8) } context.fill()
       }
@@ -178,7 +188,7 @@
     if (mode === 'spectrogram') drawSpectrogram(context, waveTop, waveHeight)
     else if (detailData?.mode === 'samples' && view.framesPerPixel < 1.5) drawSamples(context, detailData, waveTop, laneHeight)
     else if (detailData) drawPeaks(context, detailData.mode === 'samples' ? toPeaks(detailData) : detailData, waveTop, laneHeight, frameToX, css.wave, verticalScale)
-    if (verticalScale > 1) { context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'; context.fillStyle = css.quiet; context.fillText(`Height ×${verticalScale < 10 ? verticalScale.toFixed(1) : Math.round(verticalScale)} (wheel resets)`, width - 160, waveTop + 4) }
+    if (verticalScale > 1) { context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'; context.fillStyle = css.quiet; context.fillText(`Height ×${verticalScale < 10 ? verticalScale.toFixed(1) : Math.round(verticalScale)}${manualHeight ? ' (wheel resets)' : ' auto'}`, width - 130, waveTop + 4) }
     // Ruler, with any dropouts (samples lost while recording) as red marks on it
     drawRuler(context, detailHeight - rulerHeight)
     context.fillStyle = css.end
@@ -229,8 +239,8 @@
     event.preventDefault()
     const x = event.offsetX
     if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) { const delta = (Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY); view = clampView({ start: view.start + delta * view.framesPerPixel, framesPerPixel: view.framesPerPixel }); return }
-    if (event.ctrlKey) { verticalScale = Math.max(minVerticalScale, Math.min(maxVerticalScale, verticalScale * Math.pow(1.0025, -event.deltaY))); return }
-    verticalScale = 1
+    if (event.ctrlKey) { manualHeight = true; verticalScale = Math.max(minVerticalScale, Math.min(maxVerticalScale, verticalScale * Math.pow(1.0025, -event.deltaY))); return }
+    manualHeight = false; verticalScale = 1
     zoomAt(Math.pow(1.0018, event.deltaY), x)
   }
 
@@ -240,7 +250,7 @@
     for (const track of tracks) for (const edge of ['start', 'end'] as const) { const distance = Math.abs(frameToX(track[edge]) - x); if (distance < bestDistance) { bestDistance = distance; best = { trackId: track.id, edge } } }
     return best
   }
-  let drag: null | { kind: 'edge'; grab: NonNullable<Grab> } | { kind: 'pan'; startX: number; startView: number; moved: boolean } = null
+  let drag: null | { kind: 'edge'; grab: NonNullable<Grab> } | { kind: 'pan'; startX: number; startView: number; moved: boolean } | { kind: 'pin'; grab: NonNullable<Grab>; pinX: number; startX: number; startView: number } = null
   let hoverCursor = $state('default'), hoverTitle = $state('')
   // Hovering a dotted line says what it is
   function changeTitle(x: number) { const dropout = dropouts.find(candidate => Math.abs(frameToX(candidate.frame) - x) < 6); if (dropout) return `Dropout: about ${dropout.ms} ms of audio was lost here because the PC was too busy`; const change = changes.find(candidate => Math.abs(frameToX(candidate.frame) - x) < 5); return change ? `Where the playing name changed while recording${change.title ? ` to “${change.title}”${change.artist ? ` by ${change.artist}` : ''}` : ''}. The track's green start snaps to the quietest point near it.` : '' }
@@ -249,18 +259,22 @@
     detailCanvas?.setPointerCapture(event.pointerId)
     const handle = handleAt(event.offsetX, event.offsetY)
     if (handle) { drag = { kind: 'edge', grab: handle }; onEdge(handle, tracks.find(track => track.id === handle.trackId)![handle.edge]); return }
+    // A grabbed edge stays put on screen while the audio is dragged under it (SPEC.md › Editing): the easy way to place a cut roughly
+    const pinnedTrack = grab ? tracks.find(track => track.id === grab!.trackId) : null
+    if (grab && pinnedTrack && event.offsetY >= flagHeight) { const pinX = frameToX(pinnedTrack[grab.edge]); if (pinX >= 0 && pinX <= width) { drag = { kind: 'pin', grab, pinX, startX: event.offsetX, startView: view.start }; onEdge(grab, pinnedTrack[grab.edge]); return } }
     drag = { kind: 'pan', startX: event.offsetX, startView: view.start, moved: false }
   }
   function onMove(event: PointerEvent) {
-    if (!drag) { const handle = handleAt(event.offsetX, event.offsetY); hoverCursor = handle ? 'ew-resize' : 'text'; hoverTitle = handle ? (handle.edge === 'start' ? 'Track start: drag to move' : 'Track end: drag to move') : changeTitle(event.offsetX); return }
+    if (!drag) { const handle = handleAt(event.offsetX, event.offsetY); hoverCursor = handle ? 'ew-resize' : grab && event.offsetY >= flagHeight ? 'grab' : 'text'; hoverTitle = handle ? (handle.edge === 'start' ? 'Track start: drag to move' : 'Track end: drag to move') : changeTitle(event.offsetX); return }
     if (drag.kind === 'edge') { onEdge(drag.grab, Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX))))); return }
+    if (drag.kind === 'pin') { hoverCursor = 'grabbing'; view = clampView({ start: drag.startView - (event.offsetX - drag.startX) * view.framesPerPixel, framesPerPixel: view.framesPerPixel }); onEdge(drag.grab, Math.round(Math.max(0, Math.min(totalFrames, xToFrame(drag.pinX))))); return }
     if (Math.abs(event.offsetX - drag.startX) > 3) drag.moved = true
     if (drag.moved) { hoverCursor = 'grabbing'; view = clampView({ start: drag.startView - (event.offsetX - drag.startX) * view.framesPerPixel, framesPerPixel: view.framesPerPixel }) }
   }
   function onUp(event: PointerEvent) {
     const finished = drag; drag = null
     if (!finished) return
-    if (finished.kind === 'edge') { onEdgeDone(finished.grab); return }
+    if (finished.kind === 'edge' || finished.kind === 'pin') { hoverCursor = 'grab'; onEdgeDone(finished.grab); return }
     if (!finished.moved) {
       const frame = Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX))))
       onCursor(frame)

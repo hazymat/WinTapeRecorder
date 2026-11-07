@@ -15,7 +15,7 @@ A Windows tape recorder for listening sessions. Record one long session to a sin
 - Input level check: live peak meters per channel with peak hold, and a clip light that latches (count of clipped samples) until clicked. No other meters. Nothing is adjusted during recording: loopback is the player's digital signal as it is.
 - Dropout detection: the audio engine has a half-second buffer and disk writes happen off the audio thread; the audio clock is checked against the wall clock, and any samples the engine still threw away are logged as dropouts (frame and length), shown on the recorder, in the session header and on the waveform's ruler.
 - Start/stop recording (Ctrl+R from anywhere); mark a new track by hand while recording (M).
-- Live editing: while recording, every marker noted so far can be moved (nudge buttons, a typed time, or dragging its line on the live waveform), its artist, title and album retyped, or removed. Capture is never interrupted.
+- Live editing: while recording, every marker noted so far can be moved (nudge buttons, a typed time, or the live waveform), its artist, title and album retyped, or removed. Capture is never interrupted. The live waveform shows the whole recording with a 10 s gap at the right that fills before the view widens; clicking a marker zooms in on it with the marker pinned at the centre, and dragging the audio under it then letting go places it. This is for obvious slips: careful listening happens afterwards in Check the cuts.
 - Output devices are recorded through WASAPI loopback; the app plays silence to that device while recording so gaps in the audio keep their real length.
 - WAV size limit (4 GB): the app warns before it and stops cleanly at it.
 
@@ -30,11 +30,18 @@ A change of now-playing text drops a marker at that moment (minus a latency offs
 
 **Gap profile** (Settings › Detection): threshold (dBFS), minimum gap length, attack (sound must last this long to count as the start of a track), release (silence must last this long to count as the end), pre-roll and post-roll (audio kept before the start and after the end), snap window.
 
+## Workflow
+
+The session view is a step bar that says what is left and what to do next: **1 Check the cuts** (every start and end, doubtful ones first) → **2 Tags** (tracks missing artist, title, album, album artist or genre) → **3 Export** (what is still to export, then verification). Each step has its one primary action beside it.
+
 ## Editing
+
+- Checking the cuts: each edge carries a note on how it was placed (in silence, in a gap near the name change, a hard cut with no silence, by hand, or the session's edge) and whether that is a safe bet. "Check next" jumps to the next unchecked edge (doubtful first), zoomed to a few seconds for a start and more for an end, with the edge grabbed, and plays it. Y marks it right and moves on; editing an edge also counts as checking it. With an edge grabbed, dragging the waveform moves the audio under the pinned edge; dragging the edge's own line moves it finely.
+- Auto height (on by default): zoomed in, the wave grows to fill the lanes so quiet starts and fades are plain to see; Ctrl+wheel overrides it until the next zoom.
 
 - Overview waveform of the whole session (tracks shaded), and a detail waveform below.
 - Zoom with the mouse wheel (at the pointer) and keyboard, down to individual samples: sample points, zero line and zero crossings shown. Shift+wheel or drag the overview to scroll.
-- Each track has a start and end handle; drag to move. Optional snap to zero crossings.
+- Each track has a start and end handle; drag to move. Optional snap to zero crossings. Between tracks: trim silence to a short roll (default), or keep as recorded; the choice sits in the Cuts step and applies when tracks are (re)detected.
 - Split at the playhead, merge with the next track, delete a track (its audio is skipped on export), set start or end at the playhead.
 - Fade in and fade out per track (length in ms), for tidying problem sources. No normalisation or other processing.
 - Track list under the waveform: number, start, length, artist, title, album, status. Edit tags inline. Multi-select with the selection bar (as WinSqueeze): audition, export, set album or artist for all, fades, snap to gaps, merge, delete.

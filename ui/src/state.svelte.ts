@@ -1,9 +1,9 @@
 // Shared UI state: what the shell reports, the open view, messages with Undo
-export type Track = { id: string; start: number; end: number; artist: string; title: string; album: string; albumArtist?: string; genre?: string; year?: string; composer?: string; comment?: string; trackNumber?: number; trackCount?: number; artPath?: string; fadeInMs: number; fadeOutMs: number; exported: boolean; exportedPath: string }
+export type Track = { id: string; start: number; end: number; artist: string; title: string; album: string; albumArtist?: string; genre?: string; year?: string; composer?: string; comment?: string; trackNumber?: number; trackCount?: number; artPath?: string; fadeInMs: number; fadeOutMs: number; exported: boolean; exportedPath: string; startNote?: string; endNote?: string; startSure?: boolean; endSure?: boolean; startChecked?: boolean; endChecked?: boolean; skip?: boolean; skipReason?: string; verified?: boolean }
 export type NameChange = { frame: number; artist: string; title: string; album: string; source: string; manual: boolean }
 export type SessionSummary = { id: string; name: string; created: string; seconds: number; tracks: number; exported: number; recording: boolean; crashed: boolean }
 export type SessionDetail = { id: string; name: string; created: string; device: string; loopback: boolean; sampleRate: number; channels: number; bitDepth: number; totalFrames: number; recordingProfileId: string; outputProfileId: string; clippedSamples: number; changes: NameChange[]; dropouts: { frame: number; ms: number }[]; quality: { frame: number; hz: number }[]; tracks: Track[]; folder: string }
-export type Profile = { id: string; name: string; loopback?: boolean; deviceName?: string; bitDepth?: number; format?: string; template?: string }
+export type Profile = { id: string; name: string; loopback?: boolean; deviceName?: string; bitDepth?: number; format?: string; template?: string; trimSilence?: boolean }
 export type NameSource = { key: string; kind: string; label: string; artist: string; title: string; playing: boolean; rule: string }
 
 export const app = $state({

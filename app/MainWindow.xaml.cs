@@ -106,6 +106,7 @@ public partial class MainWindow : Window
                     App.Settings.Save(); PushSettings();
                     if (App.Recorder.Capturing && !App.Recorder.Recording && Text(message, "kind") == "recording") App.StartMonitoring(Text(message, "profileId"));
                     break;
+                case "setTrimSilence": { var gapProfile = App.Settings.RecordingProfileOrActive(Text(message, "profileId")); gapProfile.Gaps.TrimSilence = message.GetProperty("trim").GetBoolean(); App.Settings.Save(); break; }
                 case "setAuditionSeconds": App.Settings.Audio.AuditionSeconds = (int)Number(message, "seconds", 5); App.Settings.Save(); break;
                 // ---- Sessions ----
                 case "sessions": Reply(message, await Task.Run(() => SessionStore.List(App.Settings).Select(Summary).ToList())); break;
@@ -338,7 +339,7 @@ public partial class MainWindow : Window
         {
             type = "settings",
             hints = new { hidden = settings.General.HideHints, dismissed = settings.General.DismissedHints },
-            recordingProfiles = settings.RecordingProfiles.Select(profile => new { profile.Id, profile.Name, profile.Loopback, profile.DeviceName, profile.BitDepth }),
+            recordingProfiles = settings.RecordingProfiles.Select(profile => new { profile.Id, profile.Name, profile.Loopback, profile.DeviceName, profile.BitDepth, TrimSilence = profile.Gaps.TrimSilence }),
             outputProfiles = settings.OutputProfiles.Select(profile => new { profile.Id, profile.Name, profile.Format, profile.Template }),
             activeRecording = settings.ActiveRecordingProfile.Id, activeOutput = settings.ActiveOutputProfile.Id, auditionSeconds = settings.Audio.AuditionSeconds,
         }, camel));

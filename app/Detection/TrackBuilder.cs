@@ -52,18 +52,23 @@ public static class TrackBuilder
         long ToFrame(long block) => Math.Min(totalFrames, block * Peaks.BlockFrames);
         var snapFrames = (long)gapSettings.SnapWindowMs * rate / 1000;
 
-        // Boundaries with the name that starts there
-        var boundaries = new List<(long frame, NameChange? name)>();
+        // Boundaries with the name that starts there, and how sure the placement is
+        var boundaries = new List<(long frame, NameChange? name, string how)>();
         var changes = session.Changes.OrderBy(change => change.Frame).ToList();
         if (changes.Count > 0)
         {
-            if (changes[0].Frame > rate) boundaries.Add((0, null)); // started recording before the first name
-            foreach (var change in changes) boundaries.Add((change.Manual ? change.Frame : SnapToGap(change.Frame, gaps, peaks, snapFrames, rate, totalFrames), change));
+            if (changes[0].Frame > rate) boundaries.Add((0, null, "session")); // started recording before the first name
+            foreach (var change in changes)
+            {
+                if (change.Manual) { boundaries.Add((change.Frame, change, "marker")); continue; }
+                var (snapped, inGap) = SnapToGap(change.Frame, gaps, peaks, snapFrames, rate, totalFrames);
+                boundaries.Add((snapped, change, inGap ? "gap" : "hard"));
+            }
         }
         else
         {
-            boundaries.Add((0, null));
-            if (profile.SplitOnGaps) foreach (var (start, end) in gaps) if (start > 0 && end < peaks.BlockCount) boundaries.Add((ToFrame((start + end) / 2), null));
+            boundaries.Add((0, null, "session"));
+            if (profile.SplitOnGaps) foreach (var (start, end) in gaps) if (start > 0 && end < peaks.BlockCount) boundaries.Add((ToFrame((start + end) / 2), null, "gap"));
         }
 
         var tracks = new List<Track>();
@@ -77,13 +82,30 @@ public static class TrackBuilder
             var named = name != null && name.Title != "";
             var minimumSeconds = named || name != null ? 3 : Math.Max(1, gapSettings.MinTrackSeconds); // a name change or marker means a track was meant to start here
             if (end - start < (long)minimumSeconds * rate) continue;
-            tracks.Add(new Track { Start = start, End = end, Artist = name?.Artist ?? "", Title = name?.Title ?? "", Album = name?.Album ?? "" });
+            var track = new Track { Start = start, End = end, Artist = name?.Artist ?? "", Title = name?.Title ?? "", Album = name?.Album ?? "" };
+            // What the user needs to know about each edge: an edge inside silence is a safe bet; a hard cut or a hand-placed marker wants a listen
+            var startHow = boundaries[index].how; var endHow = index + 1 < boundaries.Count ? boundaries[index + 1].how : "session";
+            (track.StartNote, track.StartSure) = start > segmentStart ? ("In the silence before the first sound", true) : startHow switch
+            {
+                "session" => ("Start of the recording", true),
+                "gap" => ("In a gap near the name change", true),
+                "marker" => ("Where you marked it by hand", false),
+                _ => ("No silence near the name change: a hard cut (crossfade or gapless?)", false),
+            };
+            (track.EndNote, track.EndSure) = end < segmentEnd ? ("In the silence after the last sound", true) : endHow switch
+            {
+                "session" => ("End of the recording", true),
+                "gap" => ("In a gap before the next name change", true),
+                "marker" => ("Where you marked the next track", false),
+                _ => ("No silence here: a hard cut where the next track starts (crossfade or gapless?)", false),
+            };
+            tracks.Add(track);
         }
         return tracks;
     }
 
     // The middle of the gap nearest the name change, within the snap window; with no gap there, the quietest 50 ms nearby
-    static long SnapToGap(long frame, List<(long start, long end)> gaps, Peaks peaks, long snapFrames, int rate, long totalFrames)
+    static (long frame, bool inGap) SnapToGap(long frame, List<(long start, long end)> gaps, Peaks peaks, long snapFrames, int rate, long totalFrames)
     {
         long best = -1, bestDistance = long.MaxValue;
         foreach (var (start, end) in gaps)
@@ -92,7 +114,7 @@ public static class TrackBuilder
             var distance = frame < gapStart ? gapStart - frame : frame > gapEnd ? frame - gapEnd : 0;
             if (distance <= snapFrames && distance < bestDistance) { bestDistance = distance; best = (gapStart + gapEnd) / 2; }
         }
-        if (best >= 0) return best;
+        if (best >= 0) return (best, true);
         var windowBlocks = Math.Max(1, rate / 20 / Peaks.BlockFrames);
         long fromBlock = Math.Max(0, (frame - snapFrames) / Peaks.BlockFrames), toBlock = Math.Min(peaks.BlockCount - windowBlocks, (frame + snapFrames) / Peaks.BlockFrames);
         var quietest = frame / Peaks.BlockFrames; var quietestLevel = float.MaxValue;
@@ -101,7 +123,7 @@ public static class TrackBuilder
             var level = 0f; for (var offset = 0; offset < windowBlocks; offset++) level = Math.Max(level, peaks.Level(block + offset));
             if (level < quietestLevel - 1e-6f || (Math.Abs(level - quietestLevel) <= 1e-6f && Math.Abs(block - frame / Peaks.BlockFrames) < Math.Abs(quietest - frame / Peaks.BlockFrames))) { quietestLevel = level; quietest = block + windowBlocks / 2; }
         }
-        return Math.Clamp(quietest * Peaks.BlockFrames, 0, totalFrames);
+        return (Math.Clamp(quietest * Peaks.BlockFrames, 0, totalFrames), false);
     }
 
     // From the first sound to the last sound in the segment, plus pre- and post-roll

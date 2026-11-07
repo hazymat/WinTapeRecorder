@@ -19,6 +19,48 @@
   let tracks = $state<Track[]>([])
   let view = $state<WaveView>({ start: 0, framesPerPixel: 1000 })
   let cursor = $state(0), currentId = $state(''), grab = $state<Grab>(null)
+  let autoHeight = $state(readSetting('autoHeight', '1') !== '0')
+  // ---- The steps (SPEC.md › Workflow): what's left to do, and the next thing to do about it ----
+  type Edge = { trackId: string; edge: 'start' | 'end' }
+  const edges = $derived<Edge[]>(tracks.flatMap(track => [{ trackId: track.id, edge: 'start' as const }, { trackId: track.id, edge: 'end' as const }]))
+  const unchecked = $derived(edges.filter(({ trackId, edge }) => { const track = tracks.find(candidate => candidate.id === trackId)!; return !(edge === 'start' ? track.startChecked : track.endChecked) && !track.skip }))
+  const doubtful = $derived(unchecked.filter(({ trackId, edge }) => { const track = tracks.find(candidate => candidate.id === trackId)!; return !(edge === 'start' ? track.startSure : track.endSure) }))
+  const untagged = $derived(tracks.filter(track => !track.skip && (!track.artist || !track.title || !track.album || !track.albumArtist || !track.genre)))
+  const unexported = $derived(tracks.filter(track => !track.skip && !track.exported))
+  const unverified = $derived(tracks.filter(track => !track.skip && track.exported && !track.verified))
+  const exportable = $derived(tracks.filter(track => !track.skip))
+  let step = $state<'cuts' | 'tags' | 'export'>('cuts')
+  let focused = $state<Edge | null>(null)
+  // Check the cuts: each start and end in turn, zoomed in both axes with the edge grabbed, and played
+  function focusEdge(target: Edge, play = true) {
+    const track = tracks.find(candidate => candidate.id === target.trackId); if (!track || !waveform) return
+    focused = target; currentId = track.id; grab = { trackId: track.id, edge: target.edge }
+    const frame = track[target.edge]; cursor = frame
+    const seconds = target.edge === 'start' ? 6 : 16, span = seconds * rate // ends get more room: fades are long
+    view = waveform.clampView({ start: frame - span * (target.edge === 'start' ? 0.3 : 0.7), framesPerPixel: span / waveWidth() })
+    scrollRowIntoView(track.id)
+    if (play) hearEdge(target.edge, track.id)
+  }
+  function checkNext() {
+    const queue = doubtful.length ? doubtful : unchecked
+    const after = focused ? queue.findIndex(edge => edge.trackId === focused!.trackId && edge.edge === focused!.edge) : -1
+    const next = queue[(after + 1) % Math.max(1, queue.length)]
+    if (next) focusEdge(next); else { grab = null; focused = null; toast('Every start and end is checked', { ms: 2500 }) }
+  }
+  function markChecked(target: Edge) {
+    const next = copy(); const track = next.find(candidate => candidate.id === target.trackId); if (!track) return
+    if (target.edge === 'start') track.startChecked = true; else track.endChecked = true
+    tracks = next; save()
+  }
+  function confirmFocused() { const target = focused ?? (grab ? { trackId: grab.trackId, edge: grab.edge } : null); if (!target) { checkNext(); return } markChecked(target); checkNext() }
+  // Between tracks (SPEC.md › Export): trimmed to a short roll (the default), or kept as recorded
+  const trimSilence = $derived(app.recordingProfiles.find(profile => profile.id === session?.recordingProfileId)?.trimSilence ?? true)
+  function setTrim(trim: boolean) {
+    if (!session) return
+    sendToShell({ type: 'setTrimSilence', profileId: session.recordingProfileId, trim })
+    const profile = app.recordingProfiles.find(candidate => candidate.id === session!.recordingProfileId); if (profile) profile.trimSilence = trim
+    dialog = { kind: 'redetect' }
+  }
   let snapToZero = $state(readFlag('snapZero'))
   let hearStyle = $state(readSetting('hearStyle', 'pills'))
   let waveMode = $state<'wave' | 'spectrogram'>(readSetting('waveMode', 'wave') === 'spectrogram' ? 'spectrogram' : 'wave')
@@ -81,8 +123,8 @@
   function moveEdge(grabbed: NonNullable<Grab>, frame: number) {
     const index = tracks.findIndex(track => track.id === grabbed.trackId); if (index < 0) return
     const track = tracks[index], previous = tracks[index - 1], next = tracks[index + 1]
-    if (grabbed.edge === 'start') track.start = Math.max(previous?.end ?? 0, Math.min(track.end - 1, frame))
-    else track.end = Math.min(next?.start ?? session!.totalFrames, Math.max(track.start + 1, frame))
+    if (grabbed.edge === 'start') { track.start = Math.max(previous?.end ?? 0, Math.min(track.end - 1, frame)); track.startChecked = true }
+    else { track.end = Math.min(next?.start ?? session!.totalFrames, Math.max(track.start + 1, frame)); track.endChecked = true }
   }
   async function onEdgeDone(grabbed: NonNullable<Grab>) {
     const before = dragBefore; dragBefore = ''
@@ -97,7 +139,7 @@
     const frame = await snapped(cursor)
     const next = copy(), edited = next.find(candidate => candidate.id === track.id)!
     if (edge === 'start' && frame >= edited.end || edge === 'end' && frame <= edited.start) { toast(edge === 'start' ? 'The start must be before the end' : 'The end must be after the start'); return }
-    edited[edge] = frame; grab = { trackId: track.id, edge }
+    edited[edge] = frame; if (edge === 'start') edited.startChecked = true; else edited.endChecked = true; grab = { trackId: track.id, edge }
     commit(next, `Track ${tracks.indexOf(track) + 1} ${edge === 'start' ? 'starts' : 'ends'} at ${formatTime(frame, rate)}`)
   }
   async function splitAtCursor() {
@@ -288,6 +330,7 @@
     else if (lower === 'e') setEdgeAtCursor('end')
     else if (lower === 'x') splitAtCursor()
     else if (lower === 'n') addTrackAtCursor()
+    else if (lower === 'y') confirmFocused()
     else if (key === ',') hearEdge('start')
     else if (key === '.') hearEdge('end')
     else if (key === 'Enter' && grab) hearEdge(grab.edge)
@@ -346,6 +389,23 @@
     </span>
   </header>
 
+  <nav class="steps" aria-label="Steps">
+    <button class="step" class:active={step === 'cuts'} class:done={unchecked.length === 0} onclick={() => step = 'cuts'}><span class="step-number">1</span><span class="step-text"><strong>Check the cuts</strong><span>{unchecked.length === 0 ? 'all checked' : `${unchecked.length} to go${doubtful.length ? `, ${doubtful.length} doubtful` : ''}`}</span></span></button>
+    <button class="step" class:active={step === 'tags'} class:done={untagged.length === 0} onclick={() => step = 'tags'}><span class="step-number">2</span><span class="step-text"><strong>Tags</strong><span>{untagged.length === 0 ? 'complete' : `${untagged.length} track${untagged.length === 1 ? '' : 's'} missing details`}</span></span></button>
+    <button class="step" class:active={step === 'export'} class:done={unexported.length === 0 && exportable.length > 0} onclick={() => step = 'export'}><span class="step-number">3</span><span class="step-text"><strong>Export</strong><span>{exportable.length === 0 ? 'nothing to export' : unexported.length === 0 ? `${exportable.length} exported${unverified.length ? `, ${unverified.length} to verify` : ', verified'}` : `${unexported.length} of ${exportable.length} to go`}</span></span></button>
+    <div class="step-actions">
+      {#if step === 'cuts'}
+        <button class="primary" onclick={checkNext} title="Jump to the next start or end, zoomed in, and play it (doubtful ones first)">{unchecked.length ? 'Check next' : 'Check again'}</button>
+        <button class="ghost" onclick={confirmFocused} disabled={!focused && !grab} title="This edge is right: mark it checked and go to the next (Y)">Looks right<kbd>Y</kbd></button>
+        <Dropdown label="Between tracks" value={trimSilence ? 'trim' : 'keep'} options={[['trim', 'Trim silence'], ['keep', 'Keep as recorded']]} onchange={(value) => setTrim(value === 'trim')} />
+      {:else if step === 'tags'}
+        <button class="primary" onclick={() => tagging = (untagged.length ? untagged : exportable).map(track => track.id)}>{untagged.length ? `Fill in ${untagged.length}…` : 'Edit tags…'}</button>
+        <button class="ghost" onclick={() => openLookup((untagged.length ? untagged : exportable).map(track => track.id))}>Look up online…</button>
+      {:else}
+        <button class="primary" disabled={!!app.status?.exporting || !exportable.length} onclick={() => exportTracks(unexported.length ? unexported.map(track => track.id) : undefined)}>{unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>
+      {/if}
+    </div>
+  </nav>
   <div class="toolbar">
     <button class="ghost" class:on={playing} onclick={() => playing ? stop() : playFrom(cursor)} title="Play from the playhead (Space)"><Icon name={playing ? 'stop' : 'play'} size={16} />{playing ? 'Stop' : 'Play'}</button>
     <div class="group" title="This track">
@@ -364,6 +424,7 @@
       <button class="ghost icon" onclick={() => zoomAtCursor(2)} title="Zoom out (-)"><Icon name="zoom-out" size={16} /></button>
       <button class="ghost icon" onclick={fit} title="Whole session (Ctrl+0)"><Icon name="fit" size={16} /></button>
       <button class="ghost" class:on={snapToZero} onclick={() => { snapToZero = !snapToZero; writeSetting('snapZero', snapToZero ? '1' : '') }} title="Edges land on the nearest zero crossing">Snap to zero</button>
+      <button class="ghost" class:on={autoHeight} onclick={() => { autoHeight = !autoHeight; writeSetting('autoHeight', autoHeight ? '1' : '0') }} title="Zoomed in, the wave grows to fill the height, so quiet starts and fades show clearly (Ctrl+wheel overrides)">Auto height</button>
     </div>
     <div class="group">
       <button class="ghost icon" onclick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={16} /></button>
@@ -384,9 +445,9 @@
     <button class="primary export" disabled={!!app.status?.exporting || !tracks.length} onclick={() => exportTracks()} title="Export the selected tracks, or all (Ctrl+E)"><Icon name="export" size={16} />Export {selectedIds.length ? selectedIds.length : 'all'}</button>
   </div>
 
-  <Hint id="waveform-basics" text="Wheel zooms (down to single samples), Ctrl+wheel makes the wave taller, Shift+wheel scrolls. Drag a green start or red end line to move it. Click to place the playhead; S and E set the current track's start and end there." />
+  <Hint id="waveform-basics" text="Check next jumps to each start and end, zoomed in both ways, and plays it: press Y if it sounds right, or drag the line, nudge it with ← →, or press S / E to set it at the playhead. Wheel zooms, Shift+wheel scrolls." />
   <div class="wave-host" bind:this={waveHost}>
-    <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
+    <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {autoHeight} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
       onCursor={(frame) => { cursor = frame; grab = null; if (playing) playFrom(frame) }} {onEdge} {onEdgeDone} onPickTrack={(trackId, additive) => { currentId = trackId; if (additive) selectKeys(scope, Array.from(new Set(selectedIds.concat([trackId]))), actions, 'track'); scrollRowIntoView(trackId) }} onZoomTrack={zoomToTrack} />
   </div>
   <div class="readout"><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
@@ -398,8 +459,8 @@
       <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
         <span class="hear no-hold {hearStyle}"><button class="hear-start" onclick={(event) => { event.stopPropagation(); hearEdge('start', track.id) }} title="Hear this track's start" aria-label="Hear start"><Icon name="play" size={11} /><span>Start</span></button><button class="hear-end" onclick={(event) => { event.stopPropagation(); hearEdge('end', track.id) }} title="Hear this track's end" aria-label="Hear end"><span>End</span><Icon name="play" size={11} /></button></span>
-        <span class="time">{formatTime(track.start, rate, false)}</span>
-        <span class="time">{formatDuration((track.end - track.start) / rate)}</span>
+        <button class="time edge no-hold" class:doubt={!track.startSure && !track.startChecked} class:checked={track.startChecked} title={`${track.startNote || 'Start'}${track.startChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }}>{track.startChecked ? '✓ ' : !track.startSure ? '? ' : ''}{formatTime(track.start, rate, false)}</button>
+        <button class="time edge no-hold" class:doubt={!track.endSure && !track.endChecked} class:checked={track.endChecked} title={`${track.endNote || 'End'}${track.endChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }}>{track.endChecked ? '✓ ' : !track.endSure ? '? ' : ''}{formatDuration((track.end - track.start) / rate)}</button>
         <button class="art-cell no-hold" onclick={(event) => { event.stopPropagation(); tagging = selectedIds.includes(track.id) ? selectedIds.slice() : [track.id] }} title="Edit tags and picture">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="" />{:else}<span>♪</span>{/if}</button>
         <input class="no-hold" value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.title} placeholder="Title" onchange={(event) => editField(track, 'title', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
@@ -478,6 +539,21 @@
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
   .number, .time, .fades { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
+  .edge { background: none; border: 1px solid transparent; border-radius: 5px; padding: 2px 4px; text-align: left; cursor: pointer; }
+  .edge:hover { border-color: var(--line); background: var(--panel); }
+  .edge.doubt { color: var(--warn); font-weight: 600; }
+  .edge.checked { color: #3ecf6e; }
+  .steps { display: flex; align-items: stretch; gap: 8px; padding: 8px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+  .step { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; background: none; border: 1px solid transparent; border-radius: 9px; padding: 6px 10px; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .step:hover { background: var(--hover); }
+  .step.active { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .step-number { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-strong); font-size: 12px; font-weight: 700; }
+  .step.done .step-number { background: #3ecf6e; color: #06200e; }
+  .step.done .step-number::before { content: "✓"; } .step.done .step-number { font-size: 0; } .step.done .step-number::before { font-size: 13px; }
+  .step-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+  .step-text span { font-size: 11.5px; color: var(--fg-quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step-actions { display: flex; align-items: center; gap: 6px; padding-left: 8px; border-left: 1px solid var(--line); }
+  .step-actions .ghost kbd { margin-left: 4px; }
   .row input { background: transparent; border-color: transparent; padding: 3px 6px; min-width: 0; }
   .row input:hover { border-color: var(--line); }
   .row input:focus { background: var(--panel); }

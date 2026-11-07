@@ -49,6 +49,16 @@ public class Track
     public int FadeOutMs { get; set; }
     public bool Exported { get; set; }
     public string ExportedPath { get; set; } = "";
+    // How each edge was placed (SPEC.md › Editing › Checking the cuts): a note for the user, whether it's a safe bet, and whether they've confirmed it
+    public string StartNote { get; set; } = "";
+    public string EndNote { get; set; } = "";
+    public bool StartSure { get; set; }
+    public bool EndSure { get; set; }
+    public bool StartChecked { get; set; }
+    public bool EndChecked { get; set; }
+    public bool Skip { get; set; } // left out of exports (a damaged take that was recorded again, or the user's choice)
+    public string SkipReason { get; set; } = "";
+    public bool Verified { get; set; } // the exported file was read back and checked
 }
 
 // One recording: audio.wav, peaks.bin and session.json in its own folder (SPEC.md › Sessions)
