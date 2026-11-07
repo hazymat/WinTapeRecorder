@@ -256,6 +256,11 @@
   const firstEstimate = $derived(estimates.find(estimate => app.outputProfiles.find(profile => profile.name === estimate.name)?.id === app.activeOutput) ?? estimates[0])
   const current = $derived(app.status?.current)
   let startingOver = $state(false)
+  let summaryOpen = $state(readSetting('recordSummaryOpen', '1') === '1')
+  // Album panels in the track list fold away one by one; all open to start with
+  let foldedAlbums = $state<string[]>([])
+  const foldKey = (group: { key: string; indexes: number[] }) => group.key + ':' + group.indexes[0]
+  function toggleFold(group: { key: string; indexes: number[] }) { const key = foldKey(group); foldedAlbums = foldedAlbums.includes(key) ? foldedAlbums.filter(other => other !== key) : [...foldedAlbums, key] }
   // Removing a marker between two others: the track before runs on, the next one starts earlier, or they meet in the middle
   let removing = $state(-1)
   function removeMarker(index: number) { const count = app.status?.changes.length ?? 0; if (index > 0 && index < count - 1) removing = index; else sendToShell({ type: 'removeChange', index }) }
@@ -425,6 +430,10 @@
   <LevelMeter />
   {#if app.levels.clipped > 0}<p class="warn">The input reached full scale. Turn the source down a little to avoid clipping.</p>{/if}
 
+  <!-- Summary (SPEC.md › Recording › Summary): source, what's playing and the albums so far, folded away with one click -->
+  <section class="summary-panel" class:folded={!summaryOpen}>
+    <button class="summary-toggle" onclick={() => { summaryOpen = !summaryOpen; writeSetting('recordSummaryOpen', summaryOpen ? '1' : '0') }} aria-expanded={summaryOpen}><span class="chev">{summaryOpen ? '▾' : '▸'}</span>Summary{#if !summaryOpen && currentSource}<span class="quiet summary-peek">{currentSource.artist ? currentSource.artist + ' - ' : ''}{currentSource.title}</span>{/if}</button>
+    {#if summaryOpen}
   {#if recording}
     <!-- One line each while recording (SPEC.md › Recording › Compact view): only what the source gives, in the order artist, album, year, title -->
     <p class="line"><span class="line-label">Source</span>{#if app.status?.cutoffHz}<strong>spectrum stops at {(app.status.cutoffHz / 1000).toFixed(1)} kHz</strong><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">measuring…</span>{/if}</p>
@@ -438,6 +447,24 @@
         <span class="quiet small">{currentSource.label.replace('Media info: ', 'via ')}{currentSource.playing ? '' : ' (paused)'}</span>
       {:else}<span class="quiet">nothing named; gaps split tracks</span>{/if}
     </p>
+    {#if albums.length}
+      <div class="summary-sub">Albums so far</div>
+      <div class="album-strip">
+        {#each albums.slice().reverse() as group, position (group.key + group.indexes[0])}
+          {@const latest = changes[group.indexes[group.indexes.length - 1]]}
+          {@const open = openAlbum === group.key + group.indexes[0]}
+          <button class="album-card" class:latest={position === 0} class:open onclick={() => showAlbum(group)} title={open ? 'Hide its tracks' : 'Show its tracks'}>
+            <span class="disc" style:--hue={hue(group.key)}>{initials(group)}</span>
+            <span class="album-text">
+              <span class="album-name">{albumLine(group)}</span>
+              {#if position === 0}<span class="album-track">{trackNumber(group, group.indexes[group.indexes.length - 1]) || '–'}. {latest?.title || 'untitled'}</span>
+              {:else}<span class="album-track quiet">{group.indexes.length} track{group.indexes.length === 1 ? '' : 's'}</span>{/if}
+              {#if open}<span class="album-tracks">{#each group.indexes as index}<span>{trackNumber(group, index) || '–'}. {changes[index].title || 'untitled'}</span>{/each}</span>{/if}
+            </span>
+          </button>
+        {/each}
+      </div>
+    {/if}
   {:else}
     <h3>Source quality</h3>
     <p class="source">{#if app.status?.cutoffHz}<strong>Spectrum stops at {(app.status.cutoffHz / 1000).toFixed(1)} kHz</strong><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">{app.status?.capturing ? 'Measuring: needs a couple of seconds of sound.' : 'Measured from the sound as it arrives.'}</span>{/if}</p>
@@ -463,26 +490,10 @@
       <p class="now"><span class="quiet">Nothing named yet. {source === 'none' ? 'Tracks will be split on gaps.' : 'Play something in a browser or app; gaps split tracks when there are no names.'}</span></p>
     {/if}
   {/if}
+    {/if}
+  </section>
 
   {#if recording}
-    {#if albums.length}
-      <h3>Albums so far</h3>
-      <div class="album-strip">
-        {#each albums.slice().reverse() as group, position (group.key + group.indexes[0])}
-          {@const latest = changes[group.indexes[group.indexes.length - 1]]}
-          {@const open = openAlbum === group.key + group.indexes[0]}
-          <button class="album-card" class:latest={position === 0} class:open onclick={() => showAlbum(group)} title={open ? 'Hide its tracks' : 'Show its tracks'}>
-            <span class="disc" style:--hue={hue(group.key)}>{initials(group)}</span>
-            <span class="album-text">
-              <span class="album-name">{albumLine(group)}</span>
-              {#if position === 0}<span class="album-track">{trackNumber(group, group.indexes[group.indexes.length - 1]) || '–'}. {latest?.title || 'untitled'}</span>
-              {:else}<span class="album-track quiet">{group.indexes.length} track{group.indexes.length === 1 ? '' : 's'}</span>{/if}
-              {#if open}<span class="album-tracks">{#each group.indexes as index}<span>{trackNumber(group, index) || '–'}. {changes[index].title || 'untitled'}</span>{/each}</span>{/if}
-            </span>
-          </button>
-        {/each}
-      </div>
-    {/if}
 
     <div class="live-head">
       {#if selected >= 0}<span><strong>Marker {selected + 1} selected</strong></span>
@@ -505,13 +516,14 @@
       {#each albums as group, groupIndex (group.key + group.indexes[0])}
         {@const allTicked = group.indexes.every(index => ticked.includes(String(index)))}
         <div class="album-row open row-grid" class:over={dropOn === 'album:' + group.indexes[0]} data-drop={'album:' + group.indexes[0]} id={'album-' + group.indexes[0]} role="group" aria-label={albumLine(group)}>
-          <span class="album-label"><input type="checkbox" class="tick" checked={allTicked} indeterminate={!allTicked && group.indexes.some(index => ticked.includes(String(index)))} onchange={() => tickIndexes(group.indexes, !allTicked)} aria-label="Select this album's tracks" /><span class="album-name"><strong>{group.album || 'No album'}</strong> - {group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}</span><span class="quiet album-count">{group.indexes.length}</span></span>
+          <span class="album-label"><button class="fold" onclick={() => toggleFold(group)} title={foldedAlbums.includes(foldKey(group)) ? 'Show its tracks' : 'Hide its tracks'} aria-expanded={!foldedAlbums.includes(foldKey(group))}>{foldedAlbums.includes(foldKey(group)) ? '▸' : '▾'}</button><input type="checkbox" class="tick" checked={allTicked} indeterminate={!allTicked && group.indexes.some(index => ticked.includes(String(index)))} onchange={() => tickIndexes(group.indexes, !allTicked)} aria-label="Select this album's tracks" /><span class="album-name"><strong>{group.album || 'No album'}</strong> - {group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}</span><span class="quiet album-count">{group.indexes.length}</span></span>
           <span class="head-field cell-artist"><input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'artist', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'artist', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'artist', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this artist on every track in the album">↓</button></span>
           <span class="head-field cell-album"><input value={group.album} placeholder="Album" title="This album's album, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'album', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'album', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'album', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this album on every track in the album">↓</button></span>
           <span class="head-field cell-year"><input value={group.year} placeholder="Year" title="This album's year, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'year', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'year', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'year', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this year on every track in the album">↓</button></span>
           <span class="head-field cell-genre"><input value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'genre', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'genre', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'genre', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this genre on every track in the album">↓</button></span>
           <span class="head-field cell-composer"><input value={group.composer} placeholder="Composer" title="This album's composer, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'composer', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'composer', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'composer', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this composer on every track in the album">↓</button></span>
         </div>
+        {#if !foldedAlbums.includes(foldKey(group))}
         {#each group.indexes as index (index + ':' + changes[index].frame)}
           {@const change = changes[index]}
           {@const rate = app.status?.sampleRate ?? 48000}
@@ -531,6 +543,7 @@
           </div>
           {#if liftedIndex >= 0 && group.indexes.includes(liftedIndex) && group.indexes[group.indexes.length - 1] === index}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
         {/each}
+        {/if}
       {:else}<p class="quiet">None yet. Press M to mark where a track starts.</p>{/each}
     </div>
   {/if}
@@ -561,6 +574,16 @@
   .gap-foot { display: flex; justify-content: flex-end; margin-top: 4px; }
 
   .record { padding-bottom: 20px; }
+  .record.recording { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
+  .record.recording > * { flex: none; }
+  .record.recording > .rec-list { flex: 1 1 auto; min-height: 140px; overflow-y: auto; }
+  .summary-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 4px 12px 8px; margin: 6px 0 8px; }
+  .summary-panel.folded { padding-bottom: 4px; }
+  .summary-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 4px 0; border: 0; background: transparent; color: var(--fg); font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; text-align: left; }
+  .summary-toggle .chev, .fold { color: var(--fg-quiet); width: 14px; text-align: center; }
+  .summary-peek { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .summary-sub { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-quiet); margin: 8px 0 4px; }
+  .fold { flex: none; border: 0; background: transparent; padding: 0; margin-right: 4px; cursor: pointer; font-size: 12px; }
   .record.recording h3 { margin-top: 10px; }
   .settings-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .device { margin: 8px 0 14px; font-size: 12.5px; }
@@ -625,7 +648,7 @@
   .row:not(.head):hover { background: var(--hover); }
   .rec-list .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
   .rec-list .head { top: 0; }
-  .rec-list { overflow: visible; border-top: 1px solid var(--line); }
+  .rec-list { border-top: 1px solid var(--line); }
   .rec-list .row-grid .album-label { grid-column: 1 / 3; }
   .rec-list .row-grid .cell-artist { grid-column: 3; } .rec-list .row-grid .cell-album { grid-column: 4; } .rec-list .row-grid .cell-year { grid-column: 5; } .rec-list .row-grid .cell-genre { grid-column: 8; } .rec-list .row-grid .cell-composer { grid-column: 9; }
   .rec-list .hear .hear-start, .rec-list .hear .hear-end { width: 70px; }
