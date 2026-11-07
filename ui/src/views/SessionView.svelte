@@ -20,6 +20,12 @@
   let view = $state<WaveView>({ start: 0, framesPerPixel: 1000 })
   let cursor = $state(0), currentId = $state(''), grab = $state<Grab>(null)
   let autoHeight = $state(readSetting('autoHeight', '1') !== '0')
+  // The splitter between the wave and the track list (SPEC.md › Editing): drag it; the height is remembered
+  let waveHeight = $state(Math.max(140, Number(readSetting('waveHeight', '240')) || 240))
+  let splitting: null | { y: number; height: number } = null
+  function splitDown(event: PointerEvent) { splitting = { y: event.clientY, height: waveHeight }; (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId) }
+  function splitMove(event: PointerEvent) { if (!splitting) return; waveHeight = Math.round(Math.max(140, Math.min(window.innerHeight - 260, splitting.height + event.clientY - splitting.y))) }
+  function splitUp() { if (!splitting) return; splitting = null; writeSetting('waveHeight', String(waveHeight)) }
   // ---- The steps (SPEC.md › Workflow): what's left to do, and the next thing to do about it ----
   type Edge = { trackId: string; edge: 'start' | 'end' }
   const edges = $derived<Edge[]>(tracks.flatMap(track => [{ trackId: track.id, edge: 'start' as const }, { trackId: track.id, edge: 'end' as const }]))
@@ -599,7 +605,7 @@
   </div>
 
   <Hint id="waveform-cuts" text="Next to confirm (C) jumps to the next start or end without a ✓, from the track you're on, and plays it. Drag the line, nudge it with ← →, or press S / E to set it at the playhead; then tick ✓ beside it in the list. Wheel zooms, Shift+wheel scrolls, Ctrl+wheel sets the height, W switches wave and spectrogram." />
-  <div class="wave-host" bind:this={waveHost}>
+  <div class="wave-host" bind:this={waveHost} style:height="{waveHeight}px">
 
     <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {autoHeight} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
       onCursor={(frame) => { cursor = frame; grab = null; if (playing) playFrom(frame) }} {onEdge} {onEdgeDone} onRelease={() => grab = null} onPickTrack={(trackId, additive) => { currentId = trackId; if (additive) selectKeys(scope, Array.from(new Set(selectedIds.concat([trackId]))), actions, 'track'); scrollRowIntoView(trackId) }} onZoomTrack={zoomToTrack} />
@@ -607,6 +613,7 @@
   <div class="readout"><div class="wave-mode" role="group" aria-label="Wave or spectrogram">
       <button class:on={waveMode === 'wave'} onclick={() => setWaveMode('wave')} title="Waveform: levels, starts and ends (W switches)">Wave</button><button class:on={waveMode === 'spectrogram'} onclick={() => setWaveMode('spectrogram')} title="Spectrogram: frequency over time. A flat top edge means a lossy source; a vertical gap is a dropout (W switches)">Spectrogram</button><kbd>W</kbd>
     </div><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
+  <div class="splitter" role="separator" aria-orientation="horizontal" aria-label="Drag to share the height between the wave and the track list" title="Drag to make the wave or the track list bigger" onpointerdown={splitDown} onpointermove={splitMove} onpointerup={splitUp} onpointercancel={splitUp}><span></span></div>
 
   {#if step === 'tags'}
     <div class="tags-step">
@@ -785,7 +792,10 @@
   .spacer { flex: 1; }
   .export { display: inline-flex; align-items: center; gap: 6px; }
   .export-status { color: var(--fg-quiet); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wave-host { flex: 1 1 52%; min-height: 220px; position: relative; }
+  .wave-host { flex: none; min-height: 140px; position: relative; }
+  .splitter { flex: none; height: 9px; margin: -4px 0; cursor: row-resize; display: grid; place-items: center; touch-action: none; }
+  .splitter span { width: 48px; height: 4px; border-radius: 2px; background: var(--line); }
+  .splitter:hover span { background: var(--accent); }
   .wave-mode { display: flex; align-items: center; gap: 0; }
   .wave-mode button { height: 22px; padding: 0 9px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; background: var(--panel-solid); color: var(--fg-quiet); border: 1px solid var(--line); }
   .wave-mode button:first-child { border-radius: 6px 0 0 6px; } .wave-mode button:nth-child(2) { border-radius: 0 6px 6px 0; border-left: 0; }
@@ -799,8 +809,8 @@
   .swatch.start { background: var(--start); } .swatch.end { background: var(--end); }
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
-  .list { flex: 1 1 38%; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: 52px 160px 88px 82px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
+  .list { flex: 1 1 auto; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
+  .row { display: grid; grid-template-columns: 52px 160px 88px 82px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; align-items: center; padding: 1px 8px; border-radius: 6px; cursor: default; font-size: 12.5px; }
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
@@ -820,7 +830,7 @@
   .step-text span { font-size: 11.5px; color: var(--fg-quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .step-actions { display: flex; align-items: center; gap: 6px; padding-left: 8px; border-left: 1px solid var(--line); }
   .step-actions .ghost kbd { margin-left: 4px; }
-  .row input { background: transparent; border-color: transparent; padding: 3px 6px; min-width: 0; }
+  .row input { background: transparent; border-color: transparent; padding: 1px 6px; min-width: 0; font-size: 12.5px; }
   .row input:hover { border-color: var(--line); }
   .row input:focus { background: var(--panel); }
   .art-cell { width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg-quiet); cursor: pointer; overflow: hidden; display: grid; place-items: center; font-size: 12px; }
@@ -829,12 +839,12 @@
   /* Hear start / end: one split control per row, Start | End */
   .hear { display: flex; gap: 0; white-space: nowrap; }
   .hear .hear-start, .hear .hear-end { width: 62px; }
-  .hear button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 24px; padding: 0 9px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  .hear button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 21px; padding: 0 9px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
   .hear .hear-start { border-radius: 7px 0 0 7px; } .hear .hear-end { border-radius: 0 7px 7px 0; border-left: 0; }
   .hear button:hover { background: var(--accent); color: var(--on-accent); }
   .hear button.checked { background: rgba(62, 207, 110, 0.18); color: #2e9e57; border-color: rgba(62, 207, 110, 0.5); }
-  .album-row { display: grid; grid-template-columns: 70px minmax(100px, 1fr) minmax(100px, 1fr) 64px minmax(80px, 0.7fr) auto; gap: 8px; align-items: center; margin-top: 8px; padding: 4px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
-  .album-row input { font-weight: 600; }
+  .album-row { display: grid; grid-template-columns: 70px minmax(100px, 1fr) minmax(100px, 1fr) 64px minmax(80px, 0.7fr) auto; gap: 8px; align-items: center; margin-top: 6px; padding: 2px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+  .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .album-year { text-align: center; }
   .album-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-quiet); font-weight: 600; }
   .album-count { font-size: 12px; white-space: nowrap; }

@@ -56,6 +56,7 @@ The session view is a step bar that says what is left and what to do next: **1 C
 - Track list under the waveform: number, start, length, artist, title, album, status. Edit tags inline. Multi-select with the selection bar (as WinSqueeze): audition, export, set album or artist for all, fades, snap to gaps, merge, delete.
 - Edits save automatically; undo and redo (Ctrl+Z, Ctrl+Y).
 
+- A splitter between the wave and the track list shares the height (drag it; remembered); the wave starts at 240 px and the list rows are compact.
 - Flags: above the wave each start has a green flag sticking out to the right of its line and each end a red flag to the left, so where an end meets the next start either can be grabbed by its own flag.
 - A row's Start or End shows which edge you last heard (a bar under it) and which line is selected on the wave (an outline in the line's colour); hearing an edge doesn't select it. Lines are selected by hand on the wave.
 - Confirming cuts: click a row's Start or End to hear it (zoomed in). The ✓ after them confirms that track's start and end together (the Start and End halves turn green); click again to undo. Y does the same for the current track. Moving an edge doesn't confirm it. Export points out unconfirmed starts and ends but can always go ahead.
