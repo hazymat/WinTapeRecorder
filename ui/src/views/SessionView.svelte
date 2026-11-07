@@ -935,7 +935,7 @@
         <section class="report-card">
           <header class="report-head">
             <input type="checkbox" class="tick" checked={allTicked} indeterminate={!allTicked && group.ids.some(id => selectedIds.includes(id))} onchange={() => { const next = allTicked ? selectedIds.filter(id => !group.ids.includes(id)) : Array.from(new Set(selectedIds.concat(group.ids))); if (next.length) selectKeys(scope, tracks.filter(track => next.includes(track.id)).map(track => track.id), actions, 'track'); else clearSelection() }} title="Tick every track in this album" aria-label="Select this album's tracks" />
-            <span class="report-title"><strong>{group.album || 'No album'}</strong><span class="quiet">{' - '}{group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}{group.genre ? ` · ${group.genre}` : ''}</span></span>
+            <span class="report-title" title="The folder this album is written to, inside the output profile's folder">📁 <strong>{folders.length ? folders.join('  ·  ') || '(the output folder itself)' : (group.album || 'No album')}</strong></span>
             <select class="report-profile" value={own ? own : '__session'} onchange={(event) => setAlbumProfile(group, (event.target as HTMLSelectElement).value)} title="This album's output profile">
               <option value="__session">{app.outputProfiles.find(profile => profile.id === outputProfileId)?.name ?? 'Default'} (session)</option>
               {#each app.outputProfiles as profile (profile.id)}<option value={profile.id}>{profile.name}</option>{/each}
@@ -944,7 +944,6 @@
             <span class="plan-size">≈ {sizeText(estimateBytes(list))}</span>
             <button class="ghost small-button" disabled={!!app.status?.exporting} onclick={() => exportTracks(group.ids.filter(id => !tracks.find(track => track.id === id)?.skip))}>Export album</button>
           </header>
-          <p class="report-folder quiet" title="The folder inside the output profile's folder">📁 {folders.length ? folders.join('  ·  ') || '(the output folder itself)' : '…'}</p>
           <table class="tag-table report">
             <thead><tr><th class="c-tick"></th><th class="c-no" title="Track number / tracks in the album, as written">No.</th><th>Album artist</th><th>Artist (per track)</th><th>Title</th><th>Album</th><th class="c-year">Year</th><th>Genre</th><th class="c-disc" title="Disc number (blank: not written)">Disc</th><th>Composer</th><th>Comment</th><th class="c-art">Cover</th><th class="c-file">File</th><th class="c-status"></th></tr></thead>
             <tbody>
