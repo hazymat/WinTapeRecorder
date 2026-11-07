@@ -217,6 +217,9 @@ public partial class MainWindow : Window
                 case "openFolder": var folder = Text(message, "path"); if (File.Exists(folder)) Process.Start("explorer.exe", $"/select,\"{folder}\""); else if (Directory.Exists(folder)) Process.Start("explorer.exe", $"\"{folder}\""); break;
                 // ---- Auditioning ----
                 case "play":
+                    // Recording what the PC plays would record an audition too (SPEC.md › Workflow): no auditioning on that device meanwhile
+                    if (App.Recorder.Recording && App.Recorder.Session is { Loopback: true } recordingNow && (App.Settings.Audio.AuditionDeviceId == "" || App.Settings.Audio.AuditionDeviceId == App.Settings.RecordingProfileOrActive(recordingNow.RecordingProfileId).DeviceId))
+                    { App.ShowTip("Not while recording", "Another session is recording what this PC plays, so anything you hear now would be recorded too. Tag and export meanwhile; listen once the recording stops, or pick another audition device in Settings › Audio."); break; }
                     if (App.TryGetOpen(Text(message, "id"), out var playing))
                     {
                         var segments = message.GetProperty("segments").EnumerateArray().Select(segment => (segment[0].GetInt64(), segment[1].GetInt64())).ToList();
@@ -243,7 +246,7 @@ public partial class MainWindow : Window
                     exportCancel = new CancellationTokenSource();
                     var errors = "";
                     var exportSessionId = exporting.session.Id;
-                    var exportedCount = await Task.Run(() => Exporter.Export(exporting.session, exporting.audio, exportTracks, outputProfile, progress => { if (progress.Error != "") errors = progress.Error; App.ExportDone = progress.Done; Push(JsonSerializer.Serialize(new { type = "exportProgress", id = exportSessionId, done = progress.Done, total = progress.Total, current = progress.Current })); }, exportCancel.Token));
+                    var exportedCount = await Task.Run(() => { var thread = Thread.CurrentThread; var before = thread.Priority; thread.Priority = ThreadPriority.BelowNormal; try { return Exporter.Export(exporting.session, exporting.audio, exportTracks, outputProfile, progress => { if (progress.Error != "") errors = progress.Error; App.ExportDone = progress.Done; Push(JsonSerializer.Serialize(new { type = "exportProgress", id = exportSessionId, done = progress.Done, total = progress.Total, current = progress.Current })); }, exportCancel.Token); } finally { thread.Priority = before; } });
                     exporting.session.OutputProfileId = outputProfile.Id;
                     exporting.session.Save();
                     App.Exporting = false; App.ExportingSessionId = ""; Push(App.StatusJson());

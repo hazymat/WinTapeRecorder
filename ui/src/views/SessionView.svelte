@@ -245,6 +245,46 @@
     commit(next, `${field === 'artist' ? 'Artist' : field[0].toUpperCase() + field.slice(1)} set on ${group.ids.length} track${group.ids.length === 1 ? '' : 's'}`)
   }
   let joining = $state<null | { trackId: string; target: ListAlbum; mergeIds?: string[] }>(null)
+  // Album tiles (SPEC.md › Albums & cuts): each album is a compact tile; one is open at a time showing its tracks.
+  // The current track's album opens by default; clicking a tile opens it
+  let openAlbumKey = $state('')
+  const openGroup = $derived(listAlbums.find(group => group.first === openAlbumKey) ?? (current ? albumOf(current.id) : null) ?? listAlbums[0] ?? null)
+  function openTile(group: ListAlbum) { openAlbumKey = group.first; if (!group.ids.includes(currentId)) { currentId = group.first; const first = tracks.find(track => track.id === group.first); if (first) { cursor = first.start; showFrame(first.start) } } }
+  // Press and hold a track to pick it up, then drop it on the album above or below to join it, or on the gap to give it an album of its own
+  let lifting = $state(''), lifted = $state(''), dropOn = $state(''), liftTimer = 0, liftStart = { x: 0, y: 0 }
+  function liftDown(track: Track, event: PointerEvent) {
+    // Anywhere on the row but its buttons, text boxes included: holding still picks it up, moving first (selecting text) doesn't
+    if (event.button !== 0 || (event.target as HTMLElement)?.closest?.('button, select, input[type=checkbox]')) return
+    lifting = track.id; liftStart = { x: event.clientX, y: event.clientY }; clearTimeout(liftTimer)
+    const cancelOnMove = (move: PointerEvent) => { if (Math.abs(move.clientX - liftStart.x) + Math.abs(move.clientY - liftStart.y) > 5) { clearTimeout(liftTimer); lifting = ''; window.removeEventListener('pointermove', cancelOnMove) } }
+    window.addEventListener('pointermove', cancelOnMove)
+    liftTimer = window.setTimeout(() => { window.removeEventListener('pointermove', cancelOnMove); (document.activeElement as HTMLElement | null)?.blur?.(); window.getSelection()?.removeAllRanges(); lifted = track.id; lifting = ''; window.addEventListener('pointermove', liftMove); window.addEventListener('pointerup', liftUp, { once: true }) }, 350)
+    window.addEventListener('pointerup', () => { clearTimeout(liftTimer); lifting = ''; window.removeEventListener('pointermove', cancelOnMove) }, { once: true })
+  }
+  function liftMove(event: PointerEvent) {
+    const target = (document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null)?.closest?.('[data-drop]') as HTMLElement | null
+    dropOn = target?.dataset.drop ?? ''
+  }
+  function liftUp() {
+    window.removeEventListener('pointermove', liftMove)
+    const trackId = lifted, target = dropOn; lifted = ''; dropOn = ''
+    if (!trackId || !target) return
+    const mover = tracks.find(track => track.id === trackId); if (!mover) return
+    if (target === 'split') { splitting2 = { trackId, name: mover.album ? `${mover.album} (${mover.title || 'single'})` : mover.title }; return }
+    const group = listAlbums.find(candidate => 'album:' + candidate.first === target); if (!group || group.ids.includes(trackId)) return
+    // Straight in, taking that album's names (each track keeps its own artist); Undo puts it back
+    const sample = tracks.find(track => track.id === group.first)!, next = copy(), edited = next.find(track => track.id === trackId)!
+    edited.albumArtist = sample.albumArtist; edited.album = sample.album; edited.year = sample.year; edited.genre = sample.genre || edited.genre; edited.exported = false
+    if (!sample.album) edited.artist = sample.artist // an album without a name is held together by its artist
+    commit(next, `“${mover.title || 'Track'}” moved into ${albumName(group)}`)
+    openAlbumKey = group.first
+  }
+  let splitting2 = $state<null | { trackId: string; name: string }>(null)
+  function splitOut() {
+    const split = splitting2; splitting2 = null; if (!split) return
+    const next = copy(), edited = next.find(track => track.id === split.trackId)!; edited.album = split.name.trim(); edited.exported = false
+    commit(next, 'Track given an album of its own')
+  }
   let dragTrack = ''
   function joinAlbum(mode: 'theirs' | 'mine') {
     const join = joining; joining = null; if (!join) return
@@ -252,7 +292,7 @@
     const next = copy()
     // Album-level fields only: each track keeps its own artist (a featured artist stays on its track)
     const movers = join.mergeIds ?? [mover.id]
-    if (mode === 'theirs') { const sample = tracks.find(track => track.id === join.target.first)!; for (const edited of next) if (movers.includes(edited.id)) { edited.albumArtist = sample.albumArtist; edited.album = sample.album; edited.year = sample.year; edited.genre = sample.genre || edited.genre; edited.exported = false } }
+    if (mode === 'theirs') { const sample = tracks.find(track => track.id === join.target.first)!; for (const edited of next) if (movers.includes(edited.id)) { if (!sample.album) edited.artist = sample.artist; edited.albumArtist = sample.albumArtist; edited.album = sample.album; edited.year = sample.year; edited.genre = sample.genre || edited.genre; edited.exported = false } }
     else for (const track of next) if (join.target.ids.includes(track.id)) { track.albumArtist = mover.albumArtist; track.album = mover.album; track.year = mover.year || track.year; track.genre = mover.genre || track.genre; track.exported = false }
     commit(next, movers.length > 1 ? 'Albums merged' : 'Track moved into the album')
   }
@@ -290,6 +330,21 @@
       track.exported = false
     }
     commit(next, `Album details from ${match.source}`)
+    if (match.artUrl && !failedCovers[match.artUrl] && !commonOf(list, 'artPath')) useCoverUrl(group, match.artUrl)
+  }
+  // Fill gaps: the database only fills what's empty (your values are never replaced without a click on theirs), plus the cover if none
+  function fillBlanksFrom(group: ListAlbum, match: AlbumMatch) {
+    const next = copy()
+    for (const track of next) if (group.ids.includes(track.id)) {
+      if (!track.albumArtist && match.albumArtist) track.albumArtist = match.albumArtist
+      if (!track.artist && match.albumArtist) track.artist = match.albumArtist
+      if (!track.album && match.album) track.album = match.album
+      if (!track.year && match.year) track.year = match.year
+      if (!track.genre && match.genre) track.genre = match.genre
+      track.exported = false
+    }
+    commit(next, `Blanks filled from ${match.source}`)
+    const list = tracks.filter(track => group.ids.includes(track.id))
     if (match.artUrl && !failedCovers[match.artUrl] && !commonOf(list, 'artPath')) useCoverUrl(group, match.artUrl)
   }
   function useAllTitles(list: Track[], match: AlbumMatch) { const next = copy(); for (const track of next) { const original = list.find(candidate => candidate.id === track.id); if (!original) continue; const theirs = theirTitle(original, match); if (theirs) { track.title = theirs; track.exported = false } } commit(next, `Titles from ${match.source}`) }
@@ -599,8 +654,8 @@
   </header>
 
   <nav class="steps" aria-label="Steps">
-    <button class="step" class:active={step === 'cuts'} class:done={unchecked.length === 0} onclick={() => step = 'cuts'}><span class="step-number">1</span><span class="step-text"><strong>Check the cuts</strong><span>{unchecked.length === 0 ? 'all confirmed' : `${unchecked.length} to confirm${doubtful.length ? `, ${doubtful.length} doubtful` : ''}`}</span></span></button>
-    <button class="step" class:active={step === 'tags'} class:done={untagged.length === 0} onclick={() => step = 'tags'}><span class="step-number">2</span><span class="step-text"><strong>Tags</strong><span>{untagged.length === 0 ? 'complete' : `${untagged.length} track${untagged.length === 1 ? '' : 's'} missing details`}</span></span></button>
+    <button class="step" class:active={step === 'cuts'} class:done={unchecked.length === 0} onclick={() => step = 'cuts'}><span class="step-number">1</span><span class="step-text"><strong>Albums &amp; cuts</strong><span>{unchecked.length === 0 ? 'all confirmed' : `${unchecked.length} to confirm${doubtful.length ? `, ${doubtful.length} doubtful` : ''}`}</span></span></button>
+    <button class="step" class:active={step === 'tags'} class:done={untagged.length === 0} onclick={() => step = 'tags'}><span class="step-number">2</span><span class="step-text"><strong>Fill gaps &amp; covers</strong><span>{untagged.length === 0 ? 'nothing missing' : `${untagged.length} track${untagged.length === 1 ? '' : 's'} with blanks`}</span></span></button>
     <button class="step" class:active={step === 'export'} class:done={unexported.length === 0 && exportable.length > 0} onclick={() => step = 'export'}><span class="step-number">3</span><span class="step-text"><strong>Export</strong><span>{exportable.length === 0 ? 'nothing to export' : unexported.length === 0 ? `${exportable.length} exported${unverified.length ? `, ${unverified.length} failed the check` : ', all verified'}` : `${unexported.length} of ${exportable.length} to go`}</span></span></button>
     <div class="step-actions">
       {#if step === 'cuts'}
@@ -686,7 +741,7 @@
               <p class="quiet">Album {groupIndex + 1} · your tracks {tracks.indexOf(list[0]) + 1}–{tracks.indexOf(list[list.length - 1]) + 1} ({list.length}){#if match}{' · '}matched on {match.source}{match.trackTitles.length ? `: ${found} of its ${match.trackTitles.length} tracks are here` : ''}{:else if session.albumLooked}{' · '}not found online{/if}</p>
             </div>
             <div class="tag-actions">
-              {#if match && rows.some(row => row.theirs && !row.same)}<button class="primary" onclick={() => useAllFrom(group, list, match)}>Use all from {match.source}</button>{/if}
+              {#if match && rows.some(row => row.theirs && (row.mine === '' || (row.field === 'artist' && false)))}<button class="primary" onclick={() => fillBlanksFrom(group, match)} title={`Only fields you've left empty; yours stay as they are`}>Fill blanks from {match.source}</button>{/if}
               <button class="ghost" onclick={() => openLookup(group.ids)} title="Search MusicBrainz, iTunes or Discogs for this album yourself">{match ? 'Wrong album? Search…' : 'Search…'}</button>
             </div>
           </header>
@@ -748,22 +803,30 @@
       {@const group = albumOf(track.id)}
       {#if group && group.first === track.id}
         {@const groupIndex = listAlbums.indexOf(group)}
-        <div class="album-row" role="group" aria-label={albumName(group)}
-          ondragover={(event) => { if (dragTrack && !group.ids.includes(dragTrack)) event.preventDefault() }}
-          ondrop={(event) => { event.preventDefault(); if (dragTrack && !group.ids.includes(dragTrack)) joining = { trackId: dragTrack, target: group }; dragTrack = '' }}>
-          <span class="album-label">Album {groupIndex + 1}</span>
-          <input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks" onchange={(event) => setAlbumField(group, 'artist', (event.target as HTMLInputElement).value.trim())} />
-          <input value={group.album} placeholder="Album" title="This album's name, for all its tracks" onchange={(event) => setAlbumField(group, 'album', (event.target as HTMLInputElement).value.trim())} />
-          <input class="album-year" value={group.year} placeholder="Year" title="This album's year, for all its tracks" onchange={(event) => setAlbumField(group, 'year', (event.target as HTMLInputElement).value.trim())} />
-          <input value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks" onchange={(event) => setAlbumField(group, 'genre', (event.target as HTMLInputElement).value.trim())} />
-          <span class="album-tail"><span class="quiet album-count">{group.ids.length} track{group.ids.length === 1 ? '' : 's'}</span>{#if groupIndex > 0}<button class="ghost small-button" onclick={() => joining = { trackId: group.first, target: listAlbums[groupIndex - 1], mergeIds: group.ids }} title={`Make these ${group.ids.length} track${group.ids.length === 1 ? '' : 's'} part of ${albumName(listAlbums[groupIndex - 1])}`}>Merge with album above</button>{/if}</span>
-        </div>
+        {@const isOpen = openGroup === group}
+        {@const confirmed = group.ids.filter(id => { const member = tracks.find(candidate => candidate.id === id); return member?.startChecked && member?.endChecked }).length}
+        {#if lifted && groupIndex > 0 && !isOpen && listAlbums[groupIndex - 1] === openGroup}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
+        {#if isOpen}
+          <div class="album-row open" role="group" aria-label={albumName(group)} data-drop={'album:' + group.first} class:over={dropOn === 'album:' + group.first}>
+            <span class="album-label">Album {groupIndex + 1}</span>
+            <input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks" onchange={(event) => setAlbumField(group, 'artist', (event.target as HTMLInputElement).value.trim())} />
+            <input value={group.album} placeholder="Album" title="This album's name, for all its tracks" onchange={(event) => setAlbumField(group, 'album', (event.target as HTMLInputElement).value.trim())} />
+            <input class="album-year" value={group.year} placeholder="Year" title="This album's year, for all its tracks" onchange={(event) => setAlbumField(group, 'year', (event.target as HTMLInputElement).value.trim())} />
+            <input value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks" onchange={(event) => setAlbumField(group, 'genre', (event.target as HTMLInputElement).value.trim())} />
+            <span class="album-tail"><span class="quiet album-count">{group.ids.length} track{group.ids.length === 1 ? '' : 's'} · {confirmed} confirmed</span>{#if groupIndex > 0}<button class="ghost small-button" onclick={() => joining = { trackId: group.first, target: listAlbums[groupIndex - 1], mergeIds: group.ids }} title={`Make these ${group.ids.length} track${group.ids.length === 1 ? '' : 's'} part of ${albumName(listAlbums[groupIndex - 1])}`}>Merge with album above</button>{/if}</span>
+          </div>
+        {:else}
+          <button class="album-tile" data-drop={'album:' + group.first} class:over={dropOn === 'album:' + group.first} class:target={!!lifted && (listAlbums[groupIndex + 1] === openGroup || listAlbums[groupIndex - 1] === openGroup)} onclick={() => openTile(group)} title="Open this album">
+            <span class="tile-name"><strong>{group.album || 'No album'}</strong><span class="quiet">{' — '}{group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}</span></span>
+            <span class="tile-facts">{group.ids.length} track{group.ids.length === 1 ? '' : 's'}<span class:all={confirmed === group.ids.length}>{' · '}{confirmed === group.ids.length ? '✓ all confirmed' : `${confirmed} confirmed`}</span></span>
+            {#if lifted && (listAlbums[groupIndex + 1] === openGroup || listAlbums[groupIndex - 1] === openGroup)}<span class="tile-drop">Drop to join</span>{/if}
+            <span class="chevron">›</span>
+          </button>
+        {/if}
       {/if}
-      {@const groupIndex = group ? listAlbums.indexOf(group) : -1}
-      {@const above = groupIndex > 0 ? listAlbums[groupIndex - 1] : null}
-      {@const below = groupIndex >= 0 && groupIndex + 1 < listAlbums.length ? listAlbums[groupIndex + 1] : null}
-      <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
-        <span class="number"><span class="drag no-hold" draggable="true" ondragstart={(event) => { dragTrack = track.id; event.dataTransfer?.setData('text/plain', track.id) }} ondragend={() => dragTrack = ''} title="Drag onto another album's header to move this track into it" role="button" tabindex="-1" aria-label="Drag to another album">⋮⋮</span><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
+      {#if group && group === openGroup}
+      <div class="row" class:lifting={lifting === track.id} class:lifted={lifted === track.id} onpointerdown={(event) => liftDown(track, event)} class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
+        <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
         <span class="hear no-hold"><button class="hear-start" class:checked={track.startChecked} class:heard={focused?.trackId === track.id && focused.edge === 'start'} class:grabbed={grab?.trackId === track.id && grab.edge === 'start'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }} title="Hear this track's start, zoomed in" aria-label="Hear start"><Icon name="play" size={11} /><span>Start</span></button><button class="hear-end" class:checked={track.endChecked} class:heard={focused?.trackId === track.id && focused.edge === 'end'} class:grabbed={grab?.trackId === track.id && grab.edge === 'end'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }} title="Hear this track's end, zoomed in" aria-label="Hear end"><span>End</span><Icon name="play" size={11} /></button><button class="ok" class:on={track.startChecked && track.endChecked} class:half={!!track.startChecked !== !!track.endChecked} onclick={(event) => { event.stopPropagation(); confirmTrack(track) }} title={track.startChecked && track.endChecked ? 'Start and end confirmed. Click to undo (Y)' : 'Happy with this start and end? Click to confirm both (Y)'} aria-label="Confirm this track's start and end">✓</button></span>
         <span class="edge-cell"><button class="time edge no-hold" class:doubt={!track.startSure && !track.startChecked} class:checked={track.startChecked} title={`${track.startNote || 'Start'}${track.startChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }}>{formatTime(track.start, rate, false)}</button>{#if track.detectedStart != null && track.detectedStart >= 0 && track.start !== track.detectedStart}<button class="revert no-hold" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'start') }} title={`Back to where it was detected (${formatTime(track.detectedStart, rate, false)})`}>↺</button>{/if}</span>
         <span class="edge-cell"><button class="time edge no-hold" class:doubt={!track.endSure && !track.endChecked} class:checked={track.endChecked} title={`${track.endNote || 'End'}${track.endChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }}>{formatDuration((track.end - track.start) / rate)}</button>{#if track.detectedEnd != null && track.detectedEnd >= 0 && track.end !== track.detectedEnd}<button class="revert no-hold" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'end') }} title={`End back to where it was detected (${formatTime(track.detectedEnd, rate, false)})`}>↺</button>{/if}</span>
@@ -777,6 +840,8 @@
         <span class="fades">{track.fadeInMs || track.fadeOutMs ? `${track.fadeInMs}/${track.fadeOutMs} ms` : ''}</span>
         <span class="status">{#if track.verifyError}<button class="failed no-hold" title={`${track.verifyError}. Export it again.`} onclick={(event) => { event.stopPropagation(); exportTracks([track.id], true) }}>Failed check</button>{:else if track.skip}<button class="skipped no-hold" title={`${track.skipReason}. Click to use this take after all.`} onclick={(event) => { event.stopPropagation(); setSkip(track, false) }}>Skipped</button>{:else if track.skipReason}<button class="damaged no-hold" title={`${track.skipReason}. Click to leave it out of the export.`} onclick={(event) => { event.stopPropagation(); setSkip(track, true) }}>Damaged?</button>{:else if track.exported}<button class="exported no-hold" title={`${track.exportedPath}${track.verified ? ' · read back and checked' : ''}`} onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: track.exportedPath }) }}>Exported</button>{/if}</span>
       </div>
+      {#if lifted && group.ids[group.ids.length - 1] === track.id}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
+      {/if}
     {:else}
       <div class="none quiet">No tracks found. Place the playhead and press N to add one, or use Redetect.</div>
     {/each}
@@ -806,6 +871,12 @@
   {@const mover = tracks.find(track => track.id === join.trackId)}
   <Dialog title={join.mergeIds ? 'Merge these albums?' : 'Move this track into that album?'} wide text={`${join.mergeIds ? `${join.mergeIds.length} track${join.mergeIds.length === 1 ? '' : 's'} (${albumName({ artist: mover?.albumArtist || mover?.artist || '', album: mover?.album ?? '', year: mover?.year })})` : `“${mover?.title || 'This track'}” (${albumName({ artist: mover?.albumArtist || mover?.artist || '', album: mover?.album ?? '', year: mover?.year })})`} join ${albumName(join.target)}. Which album name, album artist, year and genre should they share? Each track keeps its own artist.`}
     confirmLabel="Use the other album's" altLabel={join.mergeIds ? 'Use these tracks\u2019' : 'Use this track\u2019s'} onconfirm={() => joinAlbum('theirs')} onalt={() => joinAlbum('mine')} oncancel={() => joining = null} />
+{/if}
+{#if splitting2}
+  {@const split = splitting2}
+  <Dialog title="An album of its own" text="This track becomes its own album. What's the album called?" confirmLabel="Make it its own album" onconfirm={splitOut} oncancel={() => splitting2 = null}>
+    <label>Album<input value={split.name} oninput={(event) => { if (splitting2) splitting2.name = (event.target as HTMLInputElement).value }} /></label>
+  </Dialog>
 {/if}
 {#if exportCheck}
   {@const check = exportCheck}
@@ -929,6 +1000,22 @@
   .small-button { padding: 1px 8px; font-size: 11.5px; min-height: 0; height: 22px; margin-left: 8px; }
   .album-tail { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
   .drag { cursor: grab; color: var(--fg-quiet); font-size: 11px; padding: 0 3px; user-select: none; }
+  .album-tile { display: flex; align-items: center; gap: 14px; width: 100%; margin-top: 6px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font: inherit; font-size: 13px; text-align: left; cursor: pointer; transition: transform 120ms, border-color 120ms, background 120ms; }
+  .album-tile:hover { background: var(--hover); }
+  .album-tile.target { border-style: dashed; border-color: var(--accent); }
+  .album-tile.over, .album-row.over { background: var(--accent-soft); border-color: var(--accent); border-style: solid; transform: scale(1.01); }
+  .tile-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile-facts { color: var(--fg-quiet); font-size: 12px; white-space: nowrap; }
+  .tile-facts .all { color: #2e9e57; }
+  .tile-drop { color: var(--accent); font-weight: 600; font-size: 12px; }
+  .chevron { color: var(--fg-quiet); font-size: 16px; }
+  .album-row.open { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+  .split-zone { margin: 6px 0; padding: 10px; border: 2px dashed var(--line); border-radius: 8px; text-align: center; font-size: 12.5px; color: var(--fg-quiet); }
+  .split-zone.over { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .row.lifting { animation: wiggle 350ms ease-in-out; }
+  @keyframes wiggle { 0%, 100% { transform: none; } 25% { transform: rotate(-0.4deg); } 75% { transform: rotate(0.4deg); } }
+  .row.lifted :global(*) { user-select: none; }
+  .row.lifted { opacity: 0.85; box-shadow: 0 8px 22px var(--shadow); transform: scale(1.01); background: var(--panel-solid); cursor: grabbing; position: relative; z-index: 2; }
   .album-row { display: grid; grid-template-columns: 70px minmax(100px, 1fr) minmax(100px, 1fr) 64px minmax(80px, 0.7fr) minmax(220px, auto); gap: 8px; align-items: center; margin-top: 6px; padding: 2px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
   .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .album-year { text-align: center; }
