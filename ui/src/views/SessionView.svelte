@@ -828,7 +828,6 @@
       {:else if step === 'tags'}
         {#if selectedIds.length}<button class="ghost" onclick={() => tagging = selectedIds.slice()}>Edit {selectedIds.length} selected…</button>{/if}
       {:else}
-        {#if exportStatus}<span class="export-status">{exportStatus}</span>{/if}
         {#if outputChoices.length}<Dropdown label="Output profile" value={outputProfileId} options={outputChoices} onchange={(value) => { if (value === '__manage') { sendToShell({ type: 'openSettings', tab: 'Output profiles' }); return } if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
         <span class="export-size" title="Estimated size of everything this session exports, with each album's profile (FLAC from the usual ratio, MP3 and AAC from the bitrate)">≈ {sizeText(estimateBytes(exportable))}</span>
         {#if exportingHere}<button class="primary danger-button" onclick={() => sendToShell({ type: 'cancelExport' })} title="Stop after the track being written (it's finished or removed, never left half-written)">Cancel export ({app.status?.exportDone}/{app.status?.exportTotal})</button>{:else if queued}<button class="primary" onclick={() => sendToShell({ type: 'unqueueExport', id: sessionId })} title="Another session is exporting; this one starts after it. Click to take it out of the queue">Export queued: click to unqueue</button>{:else}        <button class="primary" disabled={!exportable.length} onclick={() => exportTracks(selectedIds.length ? selectedIds : unexported.length ? unexported.map(track => track.id) : undefined)} title="Ctrl+E"><Icon name="export" size={16} />{selectedIds.length ? `Export ${selectedIds.length} selected` : unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>{/if}
@@ -870,7 +869,7 @@
     </div>
     {/if}
     <div class="spacer"></div>
-    {#if exportStatus && step !== 'export'}<span class="export-status">{exportStatus}</span>{/if}
+    {#if exportStatus}<span class="export-status" title={exportStatus}>{exportStatus}</span>{/if}
   </div>
 
   {#if step === 'cuts'}
@@ -1137,7 +1136,7 @@
   .ghost.icon { padding: 5px 7px; }
   .spacer { flex: 1; }
   .export { display: inline-flex; align-items: center; gap: 6px; }
-  .export-status { color: var(--fg-quiet); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .export-status { flex: 0 1 380px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg-quiet); text-align: right; } /* fixed place in the toolbar: a changing file name never moves anything */
   .wave-host { flex: none; min-height: 200px; position: relative; overflow: hidden; }
   .splitter { flex: none; height: 9px; margin: -4px 0; cursor: row-resize; display: grid; place-items: center; touch-action: none; }
   .splitter span { width: 48px; height: 4px; border-radius: 2px; background: var(--line); }
