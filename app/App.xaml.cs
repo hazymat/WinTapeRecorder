@@ -167,8 +167,10 @@ public partial class App : Application
         return minutes <= 0 ? -1 : Math.Max(0, minutes * 60 - Recorder.SilentSeconds);
     }
     DateTime lastCheckpoint = DateTime.UtcNow;
+    int otherSoundsShown;
     public void CheckSilence()
     {
+        if (Recorder.Recording) { var others = Recorder.OtherSoundsSoFar.Count; if (others != otherSoundsShown) { otherSoundsShown = others; StatusChanged?.Invoke(); } } else otherSoundsShown = 0;
         if (Recorder.Recording && DateTime.UtcNow - lastCheckpoint > TimeSpan.FromSeconds(30)) { lastCheckpoint = DateTime.UtcNow; try { Recorder.Checkpoint(); } catch { } }
         if (SilenceStopIn() != 0) return;
         var minutes = Settings.RecordingProfileOrActive(Recorder.Session?.RecordingProfileId ?? "").StopAfterSilenceMinutes;
@@ -452,6 +454,7 @@ public partial class App : Application
         sampleRate = Recorder.Session?.SampleRate ?? 0,
         changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Manual, change.Problem }) ?? Enumerable.Empty<object>(),
         dropoutList = Recorder.Dropouts.Select(dropout => new { dropout.Frame, dropout.Ms }),
+        otherSounds = Recorder.OtherSoundsSoFar,
         clips = Recorder.Clips.Select(clip => new { clip.Frame, clip.Samples }),
         current = CurrentName == null ? null : new { CurrentName.Key, CurrentName.Label, CurrentName.Artist, CurrentName.Title, CurrentName.Album, year = YearFor(CurrentName) },
         source = RecordingSource,

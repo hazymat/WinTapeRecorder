@@ -279,7 +279,7 @@ public partial class MainWindow : Window
     static object SessionDetail(Session session) => new
     {
         id = session.Id, name = session.Name, created = session.Created, device = session.Device, loopback = session.Loopback, sampleRate = session.SampleRate, channels = session.Channels, bitDepth = session.BitDepth,
-        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, clips = session.Clips, quality = session.Quality, albumCheck = session.AlbumCheck, cutOff = session.CutOff, albums = session.Albums, albumLooked = session.AlbumLooked, tracks = session.Tracks, folder = session.Folder,
+        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, clips = session.Clips, quality = session.Quality, albumCheck = session.AlbumCheck, cutOff = session.CutOff, otherSounds = session.OtherSounds, albums = session.Albums, albumLooked = session.AlbumLooked, tracks = session.Tracks, folder = session.Folder,
     };
 
     // Waveform data for [start, end) in columns: min/max per column for each channel, or the samples themselves when zoomed in that far

@@ -39,7 +39,7 @@
   let following = $state(true)
   let viewStart = 0, viewSpan = 0 // the paused view, in frames
   let selected = $state(-1) // the selected marker's index
-  let liveScale = 1 // Ctrl+wheel: wave height, as in the session's waveform; a plain wheel resets it
+  let liveScale = 1 // Ctrl+wheel: wave height, as in the session's waveform; kept while zooming
   let hovered = $state(-1)
   let followSeconds = $state(60) // following: the latest this many seconds, newest at the right; Catch up keeps the last zoom used
   let overviewSpan = 0 // the whole recording so far, for the strip above
@@ -119,7 +119,7 @@
         if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.2 : 0.12; context.fillRect(x - 8, 0, 16, height); context.globalAlpha = 1 }
         context.fillRect(x - 1, 0, isSelected || isHovered ? 3 : 2, height); context.fillText(`${index + 1} ${change.title || ''}`.trim(), x + 5, 3)
       })
-      if (liveScale > 1.05) { context.fillStyle = colour('--fg-quiet', '#888'); context.textBaseline = 'top'; context.fillText(`Height ×${liveScale < 10 ? liveScale.toFixed(1) : Math.round(liveScale)} (wheel resets)`, liveWidth - 140, 3) }
+      if (liveScale > 1.05) { context.fillStyle = colour('--fg-quiet', '#888'); context.textBaseline = 'top'; context.fillText(`Height ×${liveScale < 10 ? liveScale.toFixed(1) : Math.round(liveScale)} (Ctrl+wheel)`, liveWidth - 120, 3) }
       // The time scale
       context.fillStyle = colour('--fg-quiet', '#888'); context.textBaseline = 'bottom'; context.font = '10px "Segoe UI Variable Text", "Segoe UI", sans-serif'
       const stepSeconds = [0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600, 900, 1800].find(step => step * rate / now.span * liveWidth >= 70) ?? 1800
@@ -139,7 +139,7 @@
       const index = markerAt(event.offsetX)
       if (index !== hovered) { hovered = index; drawLive() }
       if (liveCanvas) liveCanvas.style.cursor = index >= 0 ? 'pointer' : 'grab'
-      liveCanvas?.setAttribute('title', index >= 0 ? (index === selected ? `Marker ${index + 1} is selected: drag the audio under it, click it to let go` : `Click to select marker ${index + 1}, then drag the audio under it`) : following ? 'Drag to stop following and look around; the wheel zooms, Ctrl+wheel makes the wave taller' : 'Drag to pan, wheel to zoom, Ctrl+wheel for height')
+      liveCanvas?.setAttribute('title', index >= 0 ? (index === selected ? `Marker ${index + 1} is selected: drag the audio under it, click it to let go` : `Click to select marker ${index + 1}, then drag the audio under it`) : following ? 'Drag to stop following and look around; the wheel zooms, Ctrl+wheel sets the wave height' : 'Drag to pan, wheel to zoom, Ctrl+wheel for height')
       return
     }
     if (!app.status) return
@@ -167,7 +167,6 @@
     if (!app.status) return
     event.preventDefault()
     if (event.ctrlKey) { liveScale = Math.max(1, Math.min(64, liveScale * Math.pow(1.0025, -event.deltaY))); drawLive(); return }
-    liveScale = 1
     pause()
     const rate = app.status.sampleRate, factor = Math.exp(event.deltaY * 0.0015)
     const anchorX = selected >= 0 ? markerX(selected) : event.offsetX
@@ -190,7 +189,7 @@
     sendToShell({ type: 'editChange', index, frame: Math.round(seconds * rate) })
   }
   // Issues while recording (SPEC.md › Recording › Issues): each one names the track it hit and what to do about it
-  type Issue = { kind: 'dropout' | 'clipping' | 'noname' | 'retake' | 'silence'; frame: number; index: number; text: string; action: string }
+  type Issue = { kind: 'dropout' | 'clipping' | 'noname' | 'retake' | 'silence' | 'other'; frame: number; index: number; text: string; action: string }
   const issues = $derived.by<Issue[]>(() => {
     const status = app.status; if (!status?.recording) return []
     const rate = status.sampleRate || 48000, recorded = app.levels.seconds * rate
@@ -198,6 +197,7 @@
     const name = (index: number) => { const change = status.changes[index]; return change?.title ? `“${change.title}”` : index >= 0 ? `track ${index + 1}` : 'the recording' }
     const list: Issue[] = []
     for (const dropout of status.dropoutList ?? []) { const index = trackAt(dropout.frame); list.push({ kind: 'dropout', frame: dropout.frame, index, text: `Dropout at ${formatTime(dropout.frame, rate, false)} in ${name(index)}: about ${dropout.ms} ms lost.`, action: 'Play that track again; the new take replaces this one.' }) }
+    for (const other of status.otherSounds ?? []) { const index = trackAt(other.frame); list.push({ kind: 'other', frame: other.frame, index, text: `${other.app} made a sound at ${formatTime(other.frame, rate, false)} in ${name(index)} (${(other.ms / 1000).toFixed(1)} s, peak ${other.peakDb} dB).`, action: 'It is in the recording: play that track again, or turn on Do not disturb so it does not happen again.' }) }
     for (const clip of status.clips ?? []) { const index = trackAt(clip.frame); list.push({ kind: 'clipping', frame: clip.frame, index, text: `Clipping at ${formatTime(clip.frame, rate, false)} in ${name(index)}: ${clip.samples} samples at full scale.`, action: 'Turn the source down a little and play that track again.' }) }
     status.changes.forEach((change, index) => {
       if (!change.title && recorded - change.frame > 10 * rate && !change.problem) list.push({ kind: 'noname', frame: change.frame, index, text: `Track ${index + 1} (from ${formatTime(change.frame, rate, false)}) has no name.`, action: 'Type its artist and title in the list below.' })
@@ -231,6 +231,7 @@
 <svelte:window onkeydown={onLiveKey} />
 <div class="record">
   <h2>Record</h2>
+  <Hint id="other-sounds" text="Recording what the PC plays records everything it plays: turn on Do not disturb (Windows notifications) and close apps that ding. Any other app's sound during a recording is flagged in Issues." />
   <Hint id="record-intro" text="Record a whole listening session into one file. Each time the playing track's name changes, a new track is marked; with no names, gaps split them. You fine-tune and export afterwards." />
   <div class="settings-row">
     <Dropdown label="Recording profile" value={profileId} options={profileChoices} align="left" onchange={(value) => { if (!recording) sendToShell({ type: 'setActiveProfile', kind: 'recording', profileId: value }) }} />

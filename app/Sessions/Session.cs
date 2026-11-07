@@ -28,6 +28,15 @@ public class ClipEvent
 }
 
 // Samples the audio engine threw away while recording (the PC was too busy): where, and how much
+// Another app's sound heard on the recorded device (SPEC.md › Recording › Other sounds)
+public class OtherSound
+{
+    public long Frame { get; set; }
+    public int Ms { get; set; }
+    public string App { get; set; } = "";
+    public int PeakDb { get; set; }
+}
+
 public class Dropout
 {
     public long Frame { get; set; }
@@ -141,6 +150,7 @@ public class Session
     public int ClippedSamples { get; set; }
     public List<NameChange> Changes { get; set; } = new();
     public List<Dropout> Dropouts { get; set; } = new();
+    public List<OtherSound> OtherSounds { get; set; } = new();
     public List<ClipEvent> Clips { get; set; } = new();
     public List<QualitySample> Quality { get; set; } = new();
     public AlbumCheck? AlbumCheck { get; set; }

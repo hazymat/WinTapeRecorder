@@ -88,6 +88,7 @@ public sealed class Recorder : IDisposable
             writerThread.Start();
             Session = session;
         }
+        if (profile.Loopback && session != null) { try { otherSounds = new OtherSounds(device, sampleRate, () => FramesWritten); } catch { otherSounds = null; } }
         if (profile.Loopback)
         {
             try { silenceKeeper = new WasapiOut(device, AudioClientShareMode.Shared, true, 100); silenceKeeper.Init(new SilenceProvider(WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channels))); silenceKeeper.Play(); }
@@ -254,6 +255,8 @@ public sealed class Recorder : IDisposable
         try { silenceKeeper?.Stop(); silenceKeeper?.Dispose(); } catch { }
         silenceKeeper = null;
         var session = Session; var peaks = Peaks; Session = null;
+        var others = otherSounds; otherSounds = null; others?.Dispose();
+        if (session != null && others != null) session.OtherSounds = others.Snapshot();
         var queue = writeQueue; writeQueue = null;
         if (queue != null)
         {
@@ -282,10 +285,13 @@ public sealed class Recorder : IDisposable
         lock (Dropouts) session.Dropouts = Dropouts.ToList();
         lock (Quality) session.Quality = Quality.ToList();
         lock (Clips) session.Clips = Clips.ToList();
+        if (otherSounds != null) session.OtherSounds = otherSounds.Snapshot();
         session.Save();
     }
 
     Session? lastStopped;
+    OtherSounds? otherSounds;
+    public List<OtherSound> OtherSoundsSoFar => otherSounds?.Snapshot() ?? new();
     // The session a stop from the audio side finished (size guard, device gone), taken once by whoever finishes up
     public Session? TakeLastStopped() { var taken = lastStopped; lastStopped = null; return taken; }
     public bool HitSizeLimit { get; private set; } // set when the WAV filled up; cleared by the next start

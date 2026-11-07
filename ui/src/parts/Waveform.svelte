@@ -17,8 +17,10 @@
   const overviewHeight = 54, rulerHeight = 20, flagHeight = 16
   type PeakData = { mode: 'peaks' | 'samples' | 'none'; start: number; end: number; channels: number[][] }
   let detailData = $state<PeakData | null>(null), overviewData = $state<PeakData | null>(null)
-  // Ctrl+wheel makes the waveform taller (quiet passages, fades); a plain wheel zoom puts it back
+  // Ctrl+wheel makes the waveform taller (quiet passages, fades); it stays while zooming
   let verticalScale = $state(1), manualHeight = $state(false)
+  // Ctrl+wheel sets the height and it stays through horizontal zooming; switching Auto height on or off goes back to automatic
+  $effect(() => { autoHeight; untrack(() => { manualHeight = false; verticalScale = 1 }) })
   const minVerticalScale = 1, maxVerticalScale = 32
   let css = $state({ wave: '#5ccfff', waveDim: '#5ccfff', shade: 'rgba(92,207,255,0.08)', shadeOn: 'rgba(92,207,255,0.16)', start: '#4cd964', end: '#ff7a6b', playhead: '#fff', fg: '#eceef3', quiet: '#8e94a0', line: 'rgba(255,255,255,0.08)', accent: '#5ccfff', panel: 'rgba(255,255,255,0.06)', warn: '#ffb74d' })
   function readColours() { const style = getComputedStyle(document.documentElement), previous = untrack(() => css), read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback; css = { wave: read('--wave', previous.wave), waveDim: read('--wave-rms', previous.waveDim), shade: read('--track-shade', previous.shade), shadeOn: read('--track-shade-on', previous.shadeOn), start: read('--start', previous.start), end: read('--end', previous.end), playhead: read('--playhead', previous.playhead), fg: read('--fg', previous.fg), quiet: read('--fg-quiet', previous.quiet), line: read('--line', previous.line), accent: read('--accent', previous.accent), panel: read('--panel', previous.panel), warn: read('--warn', previous.warn) } }
@@ -188,7 +190,7 @@
     if (mode === 'spectrogram') drawSpectrogram(context, waveTop, waveHeight)
     else if (detailData?.mode === 'samples' && view.framesPerPixel < 1.5) drawSamples(context, detailData, waveTop, laneHeight)
     else if (detailData) drawPeaks(context, detailData.mode === 'samples' ? toPeaks(detailData) : detailData, waveTop, laneHeight, frameToX, css.wave, verticalScale)
-    if (verticalScale > 1) { context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'; context.fillStyle = css.quiet; context.fillText(`Height ×${verticalScale < 10 ? verticalScale.toFixed(1) : Math.round(verticalScale)}${manualHeight ? ' (wheel resets)' : ' auto'}`, width - 130, waveTop + 4) }
+    if (verticalScale > 1) { context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'; context.fillStyle = css.quiet; context.fillText(`Height ×${verticalScale < 10 ? verticalScale.toFixed(1) : Math.round(verticalScale)}${manualHeight ? ' (Ctrl+wheel; Auto height resets)' : ' auto'}`, width - 130, waveTop + 4) }
     // Ruler, with any dropouts (samples lost while recording) as red marks on it
     drawRuler(context, detailHeight - rulerHeight)
     context.fillStyle = css.end
@@ -240,7 +242,6 @@
     const x = event.offsetX
     if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) { const delta = (Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY); view = clampView({ start: view.start + delta * view.framesPerPixel, framesPerPixel: view.framesPerPixel }); return }
     if (event.ctrlKey) { manualHeight = true; verticalScale = Math.max(minVerticalScale, Math.min(maxVerticalScale, verticalScale * Math.pow(1.0025, -event.deltaY))); return }
-    manualHeight = false; verticalScale = 1
     zoomAt(Math.pow(1.0018, event.deltaY), x)
   }
 
