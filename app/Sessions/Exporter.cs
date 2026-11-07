@@ -40,11 +40,14 @@ public static class NameTemplate
         return expanded.Trim();
     }
 
-    // What Windows won't allow in a file or folder name becomes a lookalike or goes
+    // What Windows won't allow in a file or folder name goes, with no lookalike characters: "Title: Part" reads "Title - Part",
+    // a slash or bar becomes a dash, ? * < > are dropped and " becomes '. The tags keep the real characters
     public static string SafeName(string name)
     {
-        var safe = name.Replace(':', '꞉').Replace('/', '⁄').Replace('\\', '⧵').Replace('?', '？').Replace('*', '＊').Replace('"', '\'').Replace('<', '‹').Replace('>', '›').Replace('|', '│');
-        safe = new string(safe.Where(character => character >= 32).ToArray()).Trim().TrimEnd('.');
+        var safe = System.Text.RegularExpressions.Regex.Replace(name, @"\s*:\s*", " - ");
+        safe = safe.Replace('/', '-').Replace('\\', '-').Replace('|', '-').Replace('"', '\'');
+        safe = new string(safe.Where(character => character >= 32 && character is not ('?' or '*' or '<' or '>')).ToArray());
+        safe = System.Text.RegularExpressions.Regex.Replace(safe, @"\s{2,}", " ").Trim().TrimEnd('.').Trim();
         return safe.Length > 120 ? safe[..120].Trim() : safe;
     }
 
@@ -227,7 +230,19 @@ public static class Exporter
     {
         if (!profile.SaveCoverFile || track.ArtPath == "" || !File.Exists(track.ArtPath)) return;
         var name = NameTemplate.SafeName(Path.GetFileNameWithoutExtension(profile.CoverFileName.Trim() == "" ? "folder" : profile.CoverFileName.Trim()));
-        File.Copy(track.ArtPath, Path.Combine(Path.GetDirectoryName(trackPath)!, name + Path.GetExtension(track.ArtPath).ToLowerInvariant()), true);
+        // Always a JPEG (folder.jpg is what players and libraries look for); a PNG cover is converted
+        var target = Path.Combine(Path.GetDirectoryName(trackPath)!, name + ".jpg");
+        var extension = Path.GetExtension(track.ArtPath).ToLowerInvariant();
+        if (extension is ".jpg" or ".jpeg") { File.Copy(track.ArtPath, target, true); return; }
+        try
+        {
+            using var input = File.OpenRead(track.ArtPath);
+            var frame = System.Windows.Media.Imaging.BitmapFrame.Create(input, System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+            var encoder = new System.Windows.Media.Imaging.JpegBitmapEncoder { QualityLevel = 92 };
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(new System.Windows.Media.Imaging.FormatConvertedBitmap(frame, System.Windows.Media.PixelFormats.Bgr24, null, 0)));
+            using var output = File.Create(target); encoder.Save(output);
+        }
+        catch { File.Copy(track.ArtPath, Path.Combine(Path.GetDirectoryName(trackPath)!, name + extension), true); }
     }
 
     static void WriteTags(string path, Track track, int number, int count, Session session, OutputProfile profile)
