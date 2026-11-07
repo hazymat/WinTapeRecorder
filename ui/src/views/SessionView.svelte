@@ -477,7 +477,7 @@
     for (const track of next) {
       if (!keys.includes(track.id)) continue
       for (const [name, value] of Object.entries(fields) as [keyof TagFields, string][]) {
-        if (name === 'trackNumber' || name === 'trackCount') track[name] = Number(value) || 0
+        if (name === 'trackNumber' || name === 'trackCount' || name === 'discNumber') (track as any)[name] = Number(value) || 0
         else (track as any)[name] = value
       }
       track.exported = false

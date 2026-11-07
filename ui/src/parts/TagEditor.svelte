@@ -1,6 +1,6 @@
 <script lang="ts" module>
-  export type TagFields = { artist: string; title: string; album: string; albumArtist: string; genre: string; year: string; composer: string; comment: string; trackNumber: string; trackCount: string; artPath: string }
-  export const tagFieldNames: [keyof TagFields, string][] = [['title', 'Title'], ['artist', 'Artist'], ['album', 'Album'], ['albumArtist', 'Album artist'], ['genre', 'Genre'], ['year', 'Year'], ['composer', 'Composer'], ['trackNumber', 'Track no.'], ['trackCount', 'Tracks on album'], ['comment', 'Comment']]
+  export type TagFields = { artist: string; title: string; album: string; albumArtist: string; genre: string; year: string; composer: string; comment: string; trackNumber: string; trackCount: string; discNumber: string; artPath: string }
+  export const tagFieldNames: [keyof TagFields, string][] = [['albumArtist', 'Album artist'], ['artist', 'Artist'], ['album', 'Album'], ['year', 'Year'], ['title', 'Title'], ['genre', 'Genre'], ['composer', 'Composer'], ['trackNumber', 'Track no.'], ['trackCount', 'Tracks on album'], ['discNumber', 'Disc no.'], ['comment', 'Comment']]
 </script>
 
 <svelte:window onkeydown={(event) => { if (event.ctrlKey && event.key.toLowerCase() === 'v' && !(event.target as HTMLElement)?.matches?.('input, textarea')) { event.preventDefault(); event.stopPropagation(); pasteArt() } }} />
@@ -16,7 +16,7 @@
   const common = (read: (track: Track) => string) => initial.every(track => read(track) === read(initial[0])) ? read(initial[0]) : ''
   let fields = $state<TagFields>({
     title: common(track => track.title), artist: common(track => track.artist), album: common(track => track.album), albumArtist: common(track => track.albumArtist ?? ''), genre: common(track => track.genre ?? ''), year: common(track => track.year ?? ''),
-    composer: common(track => track.composer ?? ''), comment: common(track => track.comment ?? ''), trackNumber: single && initial[0].trackNumber ? String(initial[0].trackNumber) : '', trackCount: common(track => track.trackCount ? String(track.trackCount) : ''), artPath: common(track => track.artPath ?? ''),
+    composer: common(track => track.composer ?? ''), discNumber: common(track => track.discNumber ? String(track.discNumber) : ''), comment: common(track => track.comment ?? ''), trackNumber: single && initial[0].trackNumber ? String(initial[0].trackNumber) : '', trackCount: common(track => track.trackCount ? String(track.trackCount) : ''), artPath: common(track => track.artPath ?? ''),
   })
   let artThumb = $state('')
   $effect(() => { artThumb = fields.artPath ? thumbs[fields.artPath] ?? '' : '' })
