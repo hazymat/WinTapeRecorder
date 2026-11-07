@@ -370,6 +370,8 @@
   }
   function useAllTitles(list: Track[], match: AlbumMatch) { const next = copy(); for (const track of next) { const original = list.find(candidate => candidate.id === track.id); if (!original) continue; const theirs = theirTitle(original, match); if (theirs) { track.title = theirs; track.exported = false } } commit(next, `Titles from ${match.source}`) }
   // Where each album's cover came from, so exactly one source shows as in use
+  // Which albums' track lists are open in Fill gaps (kept open while you edit them)
+  let openTrackLists = $state<Record<string, boolean>>({})
   let coverSources = $state<Record<string, 'database' | 'player' | 'own'>>({})
   function coverInUse(group: ListAlbum, ownCover: string | null, playerCover: string): '' | 'database' | 'player' | 'own' {
     if (!ownCover) return ''
@@ -808,7 +810,7 @@
               </tbody>
             </table>
           </div>
-          <details class="tag-tracks" open={listAlbums.length === 1}>
+          <details class="tag-tracks" open={openTrackLists[group.first] ?? listAlbums.length === 1} ontoggle={(event) => { const isOpen = (event.currentTarget as HTMLDetailsElement).open; if ((openTrackLists[group.first] ?? listAlbums.length === 1) !== isOpen) openTrackLists = Object.assign({}, openTrackLists, { [group.first]: isOpen }) }}>
             <summary>Tracks <span class="quiet">({list.length}){match && list.some(track => theirTitle(track, match) && theirTitle(track, match) !== track.title) ? ' · some titles differ from ' + match.source : ''}</span></summary>
             <table class="tag-table tracks">
               <thead><tr><th>No.</th><th>Artist</th><th>Title</th><th>{match ? match.source + ' title' : ''}{#if match && list.some(track => theirTitle(track, match) && theirTitle(track, match) !== track.title)}<button class="ghost small-button" onclick={() => useAllTitles(list, match)}>Use all</button>{/if}</th></tr></thead>
