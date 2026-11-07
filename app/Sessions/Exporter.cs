@@ -83,18 +83,46 @@ public static class Verifier
 public static class Exporter
 {
     // Exports the tracks in order; returns how many succeeded. The album's numbering counts every track in the session
+    // Track numbers count within each album (SPEC.md › Export): runs of tracks sharing album name and album artist (tracks without an
+    // album by artist), skipped takes left out. A track's own number wins; the count is the album's size unless the track has one
+    static string Squash(string text) => new string(text.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+    public static Dictionary<Track, (int number, int count)> AlbumNumbers(Session session)
+    {
+        var result = new Dictionary<Track, (int, int)>();
+        var runs = new List<List<Track>>(); string previous = "\u0000";
+        foreach (var track in session.Tracks.Where(track => !track.Skip).OrderBy(track => track.Start))
+        {
+            var key = track.Album != "" ? "album:" + Squash(track.Album) + "|" + Squash(track.AlbumArtist) : "artist:" + Squash(track.Artist);
+            if (key != previous || runs.Count == 0) runs.Add(new List<Track>()); previous = key;
+            runs[^1].Add(track);
+        }
+        foreach (var run in runs) for (var index = 0; index < run.Count; index++) result[run[index]] = (index + 1, run.Count);
+        return result;
+    }
+
+    // Where each track would be written with a profile, relative to the output folder (for the Export report)
+    public static string RelativePath(Session session, Track track, OutputProfile profile, Dictionary<Track, (int number, int count)> numbers)
+    {
+        var (number, count) = numbers.TryGetValue(track, out var found) ? found : (1, 1);
+        var relative = NameTemplate.Expand(profile.Template.Replace('\\', '/'), track, number, count, session, true);
+        var parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(part => part.Trim()).Where(part => part != "").ToArray();
+        if (parts.Length == 0) parts = new[] { $"{number:00}" };
+        return string.Join("\\", parts) + NameTemplate.Extension(profile.Format);
+    }
+
     public static int Export(Session session, SessionAudio audio, List<Track> tracks, OutputProfile profile, Action<ExportProgress> progress, CancellationToken cancel)
     {
         var allTracks = session.Tracks.OrderBy(track => track.Start).ToList();
+        var albumNumbers = AlbumNumbers(session);
         var root = profile.Folder.Trim() == "" ? AppPaths.DefaultOutputFolder : profile.Folder.Trim();
         var done = 0; var errors = new List<string>();
         foreach (var track in tracks.OrderBy(track => track.Start))
         {
             if (cancel.IsCancellationRequested) break;
             if (track.Skip) continue; // a damaged take recorded again later, or left out on purpose
-            var number = allTracks.IndexOf(track) + 1;
+            var (number, albumCount) = albumNumbers.TryGetValue(track, out var numbered) ? numbered : (allTracks.IndexOf(track) + 1, allTracks.Count);
             track.Verified = false; track.VerifyError = "";
-            var relative = NameTemplate.Expand(profile.Template.Replace('\\', '/'), track, number, allTracks.Count, session, true);
+            var relative = NameTemplate.Expand(profile.Template.Replace('\\', '/'), track, number, albumCount, session, true);
             var parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(part => part.Trim()).Where(part => part != "").ToArray();
             if (parts.Length == 0) parts = new[] { $"{number:00}" };
             var path = Path.Combine(new[] { root }.Concat(parts).ToArray()) + NameTemplate.Extension(profile.Format);
@@ -103,7 +131,7 @@ public static class Exporter
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 WriteAudio(audio, track, path, profile, session);
-                WriteTags(path, track, number, allTracks.Count, session, profile);
+                WriteTags(path, track, number, albumCount, session, profile);
                 SaveCoverFile(path, track, profile);
                 track.Exported = true; track.ExportedPath = path; done++;
                 progress(new ExportProgress(done, tracks.Count, "Checking " + Path.GetFileName(path), ""));
@@ -214,7 +242,7 @@ public static class Exporter
         var comment = track.Comment != "" ? track.Comment : Expand(profile.Comment); if (comment != "") tag.Comment = comment;
         if (track.Composer != "") tag.Composers = new[] { track.Composer };
         tag.Track = (uint)(track.TrackNumber > 0 ? track.TrackNumber : number); tag.TrackCount = (uint)(track.TrackCount > 0 ? track.TrackCount : count);
-        tag.Year = uint.TryParse(track.Year, out var year) && year > 0 ? year : (uint)session.Created.Year;
+        if (uint.TryParse(track.Year, out var year) && year > 0) tag.Year = year; // a blank year stays blank (the recording date isn't the album's year)
         if (profile.EmbedCover && track.ArtPath != "" && File.Exists(track.ArtPath)) tag.Pictures = new TagLib.IPicture[] { new TagLib.Picture(track.ArtPath) { Type = TagLib.PictureType.FrontCover, Description = "Cover" } };
         tagFile.Save();
     }

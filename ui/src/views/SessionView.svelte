@@ -243,6 +243,7 @@
     }
     commit(next, `${count} track${count === 1 ? '' : 's'} back to the captured names`)
   }
+  function editComment(track: Track, value: string) { const next = copy(), edited = next.find(candidate => candidate.id === track.id)!; edited.comment = value; edited.exported = false; commit(next, `Track ${tracks.indexOf(track) + 1}: comment changed`) }
   function setTrackNumber(track: Track, text: string) {
     const number = Math.max(0, Math.round(Number(text.trim()) || 0)), next = copy(), edited = next.find(candidate => candidate.id === track.id)!
     edited.trackNumber = number; edited.exported = false
@@ -619,13 +620,7 @@
       }
       commit(next, 'Album artists filled in from each album\u2019s main artist')
     }
-    // An album whose numbers are missing or repeat is numbered by position; one with a full, unique set keeps it
-    const renumber = listAlbums.filter(group => { const numbers = tracks.filter(track => group.ids.includes(track.id) && !track.skip).map(track => track.trackNumber || 0); return numbers.some(number => !number) || new Set(numbers).size !== numbers.length })
-    if (renumber.length) {
-      const next = copy()
-      for (const group of renumber) { let number = 0; for (const track of next) if (group.ids.includes(track.id) && !track.skip) track.trackNumber = ++number }
-      commit(next, 'Track numbers set by position in the album')
-    }
+    numberAlbums()
     clearTimeout(saveTimer); sendToShell({ type: 'saveSession', id: sessionId, tracks: $state.snapshot(tracks) })
     exportStatus = `Exporting ${chosen.length} track${chosen.length === 1 ? '' : 's'}…`
     // The export carries on in the background: the next session can be recorded meanwhile (SPEC.md › Workflow)
@@ -733,6 +728,27 @@
     }, 0)
   }
   const sizeText = (bytes: number) => bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`
+  // Where each track will be written and the number and comment it will carry, from the shell (same rules as the export)
+  let exportPaths = $state<Record<string, { path: string; number: number; count: number; comment: string }>>({})
+  let pathsTimer = 0
+  $effect(() => {
+    if (step !== 'export') return
+    tracks; outputProfileId; app.outputProfiles
+    clearTimeout(pathsTimer)
+    pathsTimer = window.setTimeout(() => { untrack(() => { clearTimeout(saveTimer); sendToShell({ type: 'saveSession', id: sessionId, tracks: $state.snapshot(tracks) }); request<typeof exportPaths>({ type: 'exportPaths', id: sessionId, profileId: outputProfileId }).then(found => exportPaths = found).catch(() => { }) }) }, 300)
+  })
+  const folderOf = (path: string | undefined) => path ? path.split(String.fromCharCode(92)).slice(0, -1).join(String.fromCharCode(92)) : ''
+  const fileOf = (path: string | undefined) => path ? path.split(String.fromCharCode(92)).pop() ?? '' : ''
+  // An album whose numbers are missing or repeat is numbered 1…n by position (and n tracks); one with a full, unique set keeps it.
+  // Done on export, and when the Export step opens so the report shows exactly what will be written
+  function numberAlbums() {
+    const renumber = listAlbums.filter(group => { const numbers = tracks.filter(track => group.ids.includes(track.id) && !track.skip).map(track => track.trackNumber || 0); return numbers.some(number => !number) || new Set(numbers).size !== numbers.length })
+    if (!renumber.length) return
+    const next = copy()
+    for (const group of renumber) { const members = next.filter(track => group.ids.includes(track.id) && !track.skip); members.forEach((track, index) => { track.trackNumber = index + 1; track.trackCount = members.length }) }
+    commit(next, 'Track numbers set by position in each album')
+  }
+  $effect(() => { if (step === 'export') untrack(numberAlbums) })
   function setAlbumProfile(group: ListAlbum, profileId: string) {
     if (profileId === '__manage') { sendToShell({ type: 'openSettings', tab: 'Output profiles' }); return }
     const next = copy(); for (const track of next) if (group.ids.includes(track.id)) { track.outputProfileId = profileId === '__session' ? '' : profileId; track.exported = false }
@@ -910,6 +926,7 @@
         {@const list = tracks.filter(track => group.ids.includes(track.id))}
         {@const own = commonOf(list, 'outputProfileId')}
         {@const allTicked = group.ids.every(id => selectedIds.includes(id))}
+        {@const folders = Array.from(new Set(list.filter(track => !track.skip).map(track => folderOf(exportPaths[track.id]?.path))))}
         <section class="report-card">
           <header class="report-head">
             <input type="checkbox" class="tick" checked={allTicked} indeterminate={!allTicked && group.ids.some(id => selectedIds.includes(id))} onchange={() => { const next = allTicked ? selectedIds.filter(id => !group.ids.includes(id)) : Array.from(new Set(selectedIds.concat(group.ids))); if (next.length) selectKeys(scope, tracks.filter(track => next.includes(track.id)).map(track => track.id), actions, 'track'); else clearSelection() }} title="Tick every track in this album" aria-label="Select this album's tracks" />
@@ -922,20 +939,23 @@
             <span class="plan-size">≈ {sizeText(estimateBytes(list))}</span>
             <button class="ghost small-button" disabled={!!app.status?.exporting} onclick={() => exportTracks(group.ids.filter(id => !tracks.find(track => track.id === id)?.skip))}>Export album</button>
           </header>
+          <p class="report-folder quiet" title="The folder inside the output profile's folder">📁 {folders.length ? folders.join('  ·  ') || '(the output folder itself)' : '…'}</p>
           <table class="tag-table report">
-            <thead><tr><th class="c-tick"></th><th class="c-no">No.</th><th>Artist</th><th>Title</th><th>Album artist</th><th>Album</th><th class="c-year">Year</th><th>Genre</th><th class="c-art">Cover</th><th class="c-status"></th></tr></thead>
+            <thead><tr><th class="c-tick"></th><th class="c-no" title="Track number / tracks in the album, as written">No.</th><th>Artist</th><th>Title</th><th>Album artist</th><th>Album</th><th class="c-year">Year</th><th>Genre</th><th>Comment</th><th class="c-art">Cover</th><th class="c-file">File</th><th class="c-status"></th></tr></thead>
             <tbody>
               {#each list as track, position (track.id)}
                 <tr class:skipped-row={track.skip}>
                   <td class="c-tick"><input type="checkbox" class="tick" checked={selectedIds.includes(track.id)} onchange={() => toggleOne(track.id)} aria-label="Select track" /></td>
-                  <td class="c-no"><input class="track-number" value={track.trackNumber || position + 1} onchange={(event) => setTrackNumber(track, (event.target as HTMLInputElement).value)} /></td>
+                  <td class="c-no"><span class="no-pair"><input class="track-number" value={exportPaths[track.id]?.number || track.trackNumber || position + 1} onchange={(event) => setTrackNumber(track, (event.target as HTMLInputElement).value)} title="Track number written to the file: its place in the album unless you type another" /><span class="quiet">/{exportPaths[track.id]?.count || list.length}</span></span></td>
                   <td><input value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td><input value={track.title} placeholder="Title" onchange={(event) => editField(track, 'title', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td><input value={track.albumArtist ?? ''} placeholder={`(${list.map(member => member.artist).filter(Boolean)[0] ?? 'artist'})`} title="Blank: the album's main artist is written" onchange={(event) => editField(track, 'albumArtist', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td><input value={track.album} placeholder="Album" onchange={(event) => editField(track, 'album', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td class="c-year"><input value={track.year ?? ''} placeholder="Year" onchange={(event) => editField(track, 'year', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td><input value={track.genre ?? ''} placeholder="Genre" onchange={(event) => editField(track, 'genre', (event.target as HTMLInputElement).value.trim())} /></td>
+                  <td><input value={track.comment ?? ''} placeholder={exportPaths[track.id]?.comment || 'Comment'} title={exportPaths[track.id]?.comment && !track.comment ? `Blank: the output profile's comment (“${exportPaths[track.id]?.comment}”) is written` : 'Comment'} onchange={(event) => editComment(track, (event.target as HTMLInputElement).value.trim())} /></td>
                   <td class="c-art">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="Cover" />{:else}<span class="quiet">none</span>{/if}</td>
+                  <td class="c-file quiet" title={exportPaths[track.id]?.path}>{fileOf(exportPaths[track.id]?.path)}</td>
                   <td class="c-status">{#if track.verifyError}<button class="failed no-hold" title={`${track.verifyError}. Export it again.`} onclick={() => exportTracks([track.id], true)}>Failed check</button>{:else if track.skip}<span class="quiet">left out</span>{:else if track.exported}<button class="exported no-hold" title={`${track.exportedPath}${track.verified ? ' · read back and checked' : ''}`} onclick={() => sendToShell({ type: 'openFolder', path: track.exportedPath })}>Exported</button>{/if}</td>
                 </tr>
               {/each}
@@ -1214,7 +1234,10 @@
   .tag-table.report td { padding: 1px 6px 1px 0; }
   .tag-table.report td input:not(.tick) { width: 100%; box-sizing: border-box; padding: 1px 6px; background: transparent; border-color: transparent; font-size: 12.5px; }
   .tag-table.report td input:not(.tick):hover { border-color: var(--line); } .tag-table.report td input:not(.tick):focus { background: var(--panel-solid); }
-  .report .c-tick { width: 24px; } .report .c-no { width: 40px; } .report .c-year { width: 54px; } .report .c-art { width: 44px; } .report .c-status { width: 92px; }
+  .report-folder { margin: -4px 0 4px 30px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .no-pair { display: flex; align-items: baseline; gap: 1px; } .no-pair input { width: 30px !important; text-align: right; }
+  .report .c-file { width: 22%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+  .report .c-tick { width: 24px; } .report .c-no { width: 58px; } .report .c-year { width: 54px; } .report .c-art { width: 44px; } .report .c-status { width: 92px; }
   .report .c-art img { width: 26px; height: 26px; object-fit: cover; border-radius: 3px; display: block; }
   .skipped-row { opacity: 0.5; }
   .export-plan { flex: none; max-height: 36%; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 6px 12px; }

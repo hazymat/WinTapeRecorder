@@ -213,6 +213,19 @@ public partial class MainWindow : Window
                         Reply(message, new { path = pastedArt, thumb = TagLookup.Thumbnail(pastedArt), error = "" });
                     }
                     break;
+                case "exportPaths":
+                    if (App.TryGetOpen(Text(message, "id"), out var pathSession))
+                    {
+                        var numbersForPaths = Exporter.AlbumNumbers(pathSession.session);
+                        var sessionProfile = App.Settings.OutputProfileOrActive(Text(message, "profileId"));
+                        Reply(message, pathSession.session.Tracks.ToDictionary(track => track.Id, track =>
+                        {
+                            var profile = track.OutputProfileId != "" && App.Settings.OutputProfiles.FirstOrDefault(candidate => candidate.Id == track.OutputProfileId) is { } own ? own : sessionProfile;
+                            var (number, count) = numbersForPaths.TryGetValue(track, out var found) ? found : (0, 0);
+                            return new { path = Exporter.RelativePath(pathSession.session, track, profile, numbersForPaths), number = track.TrackNumber > 0 ? track.TrackNumber : number, count = track.TrackCount > 0 ? track.TrackCount : count, comment = track.Comment != "" ? track.Comment : profile.Comment };
+                        }));
+                    }
+                    break;
                 case "thumbs": Reply(message, message.GetProperty("paths").EnumerateArray().Select(path => path.GetString() ?? "").Distinct().ToDictionary(path => path, path => File.Exists(path) ? TagLookup.Thumbnail(path) : "")); break;
                 case "openFolder": var folder = Text(message, "path"); if (File.Exists(folder)) Process.Start("explorer.exe", $"/select,\"{folder}\""); else if (Directory.Exists(folder)) Process.Start("explorer.exe", $"\"{folder}\""); break;
                 // ---- Auditioning ----
