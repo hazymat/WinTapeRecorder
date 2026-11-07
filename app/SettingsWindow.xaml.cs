@@ -324,12 +324,48 @@ public partial class SettingsWindow : Window
         filling = false;
     }
 
+    // Everything a bug report needs, as plain text (SPEC.md › Diagnostics). No user name or private folders: the profile folder
+    // becomes %USERPROFILE% and the user name <user>, wherever they appear (paths, logs, device names)
+    string DiagnosticsReport()
+    {
+        static string LogTail(string fileName, int lineCount)
+        {
+            var path = System.IO.Path.Combine(AppPaths.LogsFolder, fileName);
+            if (!System.IO.File.Exists(path)) return "(none)";
+            using var reader = new System.IO.StreamReader(new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete));
+            var lines = reader.ReadToEnd().Split('\n'); return string.Join("\n", lines.Skip(Math.Max(0, lines.Length - lineCount))).TrimEnd();
+        }
+        string Folder(string folder, string fallback) => folder.Trim() == "" ? fallback : folder.Trim();
+        var report = new System.Text.StringBuilder();
+        report.AppendLine($"WinTapeRecorder {App.Updater.CurrentVersion} · {Settings.General.UpdateChannel} channel{(AppPaths.IsPortable ? " · portable" : "")}");
+        report.AppendLine($"Windows: {System.Runtime.InteropServices.RuntimeInformation.OSDescription} · {System.Runtime.InteropServices.RuntimeInformation.OSArchitecture} · .NET {Environment.Version} · {Environment.ProcessorCount} cores");
+        var recorder = App.Recorder;
+        report.AppendLine($"Now: {(recorder.Recording ? (recorder.Paused ? "recording, paused" : recorder.WaitingForSound ? "recording, waiting for sound" : "recording") + $" · {recorder.FramesWritten} frames · {recorder.Dropouts.Count} dropouts · {recorder.GapsNow().Count} gaps" : "not recording")}{(App.Exporting ? " · exporting" : "")}");
+        report.AppendLine().AppendLine("--- Audio devices ---");
+        try { foreach (var device in AudioDevices.List()) report.AppendLine($"{device.Label} · {device.SampleRate} Hz · {device.Channels} ch"); } catch (Exception error) { report.AppendLine("Couldn't list them: " + error.Message); }
+        report.AppendLine().AppendLine("--- Recording profiles ---");
+        foreach (var profile in Settings.RecordingProfiles)
+            report.AppendLine($"{profile.Name}{(profile.Id == Settings.ActiveRecordingProfile.Id ? " (active)" : "")}: {(profile.DeviceName == "" ? "Windows default" : profile.DeviceName)} · {(profile.Loopback ? "what it plays (loopback)" : "input")} · {(profile.BitDepth == 32 ? "32-bit float" : profile.BitDepth + "-bit")} · names: {(profile.UseMediaInfo ? "media info" : "")}{(profile.UseWindowTitles ? " + window titles" : "")}{(profile.SplitOnGaps ? " · split on gaps" : "")} · latency {profile.LatencyMs} ms · stop after {profile.StopAfterSilenceMinutes} min silence · sessions in {Folder(profile.SessionsFolder, "default folder")}");
+        report.AppendLine().AppendLine("--- Output profiles ---");
+        foreach (var profile in Settings.OutputProfiles)
+            report.AppendLine($"{profile.Name}{(profile.Id == Settings.ActiveOutputProfile.Id ? " (active)" : "")}: {profile.Format}{(profile.Format is "mp3" or "m4a" ? $" {profile.BitrateKbps} kbps" : "")} · {profile.Template} · to {Folder(profile.Folder, "default folder")}");
+        report.AppendLine().AppendLine("--- crash.log (end) ---").AppendLine(LogTail("crash.log", 80));
+        var text = report.ToString();
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile); var user = Environment.UserName;
+        if (home.Length > 3) text = text.Replace(home, "%USERPROFILE%", StringComparison.OrdinalIgnoreCase);
+        if (user.Length > 1) text = System.Text.RegularExpressions.Regex.Replace(text, @"\b" + System.Text.RegularExpressions.Regex.Escape(user) + @"\b", "<user>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var machine = Environment.MachineName; if (machine.Length > 1) text = System.Text.RegularExpressions.Regex.Replace(text, @"\b" + System.Text.RegularExpressions.Regex.Escape(machine) + @"\b", "<pc>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return text;
+    }
+
     // ---- About: channel, check now, versions with notes, switch to any version (from WinSqueeze) ----
     void WireAboutTab()
     {
         versionText.Text = $"WinTapeRecorder {App.Updater.CurrentVersion}";
         dataFolderText.Text = (AppPaths.IsPortable ? "Portable mode. " : "") + $"Settings and logs: {AppPaths.DataFolder}";
         openLogsButton.Click += (sender, args) => Process.Start(new ProcessStartInfo(AppPaths.LogsFolder) { UseShellExecute = true });
+        copyDiagnosticsButton.Click += (sender, args) => { try { Clipboard.SetText(DiagnosticsReport()); copyDiagnosticsDone.Text = "Copied. Paste it into your report; check it first, as GitHub posts are public."; } catch (Exception error) { copyDiagnosticsDone.Text = "Couldn't copy: " + error.Message; } };
+        reportProblemLink.Click += (sender, args) => Process.Start(new ProcessStartInfo(AppUpdater.RepoUrl + "/issues/new") { UseShellExecute = true });
         channelCombo.SelectedItem = channelCombo.Items.Cast<ComboBoxItem>().First(item => (string)item.Tag == Settings.General.UpdateChannel);
         channelCombo.SelectionChanged += async (sender, args) =>
         {
