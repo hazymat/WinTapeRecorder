@@ -1103,7 +1103,7 @@
   .wave-mode button:first-child { border-radius: 6px 0 0 6px; } .wave-mode button:nth-child(2) { border-radius: 0 6px 6px 0; border-left: 0; }
   .wave-mode button.on { background: var(--accent-soft); color: var(--accent); }
   .wave-mode kbd { margin-left: 5px; }
-  .readout { display: flex; gap: 18px; font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
+  .readout { flex: none; white-space: nowrap; overflow: hidden; align-items: center; display: flex; gap: 18px; font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
   .grabbed { color: var(--accent); font-family: var(--font-ui); }
   .key { margin-left: auto; display: flex; align-items: center; gap: 6px; font-family: var(--font-ui); font-size: 11.5px; white-space: nowrap; }
   .swatch { display: inline-block; width: 3px; height: 12px; margin-left: 8px; border-radius: 1px; }
