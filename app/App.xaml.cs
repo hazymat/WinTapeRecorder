@@ -271,7 +271,13 @@ public partial class App : Application
     {
         if (Recorder.Session is not { } session || index < 0 || index >= session.Changes.Count) return;
         var change = session.Changes[index];
-        if (frame.HasValue) change.Frame = Math.Clamp(frame.Value, 0, Math.Max(0, Recorder.FramesWritten));
+        if (frame.HasValue)
+        {
+            var to = Math.Clamp(frame.Value, 0, Math.Max(0, Recorder.FramesWritten));
+            if (change.DetectedFrame < 0 && to != change.Frame) change.DetectedFrame = change.Frame; // the first move keeps where it was, for ↺
+            change.Frame = to;
+            if (to == change.DetectedFrame) change.DetectedFrame = -1; // back where it was placed
+        }
         if (artist != null) change.Artist = artist; if (title != null) change.Title = title; if (album != null) change.Album = album; if (year != null) change.Year = year;
         change.Manual = true; // edited by hand: the track builder keeps it even if it's short
         session.Changes.Sort((first, second) => first.Frame.CompareTo(second.Frame));
@@ -515,7 +521,7 @@ public partial class App : Application
         channels = Recorder.Session?.Channels ?? 0,
         cutoffText = SpectralCutoff.Describe(Recorder.CurrentCutoffHz),
         sampleRate = Recorder.Session?.SampleRate ?? 0,
-        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Year, change.Genre, change.Composer, change.Confirmed, change.Manual, change.Problem, change.Note }) ?? Enumerable.Empty<object>(),
+        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.DetectedFrame, change.Artist, change.Title, change.Album, change.Year, change.Genre, change.Composer, change.Confirmed, change.Manual, change.Problem, change.Note }) ?? Enumerable.Empty<object>(),
         dropoutList = Recorder.Dropouts.Select(dropout => new { dropout.Frame, dropout.Ms }),
         gapList = Recorder.GapsNow().Select(gap => new { gap.Frame, gap.Ms }),
         otherSounds = Recorder.OtherSoundsSoFar,

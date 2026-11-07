@@ -8,6 +8,7 @@ namespace WinTapeRecorder.Sessions;
 public class NameChange
 {
     public long Frame { get; set; }
+    public long DetectedFrame { get; set; } = -1; // where it was placed by itself, once it has been moved by hand (for ↺)
     public string Artist { get; set; } = "";
     public string Title { get; set; } = "";
     public string Album { get; set; } = "";
