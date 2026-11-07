@@ -238,7 +238,7 @@
   function setAlbumField(group: ListAlbum, field: 'artist' | 'album' | 'year' | 'genre', value: string) {
     const next = copy()
     for (const track of next) if (group.ids.includes(track.id)) {
-      if (field === 'artist') { if (track.albumArtist) track.albumArtist = value; else track.artist = value }
+      if (field === 'artist') { track.artist = value; track.albumArtist = value } // the album's artist on every track, featured credits included
       else (track as any)[field] = value
       track.exported = false
     }
@@ -264,6 +264,27 @@
   function liftMove(event: PointerEvent) {
     const target = (document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null)?.closest?.('[data-drop]') as HTMLElement | null
     dropOn = target?.dataset.drop ?? ''
+  }
+  // A whole album picked up by its header (press and hold on the header's label or its empty space)
+  let liftedAlbum = $state('')
+  function liftAlbumDown(group: ListAlbum, event: PointerEvent) {
+    if (event.button !== 0 || (event.target as HTMLElement)?.closest?.('input, button, select')) return
+    liftStart = { x: event.clientX, y: event.clientY }; clearTimeout(liftTimer)
+    const cancelOnMove = (move: PointerEvent) => { if (Math.abs(move.clientX - liftStart.x) + Math.abs(move.clientY - liftStart.y) > 5) { clearTimeout(liftTimer); window.removeEventListener('pointermove', cancelOnMove) } }
+    window.addEventListener('pointermove', cancelOnMove)
+    liftTimer = window.setTimeout(() => { window.removeEventListener('pointermove', cancelOnMove); liftedAlbum = group.first; window.addEventListener('pointermove', liftMove); window.addEventListener('pointerup', liftAlbumUp, { once: true }) }, 350)
+    window.addEventListener('pointerup', () => { clearTimeout(liftTimer); window.removeEventListener('pointermove', cancelOnMove) }, { once: true })
+  }
+  function liftAlbumUp() {
+    window.removeEventListener('pointermove', liftMove)
+    const from = listAlbums.find(group => group.first === liftedAlbum), target = dropOn; liftedAlbum = ''; dropOn = ''
+    const into = listAlbums.find(candidate => 'album:' + candidate.first === target)
+    if (!from || !into || into === from) return
+    // Merged straight in, taking that album's names; Undo puts it back
+    const sample = tracks.find(track => track.id === into.first)!, next = copy()
+    for (const edited of next) if (from.ids.includes(edited.id)) { if (!sample.album) edited.artist = sample.artist; edited.albumArtist = sample.albumArtist; edited.album = sample.album; edited.year = sample.year; edited.genre = sample.genre || edited.genre; edited.exported = false }
+    commit(next, `${from.ids.length} track${from.ids.length === 1 ? '' : 's'} merged into ${albumName(into)}`)
+    openAlbumKey = into.first
   }
   function liftUp() {
     window.removeEventListener('pointermove', liftMove)
@@ -807,19 +828,18 @@
         {@const confirmed = group.ids.filter(id => { const member = tracks.find(candidate => candidate.id === id); return member?.startChecked && member?.endChecked }).length}
         {#if lifted && groupIndex > 0 && !isOpen && listAlbums[groupIndex - 1] === openGroup}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
         {#if isOpen}
-          <div class="album-row open" role="group" aria-label={albumName(group)} data-drop={'album:' + group.first} class:over={dropOn === 'album:' + group.first}>
-            <span class="album-label">Album {groupIndex + 1}</span>
-            <input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks" onchange={(event) => setAlbumField(group, 'artist', (event.target as HTMLInputElement).value.trim())} />
-            <input value={group.album} placeholder="Album" title="This album's name, for all its tracks" onchange={(event) => setAlbumField(group, 'album', (event.target as HTMLInputElement).value.trim())} />
-            <input class="album-year" value={group.year} placeholder="Year" title="This album's year, for all its tracks" onchange={(event) => setAlbumField(group, 'year', (event.target as HTMLInputElement).value.trim())} />
-            <input value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks" onchange={(event) => setAlbumField(group, 'genre', (event.target as HTMLInputElement).value.trim())} />
-            <span class="album-tail"><span class="quiet album-count">{group.ids.length} track{group.ids.length === 1 ? '' : 's'} · {confirmed} confirmed</span>{#if groupIndex > 0}<button class="ghost small-button" onclick={() => joining = { trackId: group.first, target: listAlbums[groupIndex - 1], mergeIds: group.ids }} title={`Make these ${group.ids.length} track${group.ids.length === 1 ? '' : 's'} part of ${albumName(listAlbums[groupIndex - 1])}`}>Merge with album above</button>{/if}</span>
+          <div class="album-row open row-grid" class:lifted={liftedAlbum === group.first} role="group" aria-label={albumName(group)} data-drop={'album:' + group.first} class:over={dropOn === 'album:' + group.first} onpointerdown={(event) => liftAlbumDown(group, event)} title="Press and hold here to pick up the whole album, then drop it on the album above or below to merge them">
+            <span class="album-label">⋮⋮ Album {groupIndex + 1}<span class="quiet album-count">{group.ids.length} track{group.ids.length === 1 ? '' : 's'} · {confirmed} confirmed</span></span>
+            <input class="cell-artist" value={group.artist} placeholder="Artist" title="Artist and album artist for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'artist', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'artist', value) } }} />
+            <input class="cell-album" value={group.album} placeholder="Album" title="This album's name, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'album', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'album', value) } }} />
+            <input class="cell-year album-year" value={group.year} placeholder="Year" title="This album's year, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'year', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'year', value) } }} />
+            <input class="cell-genre" value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'genre', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'genre', value) } }} />
           </div>
         {:else}
-          <button class="album-tile" data-drop={'album:' + group.first} class:over={dropOn === 'album:' + group.first} class:target={!!lifted && (listAlbums[groupIndex + 1] === openGroup || listAlbums[groupIndex - 1] === openGroup)} onclick={() => openTile(group)} title="Open this album">
+          <button class="album-tile" data-drop={'album:' + group.first} class:over={dropOn === 'album:' + group.first} class:target={(!!lifted || !!liftedAlbum) && (listAlbums[groupIndex + 1] === openGroup || listAlbums[groupIndex - 1] === openGroup)} onclick={() => openTile(group)} title="Open this album">
             <span class="tile-name"><strong>{group.album || 'No album'}</strong><span class="quiet">{' — '}{group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}</span></span>
             <span class="tile-facts">{group.ids.length} track{group.ids.length === 1 ? '' : 's'}<span class:all={confirmed === group.ids.length}>{' · '}{confirmed === group.ids.length ? '✓ all confirmed' : `${confirmed} confirmed`}</span></span>
-            {#if lifted && (listAlbums[groupIndex + 1] === openGroup || listAlbums[groupIndex - 1] === openGroup)}<span class="tile-drop">Drop to join</span>{/if}
+            {#if (lifted || liftedAlbum) && (listAlbums[groupIndex + 1] === openGroup || listAlbums[groupIndex - 1] === openGroup)}<span class="tile-drop">{liftedAlbum ? 'Drop to merge' : 'Drop to join'}</span>{/if}
             <span class="chevron">›</span>
           </button>
         {/if}
@@ -1009,7 +1029,13 @@
   .tile-facts .all { color: #2e9e57; }
   .tile-drop { color: var(--accent); font-weight: 600; font-size: 12px; }
   .chevron { color: var(--fg-quiet); font-size: 16px; }
-  .album-row.open { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+  .album-row.open { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); cursor: grab; }
+  /* The open album's header uses the track rows' columns, so its fields sit right above the tracks' own */
+  .album-row.row-grid { display: grid; grid-template-columns: 52px 160px 88px 82px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; padding: 3px 8px; }
+  .row-grid .album-label .album-count { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .row-grid .album-label { grid-column: 1 / 6; display: flex; gap: 10px; align-items: baseline; white-space: nowrap; overflow: hidden; }
+  .row-grid .cell-artist { grid-column: 6; } .row-grid .cell-album { grid-column: 7; } .row-grid .cell-year { grid-column: 8; } .row-grid .cell-genre { grid-column: 10; }
+  .album-row.lifted { opacity: 0.85; box-shadow: 0 8px 22px var(--shadow); cursor: grabbing; }
   .split-zone { margin: 6px 0; padding: 10px; border: 2px dashed var(--line); border-radius: 8px; text-align: center; font-size: 12.5px; color: var(--fg-quiet); }
   .split-zone.over { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .row.lifting { animation: wiggle 350ms ease-in-out; }
