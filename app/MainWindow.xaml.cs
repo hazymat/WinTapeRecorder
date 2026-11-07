@@ -438,12 +438,18 @@ public partial class MainWindow : Window
     object PeaksFor(string sessionId, double start, double end, int columns)
     {
         columns = Math.Clamp(columns, 1, 8000);
-        Peaks? peaks; SessionAudio? audio = null; long totalFrames;
-        if (App.TryGetOpen(sessionId, out var open)) { peaks = open.peaks; audio = open.audio; totalFrames = open.audio.TotalFrames; }
-        else if (App.Recorder.Session?.Id == sessionId && App.Recorder.Peaks != null) { peaks = App.Recorder.Peaks; totalFrames = peaks.BlockCount * Peaks.BlockFrames; }
-        else return new { mode = "none" };
+        Peaks? peaks; SessionAudio? audio = null; long totalFrames; SessionAudio? live = null;
         start = Math.Max(0, start); end = Math.Max(start + 1, end);
         var framesPerColumn = (end - start) / columns;
+        if (App.TryGetOpen(sessionId, out var open)) { peaks = open.peaks; audio = open.audio; totalFrames = open.audio.TotalFrames; }
+        else if (App.Recorder.Session is { } recording && recording.Id == sessionId && App.Recorder.Peaks != null)
+        {
+            peaks = App.Recorder.Peaks; totalFrames = peaks.BlockCount * Peaks.BlockFrames;
+            // Zoomed in closer than the live peaks go: read the WAV being written, down to single samples, as Albums & cuts does
+            if (framesPerColumn < Peaks.BlockFrames) { try { live = SessionAudio.Open(recording.AudioPath); audio = live; totalFrames = live.TotalFrames; } catch { live = null; } }
+        }
+        else return new { mode = "none" };
+        using var reading = live;
         if (framesPerColumn >= Peaks.BlockFrames || audio == null)
         {
             var columnsData = peaks.Columns(start / Peaks.BlockFrames, framesPerColumn / Peaks.BlockFrames, columns);

@@ -101,8 +101,8 @@
     drawing = true
     try {
       const rate = status.sampleRate, recorded = app.levels.seconds * rate, { start, span } = liveRange()
-      const data = await request<{ mode: string; channels: number[][] }>({ type: 'peaks', id: status.sessionId, start: Math.max(0, start), end: Math.max(start + span, 1), columns: Math.round(liveWidth) })
-      if (!liveCanvas || data.mode !== 'peaks') return
+      const data = await request<{ mode: string; start?: number; channels: number[][] }>({ type: 'peaks', id: status.sessionId, start: Math.max(0, start), end: Math.max(start + span, 1), columns: Math.round(liveWidth) })
+      if (!liveCanvas || (data.mode !== 'peaks' && data.mode !== 'samples')) return
       const now = liveRange() // the view may have moved while the peaks were on their way
       const ratio = devicePixelRatio, height = liveHeight, context = liveCanvas.getContext('2d')!
       if (liveCanvas.width !== Math.round(liveWidth * ratio)) { liveCanvas.width = Math.round(liveWidth * ratio); liveCanvas.height = height * ratio }
@@ -112,7 +112,16 @@
       // The audio before the start (a view starting before 0) is simply blank
       const dataStart = Math.max(0, start), lanes = data.channels.length, laneHeight = height / lanes, columns = data.channels[0]?.length / 2 || 0, framesPerColumn = (start + span - dataStart) / columns
       context.fillStyle = colour('--wave', '#5ccfff')
-      data.channels.forEach((values, lane) => { const middle = laneHeight * (lane + 0.5); for (let column = 0; column < columns; column++) { const at = dataStart + column * framesPerColumn; if (at > recorded) break; const x = toX(at), low = Math.max(-1, values[column * 2] * liveScale), high = Math.min(1, values[column * 2 + 1] * liveScale); context.fillRect(x, middle - high * (laneHeight / 2 - 1), Math.max(1, liveWidth * framesPerColumn / now.span), Math.max(1, (high - low) * (laneHeight / 2 - 1))) } })
+      // Zoomed right in: the samples themselves as a line, as in Albums & cuts
+      if (data.mode === 'samples') data.channels.forEach((samples, lane) => {
+        const middle = laneHeight * (lane + 0.5), half = laneHeight / 2 - 1, first = data.start ?? dataStart
+        context.strokeStyle = colour('--line', 'rgba(255,255,255,0.15)'); context.lineWidth = 1; context.beginPath(); context.moveTo(0, middle); context.lineTo(liveWidth, middle); context.stroke()
+        context.strokeStyle = colour('--wave', '#5ccfff'); context.lineWidth = 1.4; context.beginPath()
+        samples.forEach((sample, index) => { const x = toX(first + index), y = middle - Math.max(-1, Math.min(1, sample * liveScale)) * half; if (index === 0) context.moveTo(x, y); else context.lineTo(x, y) })
+        context.stroke()
+        if (now.span / liveWidth < 0.34) { context.fillStyle = colour('--wave', '#5ccfff'); samples.forEach((sample, index) => { const x = toX(first + index), y = middle - Math.max(-1, Math.min(1, sample * liveScale)) * half; context.fillRect(x - 1.5, y - 1.5, 3, 3) }) }
+      })
+      else data.channels.forEach((values, lane) => { const middle = laneHeight * (lane + 0.5); for (let column = 0; column < columns; column++) { const at = dataStart + column * framesPerColumn; if (at > recorded) break; const x = toX(at), low = Math.max(-1, values[column * 2] * liveScale), high = Math.min(1, values[column * 2 + 1] * liveScale); context.fillRect(x, middle - high * (laneHeight / 2 - 1), Math.max(1, liveWidth * framesPerColumn / now.span), Math.max(1, (high - low) * (laneHeight / 2 - 1))) } })
       // What's still to come, and where "now" is
       context.fillStyle = colour('--panel-strong', 'rgba(255,255,255,0.1)'); const nowX = toX(recorded); if (nowX < liveWidth) context.fillRect(Math.max(0, nowX), 0, liveWidth - Math.max(0, nowX), height)
       drawStrip(now.start, now.span, recorded, rate, colour)
@@ -202,7 +211,7 @@
     const rate = app.status.sampleRate, factor = Math.exp(event.deltaY * 0.0015)
     const anchorX = selected >= 0 ? markerX(selected) : event.offsetX
     const anchorFrame = viewStart + anchorX * viewSpan / liveWidth
-    viewSpan = Math.max(0.2 * rate, Math.min(Math.max(overviewSpan, 60 * rate) * 1.5, viewSpan * factor))
+    viewSpan = Math.max(liveWidth / 24, Math.min(Math.max(overviewSpan, 60 * rate) * 1.5, viewSpan * factor))
     viewStart = anchorFrame - anchorX * viewSpan / liveWidth
     drawLive()
   }
