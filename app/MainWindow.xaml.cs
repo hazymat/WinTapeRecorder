@@ -185,7 +185,7 @@ public partial class MainWindow : Window
                         string scheme = ""; int? toasts = null;
                         try { using var schemes = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"AppEvents\Schemes"); scheme = schemes?.GetValue("") as string ?? ""; } catch { }
                         try { using var notifications = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings"); if (notifications?.GetValue("NOC_GLOBAL_SETTING_TOASTS_ENABLED") is int value) toasts = value; } catch { }
-                        Reply(message, new { soundsOff = scheme == ".None", notificationsOff = toasts == 0 });
+                        Reply(message, new { soundsOff = scheme == ".None", notificationsOff = toasts == 0 || QuietHours.DoNotDisturbOn() == true });
                     }
                     break;
                 case "openQuietSettings":

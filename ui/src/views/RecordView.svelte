@@ -136,26 +136,26 @@
     } catch { } finally { drawing = false }
   }
   $effect(() => { if (recording) { liveTimer = window.setInterval(() => { if (selected >= 0 || performance.now() - lastLiveDraw > 240) { lastLiveDraw = performance.now(); drawLive() } }, 80); return () => clearInterval(liveTimer) } else { following = true; selected = -1; overviewSpan = 0; dragging = null } })
-  // A marker's flag (the top of the wave) drags the marker itself; anywhere else drags the view (SPEC.md › Recording › Live editing)
+  // A marker's line or flag drags the marker itself; anywhere else drags the view, or the audio under the selected marker (SPEC.md › Recording › Live editing)
   const flagZone = 16
-  let flagDrag: null | { index: number; frame: number } = null
+  let flagDrag: null | { index: number; frame: number; startX: number; moved: boolean; onFlag: boolean } = null
   let lastFlagClick: null | { index: number; at: number } = null
   function onLiveDown(event: PointerEvent) {
     if (event.button !== 0 || !app.status) return
     const onMarker = markerAt(event.offsetX)
-    if (event.offsetY < flagZone && onMarker >= 0) { pause(); flagDrag = { index: onMarker, frame: app.status.changes[onMarker].frame }; liveCanvas?.setPointerCapture(event.pointerId); return }
+    if (onMarker >= 0) { pause(); flagDrag = { index: onMarker, frame: app.status.changes[onMarker].frame, startX: event.offsetX, moved: false, onFlag: event.offsetY < flagZone }; liveCanvas?.setPointerCapture(event.pointerId); return }
     pause()
     dragging = { startX: event.offsetX, startViewStart: viewStart, pinX: selected >= 0 ? markerX(selected) : 0, moved: false, onMarker }
     liveCanvas?.setPointerCapture(event.pointerId)
   }
   function onLiveMove(event: PointerEvent) {
-    if (flagDrag && app.status) { flagDrag.frame = Math.max(0, Math.min(app.levels.seconds * app.status.sampleRate, viewStart + event.offsetX * viewSpan / liveWidth)); if (liveCanvas) liveCanvas.style.cursor = 'ew-resize'; drawLive(); return }
+    if (flagDrag && app.status) { if (!flagDrag.moved && Math.abs(event.offsetX - flagDrag.startX) < 3) return; flagDrag.moved = true; flagDrag.frame = Math.max(0, Math.min(app.levels.seconds * app.status.sampleRate, viewStart + event.offsetX * viewSpan / liveWidth)); if (liveCanvas) liveCanvas.style.cursor = 'ew-resize'; drawLive(); return }
     if (!dragging) {
       const index = markerAt(event.offsetX)
       if (index !== hovered) { hovered = index; drawLive() }
-      if (liveCanvas) liveCanvas.style.cursor = index >= 0 ? (event.offsetY < flagZone ? 'ew-resize' : 'pointer') : 'grab'
-      if (index >= 0 && event.offsetY < flagZone) { liveCanvas?.setAttribute('title', `Drag the flag to move marker ${index + 1}; double-click it to ${app.status?.changes[index]?.confirmed ? 'undo the confirmation' : 'confirm this cut'}`); return }
-      liveCanvas?.setAttribute('title', index >= 0 ? (index === selected ? `Marker ${index + 1} is selected: drag the audio under it, click it to let go` : `Click to select marker ${index + 1}, then drag the audio under it`) : following ? 'Drag to stop following and look around; the wheel zooms, Ctrl+wheel sets the wave height' : 'Drag to pan, wheel to zoom, Ctrl+wheel for height')
+      if (liveCanvas) liveCanvas.style.cursor = index >= 0 ? 'ew-resize' : 'grab'
+      if (index >= 0) { liveCanvas?.setAttribute('title', `Drag to move marker ${index + 1}; click to zoom in on it${event.offsetY < flagZone ? `; double-click the flag to ${app.status?.changes[index]?.confirmed ? 'undo the confirmation' : 'confirm this cut'}` : ''}`); return }
+      liveCanvas?.setAttribute('title', selected >= 0 ? `Marker ${selected + 1} is selected: drag the audio under it, or drag the marker itself; Esc lets go` : following ? 'Drag to stop following and look around; the wheel zooms, Ctrl+wheel sets the wave height' : 'Drag to pan, wheel to zoom, Ctrl+wheel for height')
       return
     }
     if (!app.status) return
@@ -168,8 +168,11 @@
   function onLiveUp() {
     if (flagDrag) {
       const done = flagDrag; flagDrag = null
-      const moved = Math.abs(done.frame - (app.status?.changes[done.index]?.frame ?? done.frame)) > 1
-      if (moved) { sendToShell({ type: 'editChange', index: done.index, frame: Math.round(done.frame) }); lastFlagClick = null }
+      const moved = done.moved && Math.abs(done.frame - (app.status?.changes[done.index]?.frame ?? done.frame)) > 1
+      if (moved) { sendToShell({ type: 'editChange', index: done.index, frame: Math.round(done.frame) }); lastFlagClick = null; selected = done.index }
+      else if (done.moved) { }
+      // A click on the line (below the flag) zooms in on that marker and selects it; again lets go
+      else if (!done.onFlag) { if (selected === done.index) deselect(); else selectMarker(done.index, true); lastFlagClick = null }
       // Two clicks on the same flag within 400 ms (without moving it) confirm the cut, or undo that
       else if (lastFlagClick && lastFlagClick.index === done.index && performance.now() - lastFlagClick.at < 400) { sendToShell({ type: 'editChanges', indexes: [done.index], confirmed: !app.status?.changes[done.index]?.confirmed }); lastFlagClick = null }
       else lastFlagClick = { index: done.index, at: performance.now() }
@@ -370,7 +373,7 @@
     <!-- Is the PC quiet? Recording what it plays records every ding too (SPEC.md › Recording › Other sounds) -->
     <div class="quiet-check">
       <span class="quiet-item" class:ok={quiet.soundsOff}>{quiet.soundsOff ? '✓ Windows sounds are off' : '⚠ Windows sounds are on'}{#if !quiet.soundsOff}<button class="ghost small-button" onclick={() => sendToShell({ type: 'openQuietSettings', which: 'sounds' })} title="Opens Sound settings: set Sound Scheme to No Sounds">Turn off…</button>{/if}</span>
-      <span class="quiet-item" class:ok={quiet.notificationsOff}>{quiet.notificationsOff ? '✓ Notification banners are off' : '⚠ Notifications can pop up and ding'}{#if !quiet.notificationsOff}<button class="ghost small-button" onclick={() => sendToShell({ type: 'openQuietSettings', which: 'notifications' })} title="Opens Notifications settings: switch on Do not disturb at the top">Do not disturb…</button>{/if}</span>
+      <span class="quiet-item" class:ok={quiet.notificationsOff}>{quiet.notificationsOff ? '✓ Do not disturb is on' : '⚠ Notifications can pop up and ding'}{#if !quiet.notificationsOff}<button class="ghost small-button" onclick={() => sendToShell({ type: 'openQuietSettings', which: 'notifications' })} title="Opens Notifications settings: switch on Do not disturb at the top">Do not disturb…</button>{/if}</span>
       <span class="quiet small">Other apps' sounds are still flagged in Issues while recording.</span>
     </div>
   {/if}
