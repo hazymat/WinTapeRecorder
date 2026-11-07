@@ -238,10 +238,11 @@ public partial class App : Application
         if (change == null || change.Problem != "") return;
         change.Problem = kind; session.Save();
     }
-    public void SetProblem(int index, string problem)
+    public void SetProblem(int index, string problem, string? note = null)
     {
         if (Recorder.Session is not { } session || index < 0 || index >= session.Changes.Count) return;
-        session.Changes[index].Problem = problem; session.Save(); StatusChanged?.Invoke();
+        session.Changes[index].Problem = problem; if (note != null) session.Changes[index].Note = note;
+        session.Save(); StatusChanged?.Invoke();
     }
 
     // Several markers at once (SPEC.md › Recording › Live editing): an album's artist, name or year, or a track joining an album
@@ -488,7 +489,7 @@ public partial class App : Application
         channels = Recorder.Session?.Channels ?? 0,
         cutoffText = SpectralCutoff.Describe(Recorder.CurrentCutoffHz),
         sampleRate = Recorder.Session?.SampleRate ?? 0,
-        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Year, change.Manual, change.Problem }) ?? Enumerable.Empty<object>(),
+        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Year, change.Manual, change.Problem, change.Note }) ?? Enumerable.Empty<object>(),
         dropoutList = Recorder.Dropouts.Select(dropout => new { dropout.Frame, dropout.Ms }),
         otherSounds = Recorder.OtherSoundsSoFar,
         clips = Recorder.Clips.Select(clip => new { clip.Frame, clip.Samples }),

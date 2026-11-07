@@ -100,7 +100,12 @@ public static class TrackBuilder
                 "marker" => ("Where you marked the next track", false),
                 _ => ("No silence here: a hard cut where the next track starts (crossfade or gapless?)", false),
             };
-            track.SkipReason = name?.Problem ?? "";
+            // A problem noted while recording (SPEC.md › Recording › Problems): "note" is only a note; "skip" leaves the take out;
+            // the others (dropout, clipping, retake) leave it out when the same track was recorded again later
+            track.Note = name?.Note ?? "";
+            var problem = name?.Problem ?? "";
+            if (problem == "skip") { track.Skip = true; track.SkipReason = "Left out while recording"; }
+            else track.SkipReason = problem == "note" ? "" : problem;
             tracks.Add(track);
         }
         // Ends meet starts (SPEC.md › Track detection): a fade's quiet tail sits under the gate, so a trimmed end lands early; instead each
@@ -113,11 +118,13 @@ public static class TrackBuilder
                 track.End = next.Start; track.EndNote = "Right up to where the next track starts"; track.EndSure = next.StartSure;
             }
         foreach (var track in tracks) { track.DetectedStart = track.Start; track.DetectedEnd = track.End; }
+        // A note made on a marker that didn't become a track's own start (two markers at one spot) still reaches the track it falls in
+        foreach (var track in tracks) if (track.Note == "") track.Note = session.Changes.Where(change => change.Note != "" && change.Frame >= track.Start - rate / 2 && change.Frame < track.End).Select(change => change.Note).FirstOrDefault() ?? "";
         // Retakes (SPEC.md › Recording › Issues): a take with a problem is left out when the same title and artist were recorded again later
         for (var index = 0; index < tracks.Count; index++)
         {
             var track = tracks[index];
-            if (track.SkipReason == "" || track.Title == "") continue;
+            if (track.SkipReason == "" || track.Title == "" || track.Skip) continue;
             var again = tracks.Skip(index + 1).Any(later => string.Equals(later.Title, track.Title, StringComparison.OrdinalIgnoreCase) && string.Equals(later.Artist, track.Artist, StringComparison.OrdinalIgnoreCase));
             track.Skip = again;
             track.SkipReason = again ? track.SkipReason switch { "dropout" => "Dropout during this take; recorded again later", "clipping" => "Clipping during this take; recorded again later", _ => "Marked for a retake; recorded again later" }

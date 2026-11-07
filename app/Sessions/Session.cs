@@ -17,6 +17,7 @@ public class NameChange
     public string Year { get; set; } = ""; // the album's year, looked up while recording
     public string Source { get; set; } = "";
     public bool Manual { get; set; } // M pressed while recording
+    public string Note { get; set; } = ""; // the user's own note about this take, shown in the app only
     public string Problem { get; set; } = ""; // "dropout", "clipping" or "retake": this take is damaged or unwanted; a later take with the same name replaces it
 }
 
@@ -99,6 +100,7 @@ public class Track
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
     public long Start { get; set; }
     public long End { get; set; }
+    public string Note { get; set; } = ""; // a note from recording ("a notification sound here"), shown in the app only
     public long DetectedStart { get; set; } = -1; // where detection put the edges, for Revert (SPEC.md › Editing)
     public long DetectedEnd { get; set; } = -1;
     public string Artist { get; set; } = "";

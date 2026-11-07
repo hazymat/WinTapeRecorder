@@ -53,7 +53,7 @@
     return { start: Math.max(0, recorded - span * 0.97), span }
   }
   // Where a marker is: the selected one being dragged follows the audio under its fixed screen position
-  function markerFrame(index: number) { const change = app.status?.changes[index]; if (!change) return 0; if (dragging && dragging.moved && index === selected) { const { span } = liveRange(); return Math.max(0, Math.min(app.levels.seconds * (app.status?.sampleRate ?? 48000), viewStart + dragging.pinX * span / liveWidth)) } return change.frame }
+  function markerFrame(index: number) { const change = app.status?.changes[index]; if (!change) return 0; if (flagDrag && flagDrag.index === index) return flagDrag.frame; if (dragging && dragging.moved && index === selected) { const { span } = liveRange(); return Math.max(0, Math.min(app.levels.seconds * (app.status?.sampleRate ?? 48000), viewStart + dragging.pinX * span / liveWidth)) } return change.frame }
   function markerX(index: number) { const { start, span } = liveRange(); return (markerFrame(index) - start) / span * liveWidth }
   function markerAt(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((_, index) => { const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
   function pause() { if (!following || !app.status) return; const { start, span } = liveRange(); viewStart = start; viewSpan = span; following = false }
@@ -118,7 +118,8 @@
         const isSelected = index === selected, isHovered = index === hovered && !isSelected
         context.fillStyle = isSelected ? colour('--accent', '#5ccfff') : colour('--warn', '#ffb74d')
         if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.2 : 0.12; context.fillRect(x - 8, 0, 16, height); context.globalAlpha = 1 }
-        context.fillRect(x - 1, 0, isSelected || isHovered ? 3 : 2, height); context.fillText(`${index + 1} ${change.title || ''}`.trim(), x + 5, 3)
+        context.fillRect(x - 1, 0, isSelected || isHovered ? 3 : 2, height); context.fillRect(x, 0, 11, 13) // the flag: drag it to move the marker
+        context.fillText(`${index + 1} ${change.title || ''}`.trim(), x + 15, 3)
       })
       if (liveScale > 1.05) { context.fillStyle = colour('--fg-quiet', '#888'); context.textBaseline = 'top'; context.fillText(`Height ×${liveScale < 10 ? liveScale.toFixed(1) : Math.round(liveScale)} (Ctrl+wheel)`, liveWidth - 120, 3) }
       // The time scale
@@ -128,18 +129,24 @@
     } catch { } finally { drawing = false }
   }
   $effect(() => { if (recording) { liveTimer = window.setInterval(drawLive, 250); return () => clearInterval(liveTimer) } else { following = true; selected = -1; overviewSpan = 0; dragging = null } })
+  // A marker's flag (the top of the wave) drags the marker itself; anywhere else drags the view (SPEC.md › Recording › Live editing)
+  const flagZone = 16
+  let flagDrag: null | { index: number; frame: number } = null
   function onLiveDown(event: PointerEvent) {
     if (event.button !== 0 || !app.status) return
     const onMarker = markerAt(event.offsetX)
+    if (event.offsetY < flagZone && onMarker >= 0) { pause(); flagDrag = { index: onMarker, frame: app.status.changes[onMarker].frame }; liveCanvas?.setPointerCapture(event.pointerId); return }
     pause()
     dragging = { startX: event.offsetX, startViewStart: viewStart, pinX: selected >= 0 ? markerX(selected) : 0, moved: false, onMarker }
     liveCanvas?.setPointerCapture(event.pointerId)
   }
   function onLiveMove(event: PointerEvent) {
+    if (flagDrag && app.status) { flagDrag.frame = Math.max(0, Math.min(app.levels.seconds * app.status.sampleRate, viewStart + event.offsetX * viewSpan / liveWidth)); if (liveCanvas) liveCanvas.style.cursor = 'ew-resize'; drawLive(); return }
     if (!dragging) {
       const index = markerAt(event.offsetX)
       if (index !== hovered) { hovered = index; drawLive() }
-      if (liveCanvas) liveCanvas.style.cursor = index >= 0 ? 'pointer' : 'grab'
+      if (liveCanvas) liveCanvas.style.cursor = index >= 0 ? (event.offsetY < flagZone ? 'ew-resize' : 'pointer') : 'grab'
+      if (index >= 0 && event.offsetY < flagZone) { liveCanvas?.setAttribute('title', `Drag the flag to move marker ${index + 1}`); return }
       liveCanvas?.setAttribute('title', index >= 0 ? (index === selected ? `Marker ${index + 1} is selected: drag the audio under it, click it to let go` : `Click to select marker ${index + 1}, then drag the audio under it`) : following ? 'Drag to stop following and look around; the wheel zooms, Ctrl+wheel sets the wave height' : 'Drag to pan, wheel to zoom, Ctrl+wheel for height')
       return
     }
@@ -151,6 +158,7 @@
     drawLive()
   }
   function onLiveUp() {
+    if (flagDrag) { const done = flagDrag; flagDrag = null; sendToShell({ type: 'editChange', index: done.index, frame: Math.round(done.frame) }); drawLive(); return }
     const drag = dragging; if (!drag) return
     if (drag.moved && selected >= 0) {
       const frame = Math.round(markerFrame(selected)); const index = selected
@@ -169,6 +177,8 @@
     event.preventDefault()
     if (event.ctrlKey) { liveScale = Math.max(1, Math.min(10000, liveScale * Math.pow(1.0025, -event.deltaY))); drawLive(); return }
     pause()
+    // The side wheel (or Shift+wheel) pans, like dragging
+    if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) { const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY; viewStart += delta * viewSpan / liveWidth; drawLive(); return }
     const rate = app.status.sampleRate, factor = Math.exp(event.deltaY * 0.0015)
     const anchorX = selected >= 0 ? markerX(selected) : event.offsetX
     const anchorFrame = viewStart + anchorX * viewSpan / liveWidth
@@ -226,6 +236,14 @@
   const firstEstimate = $derived(estimates.find(estimate => app.outputProfiles.find(profile => profile.name === estimate.name)?.id === app.activeOutput) ?? estimates[0])
   const current = $derived(app.status?.current)
   let startingOver = $state(false)
+  // Problem with a track (SPEC.md › Recording › Problems)
+  let problemFor = $state(-1), problemNote = $state('')
+  const problemLabel = (problem: string) => problem === 'note' ? 'Noted' : problem === 'skip' ? 'Left out' : problem === 'dropout' ? 'Dropout' : problem === 'clipping' ? 'Clipping' : 'Retake'
+  function setProblem(problem: string, restartNow = false) {
+    const index = problemFor; problemFor = -1; if (index < 0) return
+    sendToShell({ type: 'setProblem', index, problem, note: problemNote.trim() })
+    if (restartNow) sendToShell({ type: 'marker' }) // the new take starts here, now
+  }
   // Start now, or arm: recording waits for sound and drops the silence before it (SPEC.md › Recording); remembered
   let startOnSound = $state(readSetting('startOnSound', '') === '1')
   function setStartOnSound(on: boolean) { startOnSound = on; writeSetting('startOnSound', on ? '1' : '') }
@@ -266,6 +284,20 @@
 </script>
 
 <svelte:window onkeydown={onLiveKey} />
+{#if problemFor >= 0}
+  {@const change = changes[problemFor]}
+  <div class="backdrop" role="presentation" onpointerdown={(event) => { if (event.target === event.currentTarget) problemFor = -1 }}>
+    <div class="problem-box" role="dialog" aria-label="Problem with this track">
+      <h3>Problem with track {problemFor + 1}{change?.title ? `: ${change.title}` : ''}?</h3>
+      <label class="note-field">Note (shown in this app only, e.g. "a notification sound at 2:10")<input value={problemNote} oninput={(event) => problemNote = (event.target as HTMLInputElement).value} placeholder="What went wrong" /></label>
+      <button class="choice" onclick={() => setProblem('note')}><strong>Note it and carry on</strong><span>The take stays as it is; the note shows next to it later so you can listen to that part.</span></button>
+      <button class="choice" onclick={() => setProblem('retake')}><strong>I'll play it again later</strong><span>Recording carries on. When this track has been recorded again (same name), the new take replaces this one; until then this take is kept.</span></button>
+      <button class="choice" onclick={() => setProblem('retake', true)}><strong>Restart it now</strong><span>Marks this take as bad and starts a new track here, now. Go back to the start of the track in your player and play it again; the new take replaces this one. Everything recorded before stays.</span></button>
+      <button class="choice" onclick={() => setProblem('skip')}><strong>Leave this take out</strong><span>Recording carries on; this take won't be exported.</span></button>
+      <div class="problem-foot">{#if change?.problem}<button class="ghost" onclick={() => { problemNote = ''; setProblem('') }}>No problem after all</button>{/if}<span class="spacer"></span><button class="ghost" onclick={() => problemFor = -1}>Cancel</button></div>
+    </div>
+  </div>
+{/if}
 {#if startingOver}
   <Dialog title="Are you sure?" text={`This throws away the recording so far (${formatTime(app.levels.seconds * 1000, 1000, false)}) and its markers. It can't be undone.`} danger confirmLabel="Throw it away" onconfirm={() => { startingOver = false; sendToShell({ type: 'discardRecording', restart: false }) }} oncancel={() => startingOver = false} />
 {/if}
@@ -424,7 +456,7 @@
               {#if position === 0 && above}<button onclick={() => joining = { index, target: above }} title={`Move into the album above: ${albumLine(above)}`}>⤒</button>{/if}
               {#if position === group.indexes.length - 1 && below}<button onclick={() => joining = { index, target: below }} title={`Move into the album below: ${albumLine(below)}`}>⤓</button>{/if}
             </span>
-            <button class="retake" class:on={!!change.problem} onclick={() => sendToShell({ type: 'setProblem', index, problem: change.problem ? '' : 'retake' })} title={change.problem ? `${change.problem === 'dropout' ? 'Dropout' : change.problem === 'clipping' ? 'Clipping' : 'Marked for a retake'}: a later take of the same track replaces this one. Click to keep this take.` : 'Something went wrong with this take: mark it for a retake, then play the track again'}>{change.problem ? 'Retake' : '↻'}</button>
+            <button class="retake" class:on={!!change.problem} onclick={() => { problemFor = index; problemNote = change.note ?? '' }} title={change.problem ? `${problemLabel(change.problem)}${change.note ? ': ' + change.note : ''}. Click to change it` : 'Problem with this track? Note it, play it again or leave it out'}>{change.problem ? problemLabel(change.problem) : 'Problem?'}</button>
             <button class="remove" onclick={() => sendToShell({ type: 'removeChange', index })} title="Remove this marker (the audio stays)" aria-label="Remove marker">✕</button>
           </div>
         {/each}
@@ -451,6 +483,14 @@
   .deck.live .deck-info { flex-direction: row; align-items: baseline; gap: 10px; min-width: 0; }
   .deck.live .clock { font-size: 20px; font-weight: 700; }
   .deck.live .info { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .backdrop { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; background: rgba(0, 0, 0, 0.25); }
+  .problem-box { width: min(560px, calc(100vw - 40px)); display: flex; flex-direction: column; gap: 8px; padding: 16px 18px 14px; border-radius: 14px; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: 0 24px 60px var(--shadow); }
+  .problem-box h3 { margin: 0 0 4px; font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--fg); }
+  .note-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--fg-quiet); }
+  .choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font: inherit; cursor: pointer; }
+  .choice:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .choice span { font-size: 12px; color: var(--fg-quiet); }
+  .problem-foot { display: flex; gap: 8px; margin-top: 4px; } .problem-foot .spacer { flex: 1; }
   .start-mode { display: flex; margin: 2px 0; }
   .start-mode button { padding: 3px 12px; font: inherit; font-size: 12px; background: var(--panel); color: var(--fg-quiet); border: 1px solid var(--line); cursor: pointer; }
   .start-mode button:first-child { border-radius: 7px 0 0 7px; } .start-mode button:last-child { border-radius: 0 7px 7px 0; border-left: 0; }
