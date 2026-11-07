@@ -95,7 +95,7 @@ The session view is a step bar that says what is left and what to do next: **1 C
 - Track numbers on export: an album whose tracks all have unique numbers keeps them; one with any missing or repeated is numbered by position in the album.
 
 - One Export button, in the Export step beside the output profile picker, exports what's left (or the selected tracks, or all). The cut-checking tools (hear starts and ends, snap, auto height, split, find tracks again) show only in Check the cuts.
-- **Output profile**: format (FLAC default, WAV, MP3, AAC/M4A, lossy bitrate), output folder, file and folder name template with tokens (default `{albumartist} - {album}/{artist} - {album} - {track:00} {title}`), tag defaults (used only where a track has none; normally empty).
+- **Output profile**: format (FLAC default, WAV, MP3, AAC/M4A, lossy bitrate), output folder, file and folder name template with tokens (default `{albumartist} - {album} ({year})/{track:00} {title}`, e.g. `Gary Burton - Reunion (1990)/01 Autumn.flac`; profiles still on the old default move to it; an empty token leaves no empty brackets), tag defaults (used only where a track has none; normally empty).
 - Before exporting, tracks missing artist, album, album artist or genre are pointed out, with the choice to fill them in first or export anyway.
 - Tokens: `{artist}` `{title}` `{album}` `{albumartist}` (the album artist, else the track's artist) `{track}` `{track:00}` `{tracks}` `{genre}` `{year}` `{date}` `{session}` `{source}`. Characters Windows forbids are replaced.
 - Tags written: title, artist, album, album artist, track number and total, genre, year, comment.

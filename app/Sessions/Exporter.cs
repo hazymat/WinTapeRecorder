@@ -23,7 +23,7 @@ public static class NameTemplate
             ["track"] = (track.TrackNumber > 0 ? track.TrackNumber : trackNumber).ToString(),
             ["tracks"] = (track.TrackCount > 0 ? track.TrackCount : trackCount).ToString(),
             ["genre"] = track.Genre,
-            ["year"] = track.Year != "" ? track.Year : session.Created.Year.ToString(),
+            ["year"] = track.Year, // blank when unknown; an empty "()" left by it is dropped
             ["date"] = session.Created.ToString("yyyy-MM-dd"),
             ["session"] = session.Name,
             ["source"] = session.Device,
@@ -34,6 +34,9 @@ public static class NameTemplate
             if (match.Groups[2].Success && int.TryParse(value, out var number)) value = number.ToString(match.Groups[2].Value);
             return forPath ? SafeName(value) : value;
         });
+        // A token that came out empty leaves no stray brackets or separators: "Album ()" becomes "Album"
+        expanded = System.Text.RegularExpressions.Regex.Replace(expanded, @"\s*[\(\[]\s*[\)\]]", "");
+        expanded = System.Text.RegularExpressions.Regex.Replace(expanded, @"\s+-\s*(?=/|$)", "");
         return expanded.Trim();
     }
 
