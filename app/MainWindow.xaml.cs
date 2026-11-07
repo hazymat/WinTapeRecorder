@@ -177,6 +177,7 @@ public partial class MainWindow : Window
                 // ---- Recording ----
                 case "monitor": if (message.GetProperty("on").GetBoolean()) App.StartMonitoring(Text(message, "profileId")); else App.StopMonitoring(); break;
                 case "record": App.StartRecording(Text(message, "profileId"), Text(message, "source") is { Length: > 0 } source ? source : "auto", Text(message, "name"), message.TryGetProperty("armed", out var armed) && armed.GetBoolean()); break;
+                case "pauseRecording": if (App.Recorder.Recording) { App.Recorder.Paused = message.TryGetProperty("paused", out var pausedFlag) && pausedFlag.GetBoolean(); Push(App.StatusJson()); } break;
                 case "keepThroughSilence": App.Recorder.KeepThroughSilence = true; break;
                 // Start over (SPEC.md › Recording): the recording so far is thrown away, and optionally a new one starts straight away
                 case "discardRecording":

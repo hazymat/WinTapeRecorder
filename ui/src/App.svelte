@@ -90,6 +90,8 @@
   // Right-click a session: its files in Explorer, or close it
   let sessionMenu = $state<null | { session: SessionSummary; left: number; top: number }>(null)
   let closing = $state<SessionSummary | null>(null)
+  let closingAt = $state<{ left: number; top: number } | null>(null) // set: the confirmation drops down there instead of a dialog in the middle
+  function askClose(session: SessionSummary, event: Event) { const box = ((event.currentTarget as HTMLElement).closest('.session') ?? event.currentTarget as HTMLElement).getBoundingClientRect(); closingAt = { left: box.left + 8, top: Math.min(box.bottom + 2, innerHeight - 150) }; closing = session }
   async function closeSession(session: SessionSummary) {
     closing = null
     try { await request({ type: 'deleteSession', id: session.id }); if (nav.sessionId === session.id) { nav.view = 'record'; nav.sessionId = ''; writeSetting('session', '') } toast(`Closed “${session.name}” and deleted its recording`) }
@@ -99,18 +101,26 @@
   const dateLabel = (created: string) => new Date(created).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 </script>
 
-<svelte:window onkeydown={onKey} onpointerdown={(event) => { if (sessionMenu && !(event.target as HTMLElement).closest('.session-menu')) sessionMenu = null }} />
+<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && closingAt) { closing = null; closingAt = null; return } onKey(event) }} onpointerdown={(event) => { if (sessionMenu && !(event.target as HTMLElement).closest('.session-menu')) sessionMenu = null; if (closingAt && !(event.target as HTMLElement).closest('.close-drop, .session-tool, .session-menu')) { closing = null; closingAt = null } }} />
 {#if sessionMenu}
   {@const menuSession = sessionMenu.session}
   <div class="session-menu" role="menu" style:left="{sessionMenu.left}px" style:top="{sessionMenu.top}px">
     <button role="menuitem" onclick={() => { sendToShell({ type: 'openFolder', path: menuSession.id + '\\audio.wav' }); sessionMenu = null }}><Icon name="folder" size={15} />Show session files</button>
     <button role="menuitem" disabled={menuSession.recording} onclick={() => { const target = menuSession; sessionMenu = null; openSession(target) }}><Icon name="play" size={15} />Open</button>
-    <button role="menuitem" class="danger" disabled={menuSession.recording} onclick={() => { const target = menuSession; sessionMenu = null; closing = target }}><Icon name="trash" size={15} />Close session…</button>
+    <button role="menuitem" class="danger" disabled={menuSession.recording} onclick={(event) => { const target = menuSession; const at = { left: sessionMenu?.left ?? 20, top: sessionMenu?.top ?? 100 }; sessionMenu = null; closingAt = at; closing = target }}><Icon name="trash" size={15} />Close session…</button>
   </div>
 {/if}
 {#if closing}
   {@const closingSession = closing}
+  {#if closingAt}
+    <div class="close-drop" role="dialog" aria-label="Close this session?" style:left="{closingAt.left}px" style:top="{closingAt.top}px">
+      <strong>Delete this session's recording?</strong>
+      <span class="quiet">{closingSession.tracks - closingSession.exported > 0 ? `${closingSession.tracks - closingSession.exported} of ${closingSession.tracks} tracks aren't exported yet. ` : ''}Exported files are kept.</span>
+      <span class="close-buttons"><button class="danger-fill" onclick={() => { closingAt = null; closeSession(closingSession) }}>Delete</button><button class="ghost" onclick={() => { closing = null; closingAt = null }}>Keep</button></span>
+    </div>
+  {:else}
   <Dialog title="Close “{closingSession.name}”?" text={`This deletes the session's recording (the WAV) for good.${closingSession.tracks - closingSession.exported > 0 ? ` ${closingSession.tracks - closingSession.exported} of ${closingSession.tracks} tracks haven't been exported yet.` : ''} Exported files are kept.`} confirmLabel="Delete recording" danger onconfirm={() => closeSession(closingSession)} oncancel={() => closing = null} />
+  {/if}
 {/if}
 <WhatsNew />
 {#if app.window.frameless && !app.window.maximised}<ResizeEdges />{/if}
@@ -126,7 +136,7 @@
           <span class="session-name">{session.name}{#if session.recording}<span class="badge live">REC</span>{:else if session.crashed}<span class="badge">!</span>{/if}</span>
           <span class="session-more" role="button" tabindex="-1" title="Show files, open or close this session (also on right-click)" onclick={(event) => { event.stopPropagation(); const box = (event.currentTarget as HTMLElement).getBoundingClientRect(); sessionMenu = { session, left: Math.min(box.left, innerWidth - 220), top: Math.min(box.bottom + 4, innerHeight - 110) } }} onkeydown={() => { }}>⋯</span>
           <span class="session-facts">{dateLabel(session.created)} · {formatDuration(session.seconds)} · {#if app.status?.exportingSession === session.id}<span class="exporting">exporting {app.status.exportDone}/{app.status.exportTotal}…</span>{:else if app.status?.exportQueue?.includes(session.id)}<span class="exporting">export queued</span>{:else}{session.exported}/{session.tracks} exported{session.exported && session.verified === session.exported ? ' ✓' : ''}{/if}</span>
-          {#if nav.view === 'session' && nav.sessionId === session.id && !session.recording}<span class="session-tools"><span class="session-tool" role="button" tabindex="-1" title="Show this session's files in Explorer" onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: session.id + '\audio.wav' }) }} onkeydown={() => { }}><Icon name="folder" size={14} />Files</span><span class="session-tool danger" role="button" tabindex="-1" title="Close this session (deletes its recording; exported files stay)" onclick={(event) => { event.stopPropagation(); closing = session }} onkeydown={() => { }}><Icon name="trash" size={14} />Close…</span></span>{/if}
+          {#if nav.view === 'session' && nav.sessionId === session.id && !session.recording}<span class="session-tools"><span class="session-tool" role="button" tabindex="-1" title="Show this session's files in Explorer" onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: session.id + '\audio.wav' }) }} onkeydown={() => { }}><Icon name="folder" size={14} />Files</span><span class="session-tool danger" role="button" tabindex="-1" title="Close this session (deletes its recording; exported files stay)" onclick={(event) => { event.stopPropagation(); askClose(session, event) }} onkeydown={() => { }}><Icon name="trash" size={14} />Close…</span></span>{/if}
         </button>
       {:else}
         <p class="no-sessions">Recordings you make appear here until you close them.</p>
@@ -173,6 +183,9 @@
   .heading { margin: 16px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-quiet); }
   .sessions { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }
   .session { position: relative; }
+  .close-drop { position: fixed; z-index: 130; width: 220px; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: 0 12px 30px var(--shadow); font-size: 12.5px; }
+  .close-buttons { display: flex; gap: 6px; }
+  .danger-fill { background: var(--danger); color: #fff; border: 0; border-radius: 7px; padding: 4px 12px; font: inherit; cursor: pointer; }
   .session-tools { display: flex; gap: 4px; margin-top: 4px; }
   .session-tool { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11.5px; color: var(--fg-quiet); background: var(--panel); border: 1px solid var(--line); }
   .session-tool:hover { color: var(--fg); background: var(--panel-strong); }

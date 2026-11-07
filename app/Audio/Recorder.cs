@@ -73,7 +73,7 @@ public sealed class Recorder : IDisposable
         channels = captureFormat.Channels; captureBits = captureFormat.BitsPerSample; sampleRate = captureFormat.SampleRate;
         captureFloat = captureFormat.Encoding == WaveFormatEncoding.IeeeFloat || (captureFormat is WaveFormatExtensible extensible && extensible.SubFormat == NAudio.Dmo.AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT);
         bitDepth = profile.BitDepth is 16 or 24 or 32 ? profile.BitDepth : 24;
-        WaitingForSound = ArmNext && session != null; ArmNext = false; preRoll.Clear(); preRollFrames = 0;
+        WaitingForSound = ArmNext && session != null; ArmNext = false; Paused = false; preRoll.Clear(); preRollFrames = 0;
         heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; lastSoundFrame = 0; KeepThroughSilence = false; HitSizeLimit = false; Problem = ""; Dropouts.Clear(); shortfallFrames = 0; detecting = false;
         Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null; Clips.Clear(); clipBurstFrame = -1; FlacRatio = 0; flacSamples = 0;
         DeviceName = device.FriendlyName;
@@ -140,11 +140,12 @@ public sealed class Recorder : IDisposable
         GatherQuality(samples, frames);
         var queue = writeQueue;
         if (queue == null || queue.IsAddingCompleted) return; // level check only, or stopping
-        // Armed (SPEC.md › Recording): nothing is kept until sound arrives, apart from half a second before it so the attack is whole
+        if (Paused) return; // paused: the session stays open, nothing is written until it resumes
+        // Armed (SPEC.md › Recording): nothing is kept until sound arrives, apart from up to 30 s before it (a slow fade-in can be uncovered later)
         if (WaitingForSound)
         {
             preRoll.Enqueue(samples.ToArray()); preRollFrames += frames;
-            while (preRoll.Count > 1 && preRollFrames - preRoll.Peek().Length / channels >= sampleRate / 2) preRollFrames -= preRoll.Dequeue().Length / channels;
+            while (preRoll.Count > 1 && preRollFrames - preRoll.Peek().Length / channels >= sampleRate * 30) preRollFrames -= preRoll.Dequeue().Length / channels;
             if (loudest < ArmLevel) return;
             WaitingForSound = false;
             var held = preRoll.ToArray(); preRoll.Clear(); preRollFrames = 0;
@@ -160,6 +161,7 @@ public sealed class Recorder : IDisposable
     int preRollFrames;
     public bool ArmNext { get; set; } // set before Start: the recording waits for sound
     public bool WaitingForSound { get; private set; }
+    public volatile bool Paused;
 
     void Keep(Span<float> samples, BlockingCollection<(byte[], int)> queue)
     {

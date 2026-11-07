@@ -498,6 +498,7 @@ public partial class App : Application
         playingSession = Player.SessionId,
         exporting = Exporting,
         waitingForSound = Recorder.Recording && Recorder.WaitingForSound,
+        paused = Recorder.Recording && Recorder.Paused,
         exportingSession = ExportingSessionId, exportDone = ExportDone, exportTotal = ExportTotal, exportQueue = ExportQueue,
         version = Updater.CurrentVersion,
         updateReady = Updater.ReadyVersion,

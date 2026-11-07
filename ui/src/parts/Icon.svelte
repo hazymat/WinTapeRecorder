@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type IconName = 'record' | 'stop' | 'play' | 'marker' | 'settings' | 'minimise' | 'maximise' | 'restore' | 'close' | 'folder' | 'export' | 'zoom-in' | 'zoom-out' | 'fit' | 'split' | 'tape' | 'trash' | 'starts' | 'ends' | 'redetect' | 'undo' | 'redo'
+  export type IconName = 'record' | 'stop' | 'pause' | 'play' | 'marker' | 'settings' | 'minimise' | 'maximise' | 'restore' | 'close' | 'folder' | 'export' | 'zoom-in' | 'zoom-out' | 'fit' | 'split' | 'tape' | 'trash' | 'starts' | 'ends' | 'redetect' | 'undo' | 'redo'
 </script>
 <script lang="ts">
   // SVG icons: text glyphs render off-centre with colour fringes in WebView2
@@ -9,6 +9,7 @@
 <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" class="icon">
   {#if name === 'record'}<circle cx="12" cy="12" r="6.5" />
   {:else if name === 'stop'}<rect x="6.5" y="6.5" width="11" height="11" rx="1.6" />
+  {:else if name === 'pause'}<rect x="6.5" y="6" width="4" height="12" rx="1.2" /><rect x="13.5" y="6" width="4" height="12" rx="1.2" />
   {:else if name === 'play'}<path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.6-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14z" />
   {:else if name === 'marker'}<path d="M12 3.5v17M7 6.5h8.5l-2 2.5 2 2.5H7" class="stroke" />
   {:else if name === 'settings'}<circle cx="12" cy="12" r="3" class="stroke" /><path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M6 6l1.6 1.6M16.4 16.4L18 18M6 18l1.6-1.6M16.4 7.6L18 6" class="stroke" />

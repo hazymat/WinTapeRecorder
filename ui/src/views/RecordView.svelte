@@ -267,7 +267,7 @@
 
 <svelte:window onkeydown={onLiveKey} />
 {#if startingOver}
-  <Dialog title="Start over?" text={`This throws away the recording so far (${formatTime(app.levels.seconds * 1000, 1000, false)}) and its markers. It can't be undone.`} danger confirmLabel="Throw away and record again" altLabel="Throw away and stop" onconfirm={() => { startingOver = false; sendToShell({ type: 'discardRecording', restart: true }) }} onalt={() => { startingOver = false; sendToShell({ type: 'discardRecording', restart: false }) }} oncancel={() => startingOver = false} />
+  <Dialog title="Are you sure?" text={`This throws away the recording so far (${formatTime(app.levels.seconds * 1000, 1000, false)}) and its markers. It can't be undone.`} danger confirmLabel="Throw it away" onconfirm={() => { startingOver = false; sendToShell({ type: 'discardRecording', restart: false }) }} oncancel={() => startingOver = false} />
 {/if}
 <div class="record" class:recording>
   {#if !recording}
@@ -286,10 +286,10 @@
   {#if recording && app.status?.dropouts}<p class="warn">{app.status.dropouts} dropout{app.status.dropouts === 1 ? '' : 's'}: the PC was too busy and samples were lost. They're marked in the session.</p>{/if}
 
   <div class="deck" class:live={recording}>
-    <button class="record-button" class:on={recording} onclick={toggleRecording} title={recording ? 'Stop (Ctrl+R)' : 'Record (Ctrl+R)'} aria-label={recording ? 'Stop recording' : 'Start recording'}><Icon name={recording ? 'stop' : 'record'} size={recording ? 16 : 34} /></button>
+    <button class="record-button" class:on={recording && !app.status?.paused} class:paused={recording && app.status?.paused} onclick={() => recording ? sendToShell({ type: 'pauseRecording', paused: !app.status?.paused }) : toggleRecording()} title={recording ? (app.status?.paused ? 'Resume recording into this session' : 'Pause: nothing is recorded until you resume') : 'Record (Ctrl+R)'} aria-label={recording ? (app.status?.paused ? 'Resume' : 'Pause') : 'Start recording'}><Icon name={recording ? (app.status?.paused ? 'record' : 'pause') : 'record'} size={recording ? 16 : 34} /></button>
     <div class="deck-info">
       {#if recording}
-        <div class="clock" class:armed-clock={app.status?.waitingForSound}>{app.status?.waitingForSound ? 'Armed' : formatTime(app.levels.seconds * 1000, 1000, false)}</div>
+        <div class="clock" class:armed-clock={app.status?.waitingForSound || app.status?.paused}>{app.status?.waitingForSound ? 'Armed' : app.status?.paused ? 'Paused' : formatTime(app.levels.seconds * 1000, 1000, false)}</div>
         {#if app.status?.waitingForSound}<div class="quiet info">waiting for sound: press play in your player; the silence before it isn't kept</div>{/if}
         <div class="quiet info">{app.status?.sessionName} · {sizeText} WAV{#if firstEstimate}{' · '}<span class="estimate" title={estimates.map(estimate => `${estimate.name}: ${estimate.text}`).join(String.fromCharCode(10))}>{firstEstimate.text} as {firstEstimate.name}{estimates.length > 1 ? ` (+${estimates.length - 1} more)` : ''}</span>{/if}</div>
       {:else}
@@ -300,7 +300,8 @@
         <div class="quiet">Ctrl+R starts and stops recording from anywhere in the app.</div>
       {/if}
     </div>
-    {#if recording}<button class="ghost start-over" onclick={() => startingOver = true} title="Throw this recording away and start again">Start over…</button>{/if}
+    {#if recording}<button class="ghost start-over" onclick={() => startingOver = true} title="Throw this recording away">Start over…</button>{/if}
+    {#if recording}<button class="primary finish" onclick={toggleRecording} title="Stop recording for good and go to Albums & cuts (Ctrl+R)">Finish and start editing the cuts<kbd>Ctrl+R</kbd></button>{/if}
     {#if recording}<button class="ghost marker" onclick={() => sendToShell({ type: 'marker' })} title="Mark a new track here (M)"><Icon name="marker" size={14} />New track here<kbd>M</kbd></button>{/if}
   </div>
 
@@ -402,11 +403,10 @@
         <div class="album-head" id={'album-' + group.indexes[0]} role="group" aria-label={albumLine(group)}
           ondragover={(event) => { if (dragIndex >= 0 && !group.indexes.includes(dragIndex)) event.preventDefault() }}
           ondrop={(event) => { event.preventDefault(); if (dragIndex >= 0 && !group.indexes.includes(dragIndex)) joining = { index: dragIndex, target: group }; dragIndex = -1 }}>
-          <span class="disc small" style:--hue={hue(group.key)}>{initials(group)}</span>
+          <span class="head-name"><span class="disc small" style:--hue={hue(group.key)}>{initials(group)}</span><span class="quiet small">{group.indexes.length}</span></span>
           <input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks" onchange={(event) => editAlbum(group, 'artist', (event.target as HTMLInputElement).value)} />
           <input value={group.album} placeholder="Album" title="This album's name, for all its tracks" onchange={(event) => editAlbum(group, 'album', (event.target as HTMLInputElement).value)} />
           <input class="year" value={group.year} placeholder="Year" title="This album's year, for all its tracks" onchange={(event) => editAlbum(group, 'year', (event.target as HTMLInputElement).value)} />
-          <span class="quiet small">{group.indexes.length} track{group.indexes.length === 1 ? '' : 's'}</span>
         </div>
         {#each group.indexes as index, position (index + ':' + changes[index].frame)}
           {@const change = changes[index]}
@@ -414,9 +414,7 @@
           <div class="change" role="listitem">
             <span class="handle" draggable="true" ondragstart={(event) => { dragIndex = index; event.dataTransfer?.setData('text/plain', String(index)) }} ondragend={() => dragIndex = -1} title="Drag onto another album to move this track into it">⋮⋮</span>
             <button class="number" class:on={selected === index} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Select this marker in the wave above, zoomed in around it">{index + 1}</button>
-            <span class="nudge"><button onclick={() => nudge(index, change.frame, -5)} title="5 s earlier">«</button><button onclick={() => nudge(index, change.frame, -1)} title="1 s earlier">‹</button></span>
             <input class="time-box" value={formatTime(change.frame, rate, false)} onchange={(event) => setTime(index, (event.target as HTMLInputElement).value, rate)} title="Where this track starts (m:ss)" aria-label="Start time" />
-            <span class="nudge"><button onclick={() => nudge(index, change.frame, 1)} title="1 s later">›</button><button onclick={() => nudge(index, change.frame, 5)} title="5 s later">»</button></span>
             <input value={change.artist} placeholder="Artist" onchange={(event) => sendToShell({ type: 'editChange', index, artist: (event.target as HTMLInputElement).value.trim() })} />
             <input value={change.album} placeholder="Album" onchange={(event) => sendToShell({ type: 'editChange', index, album: (event.target as HTMLInputElement).value.trim() })} />
             <input class="year" value={change.year ?? ''} placeholder={group.year || 'Year'} title={group.year && !change.year ? `The album's year (${group.year}) goes on this track too` : 'Year'} onchange={(event) => sendToShell({ type: 'editChange', index, year: (event.target as HTMLInputElement).value.trim() })} />
@@ -442,7 +440,7 @@
 {/if}
 
 <style>
-  .record { max-width: 980px; padding-bottom: 20px; }
+  .record { padding-bottom: 20px; }
   .record.recording h3 { margin-top: 10px; }
   .settings-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .device { margin: 8px 0 14px; font-size: 12.5px; }
@@ -459,7 +457,10 @@
   .start-mode button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .armed-clock { color: var(--warn) !important; text-shadow: none !important; animation: blink 1.2s ease-in-out infinite; }
   @keyframes blink { 50% { opacity: 0.45; } }
-  .deck.live .start-over { padding: 3px 10px; font-size: 12px; color: var(--fg-quiet); }
+  .deck.live .start-over { padding: 3px 10px; font-size: 12px; color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+  .deck.live .start-over:hover { background: var(--danger); color: #fff; }
+  .deck.live .finish { padding: 5px 14px; font-size: 13px; font-weight: 600; }
+  .record-button.paused { background: var(--warn); color: #000; border-color: transparent; }
   .deck.live .marker { padding: 3px 10px; font-size: 12px; }
   .record-button { flex: none; width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; border: 2px solid color-mix(in srgb, var(--danger) 60%, transparent); background: var(--panel-strong); color: var(--danger); cursor: pointer; transition: transform 120ms, background 120ms, width 300ms ease, height 300ms ease; }
   .record-button:hover { transform: scale(1.04); }
@@ -481,8 +482,11 @@
   .now-table td.none { color: var(--fg-quiet); font-style: italic; }
   .live-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 4px; font-size: 12px; }
   .changes { display: flex; flex-direction: column; gap: 3px; }
-  .change { display: grid; grid-template-columns: 14px 30px auto 64px auto minmax(80px, 1fr) minmax(80px, 1fr) 52px 24px minmax(110px, 1.5fr) 30px auto 26px; gap: 5px; align-items: center; }
-  .album-head { display: grid; grid-template-columns: 26px minmax(100px, 1fr) minmax(100px, 1fr) 60px auto; gap: 6px; align-items: center; margin-top: 8px; padding: 4px 6px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+  /* Rows and album headers share these columns, so an album's artist, album and year sit right above its tracks' */
+  .change, .album-head { display: grid; grid-template-columns: 14px 30px 64px minmax(80px, 1fr) minmax(80px, 1fr) 56px 24px minmax(110px, 1.5fr) 30px 64px 26px; gap: 5px; align-items: center; }
+  .change { min-height: 26px; padding: 0 1px; }
+  .head-name { grid-column: 1 / 4; display: flex; align-items: center; gap: 6px; }
+  .album-head { align-items: center; margin-top: 8px; padding: 3px 0; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
   .album-head input { font-weight: 600; }
   .year { text-align: center; }
   .track-no { font-family: var(--font-display); font-size: 12px; text-align: center; color: var(--fg-quiet); }
