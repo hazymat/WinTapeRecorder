@@ -359,6 +359,7 @@ public partial class App : Application
             var peaks = Peaks.Load(session.PeaksPath, audio.TotalFrames);
             if (peaks == null) { peaks = Peaks.Build(audio, progress); try { peaks.Save(session.PeaksPath); } catch { } }
             if (session.Tracks.Count == 0 && session.TotalFrames > 0) session.Tracks = TrackBuilder.Build(session, peaks, Settings.RecordingProfileOrActive(session.RecordingProfileId));
+            foreach (var track in session.Tracks) { if (track.DetectedStart < 0) track.DetectedStart = track.Start; if (track.DetectedEnd < 0) track.DetectedEnd = track.End; } // older sessions: as they are now
             if (session.Quality.Count == 0 && session.TotalFrames > audio.SampleRate * 2) session.Quality = MeasureQuality(audio); // recorded before this was measured live
             session.Save();
             return (session, audio, peaks);

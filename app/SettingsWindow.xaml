@@ -117,7 +117,10 @@
               <TextBlock Grid.Row="5" Text="Post-roll (kept after)" VerticalAlignment="Center" Margin="0,4" /><StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Margin="0,4"><TextBox x:Name="postRollBox" Style="{StaticResource Small}" /><TextBlock Text="ms" Margin="6,0,0,0" VerticalAlignment="Center" /></StackPanel>
               <TextBlock Grid.Row="6" Text="Look for a gap within" VerticalAlignment="Center" Margin="0,4" /><StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Margin="0,4"><TextBox x:Name="snapBox" Style="{StaticResource Small}" /><TextBlock Text="ms of a name change" Margin="6,0,0,0" VerticalAlignment="Center" /></StackPanel>
               <TextBlock Grid.Row="7" Text="Shortest unnamed track" VerticalAlignment="Center" Margin="0,4" /><StackPanel Grid.Row="7" Grid.Column="1" Orientation="Horizontal" Margin="0,4"><TextBox x:Name="minTrackBox" Style="{StaticResource Small}" /><TextBlock Text="seconds" Margin="6,0,0,0" VerticalAlignment="Center" /></StackPanel>
-              <CheckBox Grid.Row="8" Grid.ColumnSpan="3" x:Name="trimSilenceBox" Content="Trim silence from the start and end of each track" />
+              <StackPanel Grid.Row="8" Grid.ColumnSpan="3">
+                <CheckBox x:Name="trimSilenceBox" Content="Trim silence: each track starts at its first sound" />
+                <CheckBox x:Name="endsMeetBox" Content="Each track ends where the next one starts (recommended: a trimmed end cuts off quiet fade-outs)" Margin="0,4,0,0" />
+              </StackPanel>
             </Grid>
           </StackPanel>
         </ScrollViewer>

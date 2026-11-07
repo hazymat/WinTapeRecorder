@@ -38,6 +38,7 @@ A change of now-playing text drops a marker at that moment (minus a latency offs
 
 **Gap profile** (Settings › Detection): threshold (dBFS), minimum gap length, attack (sound must last this long to count as the start of a track), release (silence must last this long to count as the end), pre-roll and post-roll (audio kept before the start and after the end), snap window.
 
+- Track ends (Settings › Recording profiles, and the Track ends menu in Check the cuts): by default each track ends where the next one starts, and only the start is trimmed to the first sound; a trimmed end used to land a second or two early because a fade's quiet tail sits under the gate. "Trim silence" trims both ends; "Keep as recorded" trims nothing. Each edge remembers where detection put it: ↺ beside a moved start or length puts it back.
 ## Workflow
 
 The session view is a step bar that says what is left and what to do next: **1 Check the cuts** (every start and end, doubtful ones first) → **2 Tags** (tracks missing artist, title, album, album artist or genre) → **3 Export** (what is still to export, then verification). Each step has its one primary action beside it.
@@ -55,9 +56,11 @@ The session view is a step bar that says what is left and what to do next: **1 C
 - Track list under the waveform: number, start, length, artist, title, album, status. Edit tags inline. Multi-select with the selection bar (as WinSqueeze): audition, export, set album or artist for all, fades, snap to gaps, merge, delete.
 - Edits save automatically; undo and redo (Ctrl+Z, Ctrl+Y).
 
+- Flags: above the wave each start has a green flag sticking out to the right of its line and each end a red flag to the left, so where an end meets the next start either can be grabbed by its own flag.
 - Confirming cuts: click a row's Start or End to hear it (zoomed in); press and hold it to confirm it: it fills, then turns green with a ✓. Hold again to undo. Y confirms or undoes the start or end you're on, without moving. Moving an edge doesn't confirm it. Export points out unconfirmed starts and ends but can always go ahead.
 
 ## Auditioning
+- Only one audition plays at a time: starting one silences the previous at once. Space plays and stops from anywhere and never also presses the button last clicked.
 
 - Play from anywhere (click the waveform, Space).
 - Hear just the current track's start or just its end, for working on one edge.

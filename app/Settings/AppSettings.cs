@@ -14,6 +14,7 @@ public class GapSettings
     public int PostRollMs { get; set; } = 400; // kept after the last sound
     public int SnapWindowMs { get; set; } = 8000; // a name change looks this far either side for the gap
     public bool TrimSilence { get; set; } = true; // trim each track's leading and trailing silence
+    public bool EndsMeetNextStart { get; set; } = true; // a track ends where the next one starts (no gap cut out between them); only the session's own ends are trimmed
     public int MinTrackSeconds { get; set; } = 20; // shorter pieces are dropped (adverts, stray clicks)
 }
 

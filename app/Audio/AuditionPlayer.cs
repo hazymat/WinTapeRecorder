@@ -47,8 +47,10 @@ public sealed class AuditionPlayer : IDisposable
         }
     }
 
+    // Only one audition at a time (SPEC.md › Auditioning): the old one is silenced before it's stopped, so nothing can play over a new one
     public void Stop()
     {
+        if (reader != null) reader.Silenced = true;
         var stopping = output; var stoppingAudio = ownAudio; output = null; reader = null; ownAudio = null;
         try { stopping?.Stop(); } catch { }
         stopping?.Dispose(); stoppingAudio?.Dispose();
@@ -79,8 +81,10 @@ sealed class SegmentReader : ISampleProvider
         if (this.segments.Count > 0) sourceFrame = this.segments[0].start;
     }
 
+    public volatile bool Silenced; // set when this playback is replaced: a stale output that hasn't stopped yet goes quiet at once
     public int Read(float[] buffer, int offset, int count)
     {
+        if (Silenced) return 0;
         var channels = audio.Channels; var framesWanted = count / channels; var framesDone = 0;
         while (framesDone < framesWanted && segmentIndex < segments.Count)
         {

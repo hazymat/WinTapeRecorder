@@ -99,6 +99,8 @@ public class Track
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
     public long Start { get; set; }
     public long End { get; set; }
+    public long DetectedStart { get; set; } = -1; // where detection put the edges, for Revert (SPEC.md › Editing)
+    public long DetectedEnd { get; set; } = -1;
     public string Artist { get; set; } = "";
     public string Title { get; set; } = "";
     public string Album { get; set; } = "";

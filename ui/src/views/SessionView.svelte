@@ -61,11 +61,21 @@
   function confirmFocused() { const target = grab ? { trackId: grab.trackId, edge: grab.edge } : focused; const track = target ? tracks.find(candidate => candidate.id === target.trackId) : null; if (!track || !target) { toast('Pick a start or end first: click Start or End on a track'); return } toggleChecked(track, target.edge) }
   // Between tracks (SPEC.md › Export): trimmed to a short roll (the default), or kept as recorded
   const trimSilence = $derived(app.recordingProfiles.find(profile => profile.id === session?.recordingProfileId)?.trimSilence ?? true)
-  function setTrim(trim: boolean) {
+  const endsMeet = $derived(app.recordingProfiles.find(profile => profile.id === session?.recordingProfileId)?.endsMeet ?? true)
+  const betweenTracks = $derived(!trimSilence ? 'keep' : endsMeet ? 'meet' : 'trim')
+  function setBetween(choice: string) {
     if (!session) return
-    sendToShell({ type: 'setTrimSilence', profileId: session.recordingProfileId, trim })
-    const profile = app.recordingProfiles.find(candidate => candidate.id === session!.recordingProfileId); if (profile) profile.trimSilence = trim
+    const trim = choice !== 'keep', meet = choice === 'meet'
+    sendToShell({ type: 'setTrimSilence', profileId: session.recordingProfileId, trim, meet })
+    const profile = app.recordingProfiles.find(candidate => candidate.id === session!.recordingProfileId); if (profile) { profile.trimSilence = trim; profile.endsMeet = meet }
     dialog = { kind: 'redetect' }
+  }
+  // Revert an edge to where detection put it
+  function revertEdge(track: Track, edge: 'start' | 'end') {
+    const detected = edge === 'start' ? track.detectedStart : track.detectedEnd; if (detected == null || detected < 0) return
+    const next = copy(), edited = next.find(candidate => candidate.id === track.id)!
+    edited[edge] = detected; if (edge === 'start') edited.startChecked = false; else edited.endChecked = false
+    commit(next, `Track ${tracks.indexOf(track) + 1} ${edge} back where it was detected`)
   }
   let snapToZero = $state(readFlag('snapZero'))
   let waveMode = $state<'wave' | 'spectrogram'>(readSetting('waveMode', 'wave') === 'spectrogram' ? 'spectrogram' : 'wave')
@@ -419,7 +429,7 @@
     else if (event.ctrlKey && (lower === 'y' || (lower === 'z' && event.shiftKey))) redo()
     else if (event.ctrlKey && lower === 'e') exportTracks()
     else if (event.ctrlKey && key === '0') fit()
-    else if (key === ' ') { if (playing) stop(); else playFrom(cursor) }
+    else if (key === ' ') { (document.activeElement as HTMLElement | null)?.blur?.(); if (playing) stop(); else playFrom(cursor) }
     else if (key === 'ArrowLeft' || key === 'ArrowRight') {
       const delta = key === 'ArrowLeft' ? -step : step
       if (grab && tracks.some(track => track.id === grab!.trackId)) { const track = tracks.find(candidate => candidate.id === grab!.trackId)!; const before = JSON.stringify($state.snapshot(tracks)); moveEdge(grab, track[grab.edge] + delta); past = past.concat([before]).slice(-200); future = []; save(); cursor = track[grab.edge]; showFrame(cursor) }
@@ -472,7 +482,8 @@
   const outputChoices = $derived(app.outputProfiles.map(profile => [profile.id, profile.name] as [string, string]))
 </script>
 
-<svelte:window onkeydown={onKey} />
+<!-- Space is the app's play/stop: it must never also press the button last clicked (that replayed an old audition) -->
+<svelte:window onkeydown={onKey} onkeyup={(event) => { if (event.key === ' ' && !(event.target as HTMLElement)?.matches?.('input, textarea, select')) event.preventDefault() }} />
 
 {#if loadError}
   <div class="empty"><h2>Can't open this session</h2><p class="quiet">{loadError}</p></div>
@@ -502,7 +513,7 @@
       {#if step === 'cuts'}
         <button class="primary" onclick={checkNext} title="Jump to the next start or end without a ✓, from the track you're on, zoomed in, and play it (C)">Next to confirm<kbd>C</kbd></button>
         
-        <Dropdown label="Between tracks" value={trimSilence ? 'trim' : 'keep'} options={[['trim', 'Trim silence'], ['keep', 'Keep as recorded']]} onchange={(value) => setTrim(value === 'trim')} />
+        <Dropdown label="Track ends" value={betweenTracks} options={[['meet', 'Meet the next start'], ['trim', 'Trim silence'], ['keep', 'Keep as recorded']]} onchange={setBetween} />
       {:else if step === 'tags'}
         <button class="primary" onclick={() => tagging = (selectedIds.length ? selectedIds : untagged.length ? untagged.map(track => track.id) : exportable.map(track => track.id))}>{selectedIds.length ? `Edit ${selectedIds.length} selected…` : untagged.length ? `Fill in ${untagged.length}…` : 'Edit tags…'}</button>
         <button class="ghost" onclick={() => openLookup(exportable.map(track => track.id))} title="Search MusicBrainz, iTunes or Discogs yourself and pick the album">Look up album…</button>
@@ -649,8 +660,8 @@
       <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
         <span class="hear no-hold"><button class="hear-start" class:checked={track.startChecked} class:holding={holding?.trackId === track.id && holding.edge === 'start'} onpointerdown={(event) => holdDown(track, 'start', event)} onpointerup={holdUp} onpointerleave={holdUp} onclick={(event) => { event.stopPropagation(); if (held) { held = false; return } focusEdge({ trackId: track.id, edge: 'start' }) }} title={`Click: hear this track's start, zoomed in. Hold: ${track.startChecked ? 'undo the ✓' : 'confirm it (✓, green)'}`} aria-label="Hear start"><Icon name="play" size={11} /><span>{track.startChecked ? '✓ ' : ''}Start</span></button><button class="hear-end" class:checked={track.endChecked} class:holding={holding?.trackId === track.id && holding.edge === 'end'} onpointerdown={(event) => holdDown(track, 'end', event)} onpointerup={holdUp} onpointerleave={holdUp} onclick={(event) => { event.stopPropagation(); if (held) { held = false; return } focusEdge({ trackId: track.id, edge: 'end' }) }} title={`Click: hear this track's end, zoomed in. Hold: ${track.endChecked ? 'undo the ✓' : 'confirm it (✓, green)'}`} aria-label="Hear end"><span>End{track.endChecked ? ' ✓' : ''}</span><Icon name="play" size={11} /></button></span>
-        <button class="time edge no-hold" class:doubt={!track.startSure && !track.startChecked} class:checked={track.startChecked} title={`${track.startNote || 'Start'}${track.startChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }}>{track.startChecked ? '✓ ' : !track.startSure ? '? ' : ''}{formatTime(track.start, rate, false)}</button>
-        <button class="time edge no-hold" class:doubt={!track.endSure && !track.endChecked} class:checked={track.endChecked} title={`${track.endNote || 'End'}${track.endChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }}>{track.endChecked ? '✓ ' : !track.endSure ? '? ' : ''}{formatDuration((track.end - track.start) / rate)}</button>
+        <span class="edge-cell"><button class="time edge no-hold" class:doubt={!track.startSure && !track.startChecked} class:checked={track.startChecked} title={`${track.startNote || 'Start'}${track.startChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }}>{track.startChecked ? '✓ ' : !track.startSure ? '? ' : ''}{formatTime(track.start, rate, false)}</button>{#if track.detectedStart != null && track.detectedStart >= 0 && track.start !== track.detectedStart}<button class="revert no-hold" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'start') }} title={`Back to where it was detected (${formatTime(track.detectedStart, rate, false)})`}>↺</button>{/if}</span>
+        <span class="edge-cell"><button class="time edge no-hold" class:doubt={!track.endSure && !track.endChecked} class:checked={track.endChecked} title={`${track.endNote || 'End'}${track.endChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }}>{track.endChecked ? '✓ ' : !track.endSure ? '? ' : ''}{formatDuration((track.end - track.start) / rate)}</button>{#if track.detectedEnd != null && track.detectedEnd >= 0 && track.end !== track.detectedEnd}<button class="revert no-hold" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'end') }} title={`End back to where it was detected (${formatTime(track.detectedEnd, rate, false)})`}>↺</button>{/if}</span>
         <button class="art-cell no-hold" onclick={(event) => { event.stopPropagation(); tagging = selectedIds.includes(track.id) ? selectedIds.slice() : [track.id] }} title="Edit tags and picture">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="" />{:else}<span>♪</span>{/if}</button>
         <input class="no-hold" value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.album} placeholder="Album" onchange={(event) => editField(track, 'album', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
@@ -731,7 +742,7 @@
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
   .list { flex: 1 1 38%; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: 52px 150px 70px 64px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
+  .row { display: grid; grid-template-columns: 52px 150px 88px 82px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
@@ -763,6 +774,9 @@
   .hear .hear-start { border-radius: 7px 0 0 7px; } .hear .hear-end { border-radius: 0 7px 7px 0; border-left: 0; }
   .hear button:hover { background: var(--accent); color: var(--on-accent); }
   .hear button.checked { background: rgba(62, 207, 110, 0.18); color: #2e9e57; border-color: rgba(62, 207, 110, 0.5); }
+  .edge-cell { display: flex; align-items: center; gap: 2px; min-width: 0; }
+  .revert { width: 18px; height: 20px; padding: 0; flex: none; background: none; border: 0; border-radius: 4px; color: var(--warn); cursor: pointer; font-size: 13px; }
+  .revert:hover { background: var(--hover); }
   .hear button.holding { animation: hold-fill 550ms linear forwards; }
   @keyframes hold-fill { from { box-shadow: inset 0 0 0 0 rgba(62, 207, 110, 0.85); } to { box-shadow: inset 90px 0 0 0 rgba(62, 207, 110, 0.85); } }
   .hear .hear-end.holding { animation-name: hold-fill-end; }

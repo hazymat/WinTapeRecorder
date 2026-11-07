@@ -103,6 +103,16 @@ public static class TrackBuilder
             track.SkipReason = name?.Problem ?? "";
             tracks.Add(track);
         }
+        // Ends meet starts (SPEC.md › Track detection): a fade's quiet tail sits under the gate, so a trimmed end lands early; instead each
+        // track runs right up to where the next one starts (whose start is trimmed to its first sound), unless something long lies between
+        if (gapSettings.EndsMeetNextStart)
+            for (var index = 0; index + 1 < tracks.Count; index++)
+            {
+                var track = tracks[index]; var next = tracks[index + 1];
+                if (next.Start <= track.End || next.Start - track.End > 30L * rate) continue;
+                track.End = next.Start; track.EndNote = "Right up to where the next track starts"; track.EndSure = next.StartSure;
+            }
+        foreach (var track in tracks) { track.DetectedStart = track.Start; track.DetectedEnd = track.End; }
         // Retakes (SPEC.md › Recording › Issues): a take with a problem is left out when the same title and artist were recorded again later
         for (var index = 0; index < tracks.Count; index++)
         {

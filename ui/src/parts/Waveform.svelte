@@ -21,7 +21,7 @@
   let verticalScale = $state(1), manualHeight = $state(false)
   // Ctrl+wheel sets the height and it stays through horizontal zooming; switching Auto height on or off goes back to automatic
   $effect(() => { autoHeight; untrack(() => { manualHeight = false; verticalScale = 1 }) })
-  const minVerticalScale = 1, maxVerticalScale = 32
+  const minVerticalScale = 1, maxVerticalScale = 10000 // effectively no cap: very quiet starts and fades can fill the lane
   let css = $state({ wave: '#5ccfff', waveDim: '#5ccfff', shade: 'rgba(92,207,255,0.08)', shadeOn: 'rgba(92,207,255,0.16)', start: '#4cd964', end: '#ff7a6b', playhead: '#fff', fg: '#eceef3', quiet: '#8e94a0', line: 'rgba(255,255,255,0.08)', accent: '#5ccfff', panel: 'rgba(255,255,255,0.06)', warn: '#ffb74d' })
   function readColours() { const style = getComputedStyle(document.documentElement), previous = untrack(() => css), read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback; css = { wave: read('--wave', previous.wave), waveDim: read('--wave-rms', previous.waveDim), shade: read('--track-shade', previous.shade), shadeOn: read('--track-shade-on', previous.shadeOn), start: read('--start', previous.start), end: read('--end', previous.end), playhead: read('--playhead', previous.playhead), fg: read('--fg', previous.fg), quiet: read('--fg-quiet', previous.quiet), line: read('--line', previous.line), accent: read('--accent', previous.accent), panel: read('--panel', previous.panel), warn: read('--warn', previous.warn) } }
   $effect(() => { untrack(readColours); const observer = new MutationObserver(readColours); observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-skin', 'class', 'style'] }); return () => observer.disconnect() })
@@ -164,14 +164,15 @@
       context.font = '11px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'middle'
       const label = `${index + 1}${track.title ? '  ' + track.title : ''}`
       context.save(); context.beginPath(); context.rect(Math.max(0, left), 0, Math.max(0, Math.min(width, right) - Math.max(0, left)), flagHeight); context.clip()
-      context.fillStyle = on ? css.accent : css.quiet; context.fillText(label, Math.max(0, left) + 6, flagHeight / 2)
+      context.fillStyle = on ? css.accent : css.quiet; context.fillText(label, Math.max(0, left) + flagWidth + 4, flagHeight / 2)
       context.restore()
       for (const [edge, x, colour] of [['start', left, css.start], ['end', right, css.end]] as const) {
         if (x < -2 || x > width + 2) continue
         const grabbed = grab?.trackId === track.id && grab.edge === edge
         if (grabbed) { context.fillStyle = colour; context.globalAlpha = 0.18; context.fillRect(x - 6, 0, 12, waveTop + waveHeight); context.globalAlpha = 1 }
         context.fillStyle = colour; context.fillRect(x - (grabbed ? 1.5 : 0.75), 0, grabbed ? 3 : 1.5, waveTop + waveHeight)
-        context.beginPath(); if (edge === 'start') { context.moveTo(x, 0); context.lineTo(x + 7, 0); context.lineTo(x, 8) } else { context.moveTo(x, 0); context.lineTo(x - 7, 0); context.lineTo(x, 8) } context.fill()
+        // The flag: a start's to the right of its line, an end's to the left (grab either by its flag)
+        context.beginPath(); if (edge === 'start') { context.moveTo(x, 0); context.lineTo(x + flagWidth, 0); context.lineTo(x + flagWidth - 4, flagHeight / 2); context.lineTo(x + flagWidth, flagHeight); context.lineTo(x, flagHeight) } else { context.moveTo(x, 0); context.lineTo(x - flagWidth, 0); context.lineTo(x - flagWidth + 4, flagHeight / 2); context.lineTo(x - flagWidth, flagHeight); context.lineTo(x, flagHeight) } context.closePath(); context.fill()
       }
     })
     // Name changes noted while recording
@@ -249,7 +250,18 @@
   }
 
   // A handle near the pointer (start/end lines, within 6 px; the flags on top are easier to catch)
+  // In the flag row a start's flag sticks out to the right of its line and an end's to the left, so a start and an end that meet
+  // can each be picked by their own flag (SPEC.md › Editing)
+  const flagWidth = 16
   function handleAt(x: number, y: number): Grab {
+    if (y < flagHeight) {
+      let picked: Grab = null, nearest = Infinity
+      for (const track of tracks) for (const edge of ['start', 'end'] as const) {
+        const lineX = frameToX(track[edge]), offset = edge === 'start' ? x - lineX : lineX - x
+        if (offset >= -1 && offset <= flagWidth && offset < nearest) { nearest = offset; picked = { trackId: track.id, edge } }
+      }
+      if (picked) return picked
+    }
     let best: Grab = null, bestDistance = y < flagHeight ? 9 : 6
     for (const track of tracks) for (const edge of ['start', 'end'] as const) { const distance = Math.abs(frameToX(track[edge]) - x); if (distance < bestDistance) { bestDistance = distance; best = { trackId: track.id, edge } } }
     return best
