@@ -43,6 +43,20 @@ public static class TrackBuilder
         return result;
     }
 
+    // Album artist (SPEC.md › Tags): an album whose tracks all have one artist gets that artist as its album artist, wherever it's blank.
+    // An album with several artists is left alone: Use main artist or the MusicBrainz suggestion settles it
+    public static bool FillAlbumArtists(List<Track> tracks)
+    {
+        var changed = false;
+        foreach (var album in tracks.Where(track => track.Album.Trim() != "").GroupBy(track => track.Album.Trim().ToLowerInvariant()))
+        {
+            var artists = album.Select(track => track.Artist.Trim()).Where(artist => artist != "").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (artists.Count != 1) continue;
+            foreach (var track in album.Where(track => track.AlbumArtist.Trim() == "")) { track.AlbumArtist = artists[0]; changed = true; }
+        }
+        return changed;
+    }
+
     public static List<Track> Build(Session session, Peaks peaks, RecordingProfile profile)
     {
         var gapSettings = profile.Gaps; var rate = session.SampleRate;
@@ -133,6 +147,7 @@ public static class TrackBuilder
             track.SkipReason = again ? track.SkipReason switch { "dropout" => "Dropout during this take; recorded again later", "gap" => "The sound cut out during this take; recorded again later", "clipping" => "Clipping during this take; recorded again later", _ => "Marked for a retake; recorded again later" }
                 : track.SkipReason switch { "dropout" => "A dropout happened during this take", "gap" => "The sound cut out during this take (the player stalled)", "clipping" => "Clipping during this take", _ => "Marked for a retake, but not recorded again" };
         }
+        FillAlbumArtists(tracks);
         return tracks;
     }
 

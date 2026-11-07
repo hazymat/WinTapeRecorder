@@ -443,6 +443,8 @@
   // Where each album's cover came from, so exactly one source shows as in use
   // Which albums' track lists are open in Fill gaps (kept open while you edit them)
   let openTrackLists = $state<Record<string, boolean>>({})
+  // The picture most of an album's tracks came with: one track may carry the album before's picture, sent late by the player
+  function commonest(paths: string[]) { const counts = new Map<string, number>(); for (const path of paths) counts.set(path, (counts.get(path) ?? 0) + 1); let best = '', most = 0; for (const [path, count] of counts) if (count > most) { best = path; most = count } return best }
   let coverSources = $state<Record<string, 'database' | 'player' | 'own'>>({})
   function coverInUse(group: ListAlbum, ownCover: string | null, playerCover: string): '' | 'database' | 'player' | 'own' {
     if (!ownCover) return ''
@@ -907,7 +909,7 @@
         {@const match = matchFor(group)}
         {@const rows = fieldRows(list, match)}
         {@const ownCover = commonOf(list, 'artPath')}
-        {@const playerCover = list.map(track => track.playerArtPath ?? '').find(path => path && thumbs[path]) ?? ''}
+        {@const playerCover = commonest(list.map(track => track.playerArtPath ?? '').filter(path => path && thumbs[path]))}
         {@const inUse = coverInUse(group, ownCover, playerCover)}
         {@const found = match ? match.trackTitles.filter(title => list.some(track => sameTitle(track.title, title))).length : 0}
         <section class="tag-card" class:dropping={dropAlbum === group.first} role="group" aria-label="Album"

@@ -364,6 +364,13 @@ public partial class App : Application
     static RecordingProfileSnapshot Snapshot(RecordingProfile profile) => new(profile.UseMediaInfo, profile.UseWindowTitles);
 
     // The player's picture for a name change, kept in the session folder (once per picture)
+    static string PreviousAlbumArt(Session session, NameChange change)
+    {
+        var at = session.Changes.IndexOf(change);
+        var previous = session.Changes.Take(at < 0 ? session.Changes.Count : at).LastOrDefault(other => other.ArtPath != "");
+        return previous != null && !string.Equals(previous.Album.Trim(), change.Album.Trim(), StringComparison.OrdinalIgnoreCase) ? previous.ArtPath : "";
+    }
+
     async Task SavePlayerArtAsync(Session session, NameChange change, string sourceKey)
     {
         try
@@ -372,6 +379,16 @@ public partial class App : Application
             var bytes = await Watcher.ThumbnailAsync(sourceKey);
             if (bytes == null || bytes.Length < 500) return;
             var path = TagLookup.SaveArtBytes(bytes, session.Folder);
+            // Players swap the picture a while after the name: the previous album's picture on a new album's track is the old one still
+            // showing, so look again a little later, and give up rather than keep the wrong one
+            for (var retry = 0; retry < 3 && PreviousAlbumArt(session, change) == path; retry++)
+            {
+                await Task.Delay(2500 * (retry + 1));
+                bytes = await Watcher.ThumbnailAsync(sourceKey);
+                if (bytes == null || bytes.Length < 500) return;
+                path = TagLookup.SaveArtBytes(bytes, session.Folder);
+            }
+            if (PreviousAlbumArt(session, change) == path) return;
             await Dispatcher.InvokeAsync(() => { change.ArtPath = path; if (Recorder.Session == session) session.Save(); });
         }
         catch { }
@@ -437,6 +454,7 @@ public partial class App : Application
             if (peaks == null) { peaks = Peaks.Build(audio, progress); try { peaks.Save(session.PeaksPath); } catch { } }
             if (session.Tracks.Count == 0 && session.TotalFrames > 0) session.Tracks = TrackBuilder.Build(session, peaks, Settings.RecordingProfileOrActive(session.RecordingProfileId));
             foreach (var track in session.Tracks) { if (track.DetectedStart < 0) track.DetectedStart = track.Start; if (track.DetectedEnd < 0) track.DetectedEnd = track.End; } // older sessions: as they are now
+            TrackBuilder.FillAlbumArtists(session.Tracks);
             if (session.Quality.Count == 0 && session.TotalFrames > audio.SampleRate * 2) session.Quality = MeasureQuality(audio); // recorded before this was measured live
             session.Save();
             return (session, audio, peaks);
