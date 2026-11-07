@@ -89,6 +89,9 @@
     const frame = event.offsetX / liveWidth * overviewSpan
     viewStart = frame - viewSpan / 2; selected = -1; drawLive()
   }
+  // The selected marker pulses (as a grabbed edge does in Albums & cuts), so it's plain it's still selected
+  let lastLiveDraw = 0
+  const pulse = () => 0.5 + 0.5 * Math.sin(performance.now() / 1200 * Math.PI * 2)
   let drawing = false
   async function drawLive() {
     const status = app.status
@@ -117,7 +120,7 @@
         const x = markerX(index); if (x < -2 || x > liveWidth + 2) return
         const isSelected = index === selected, isHovered = index === hovered && !isSelected
         context.fillStyle = isSelected ? colour('--accent', '#5ccfff') : colour('--warn', '#ffb74d')
-        if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.2 : 0.12; context.fillRect(x - 8, 0, 16, height); context.globalAlpha = 1 }
+        if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.12 + 0.3 * pulse() : 0.12; context.fillRect(x - 8, 0, 16, height); context.globalAlpha = 1 }
         context.fillRect(x - 1, 0, isSelected || isHovered ? 3 : 2, height); context.fillRect(x, 0, 11, 13) // the flag: drag it to move the marker
         context.fillText(`${index + 1} ${change.title || ''}`.trim(), x + 15, 3)
       })
@@ -128,7 +131,7 @@
       for (let second = Math.ceil(Math.max(0, now.start) / rate / stepSeconds) * stepSeconds; second * rate < now.start + now.span; second += stepSeconds) { const x = toX(second * rate); context.fillRect(x, height - 10, 1, 4); context.fillText(stepSeconds < 1 ? `${formatTime(second * rate, rate, false)}.${Math.round((second % 1) * 10)}` : formatTime(second * rate, rate, false), x + 3, height - 1) }
     } catch { } finally { drawing = false }
   }
-  $effect(() => { if (recording) { liveTimer = window.setInterval(drawLive, 250); return () => clearInterval(liveTimer) } else { following = true; selected = -1; overviewSpan = 0; dragging = null } })
+  $effect(() => { if (recording) { liveTimer = window.setInterval(() => { if (selected >= 0 || performance.now() - lastLiveDraw > 240) { lastLiveDraw = performance.now(); drawLive() } }, 80); return () => clearInterval(liveTimer) } else { following = true; selected = -1; overviewSpan = 0; dragging = null } })
   // A marker's flag (the top of the wave) drags the marker itself; anywhere else drags the view (SPEC.md › Recording › Live editing)
   const flagZone = 16
   let flagDrag: null | { index: number; frame: number } = null

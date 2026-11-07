@@ -169,7 +169,7 @@
       for (const [edge, x, colour] of [['start', left, css.start], ['end', right, css.end]] as const) {
         if (x < -2 || x > width + 2) continue
         const grabbed = grab?.trackId === track.id && grab.edge === edge
-        if (grabbed) { context.fillStyle = colour; context.globalAlpha = 0.18; context.fillRect(x - 6, 0, 12, waveTop + waveHeight); context.globalAlpha = 1 }
+        if (grabbed) { context.fillStyle = colour; context.globalAlpha = 0.1 + 0.3 * (0.5 + 0.5 * Math.sin(performance.now() / 1200 * Math.PI * 2)); context.fillRect(x - 6, 0, 12, waveTop + waveHeight); context.globalAlpha = 1 }
         context.fillStyle = colour; context.fillRect(x - (grabbed ? 1.5 : 0.75), 0, grabbed ? 3 : 1.5, waveTop + waveHeight)
         // The flag: a start's to the right of its line, an end's to the left (grab either by its flag)
         context.beginPath(); if (edge === 'start') { context.moveTo(x, 0); context.lineTo(x + flagWidth, 0); context.lineTo(x + flagWidth - 4, flagHeight / 2); context.lineTo(x + flagWidth, flagHeight); context.lineTo(x, flagHeight) } else { context.moveTo(x, 0); context.lineTo(x - flagWidth, 0); context.lineTo(x - flagWidth + 4, flagHeight / 2); context.lineTo(x - flagWidth, flagHeight); context.lineTo(x, flagHeight) } context.closePath(); context.fill()
@@ -236,6 +236,8 @@
     if (playhead >= 0) { context.fillStyle = css.playhead; context.fillRect(toX(playhead) - 0.5, 0, 1, overviewHeight) }
   }
 
+  // A grabbed edge pulses: redraw on every frame while one is grabbed
+  $effect(() => { if (!grab) return; let frame = 0; const loop = () => { drawDetail(); frame = requestAnimationFrame(loop) }; frame = requestAnimationFrame(loop); return () => cancelAnimationFrame(frame) })
   $effect(() => { detailData; spectroData; mode; tracks; changes; dropouts; selectedIds; currentId; cursor; playhead; grab; view.start; view.framesPerPixel; width; detailHeight; css; channels; verticalScale; requestAnimationFrame(drawDetail) })
   $effect(() => { overviewData; tracks; selectedIds; currentId; playhead; view.start; view.framesPerPixel; width; css; requestAnimationFrame(drawOverview) })
 
