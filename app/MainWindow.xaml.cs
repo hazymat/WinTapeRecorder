@@ -98,6 +98,8 @@ public partial class MainWindow : Window
                 case "record": App.StartRecording(Text(message, "profileId"), Text(message, "source") is { Length: > 0 } source ? source : "auto", Text(message, "name")); break;
                 case "stopRecording": var stopped = App.StopRecording(); Reply(message, new { sessionId = stopped?.Id ?? "" }); break;
                 case "marker": App.AddMarker(); break;
+                case "editChange": App.EditChange((int)Number(message, "index", -1), message.TryGetProperty("frame", out var frameValue) && frameValue.ValueKind == JsonValueKind.Number ? (long)frameValue.GetDouble() : null, message.TryGetProperty("artist", out _) ? Text(message, "artist") : null, message.TryGetProperty("title", out _) ? Text(message, "title") : null, message.TryGetProperty("album", out _) ? Text(message, "album") : null); break;
+                case "removeChange": App.RemoveChange((int)Number(message, "index", -1)); break;
                 case "setSource": App.MonitorSource = Text(message, "source") is { Length: > 0 } chosenSource ? chosenSource : "auto"; App.RaiseNamesUpdated(); break;
                 case "setActiveProfile":
                     if (Text(message, "kind") == "recording") App.Settings.ActiveRecordingProfileId = Text(message, "profileId"); else App.Settings.ActiveOutputProfileId = Text(message, "profileId");

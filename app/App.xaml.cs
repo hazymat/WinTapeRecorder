@@ -118,6 +118,23 @@ public partial class App : Application
     }
 
     // M while recording: a marker here, named by whatever is playing
+    // Live editing while recording (SPEC.md › Recording): the markers and names noted so far can be moved, retyped or removed; capture carries on untouched
+    public void EditChange(int index, long? frame, string? artist, string? title, string? album)
+    {
+        if (Recorder.Session is not { } session || index < 0 || index >= session.Changes.Count) return;
+        var change = session.Changes[index];
+        if (frame.HasValue) change.Frame = Math.Clamp(frame.Value, 0, Math.Max(0, Recorder.FramesWritten));
+        if (artist != null) change.Artist = artist; if (title != null) change.Title = title; if (album != null) change.Album = album;
+        change.Manual = true; // edited by hand: the track builder keeps it even if it's short
+        session.Changes.Sort((first, second) => first.Frame.CompareTo(second.Frame));
+        session.Save(); StatusChanged?.Invoke();
+    }
+    public void RemoveChange(int index)
+    {
+        if (Recorder.Session is not { } session || index < 0 || index >= session.Changes.Count) return;
+        session.Changes.RemoveAt(index); session.Save(); StatusChanged?.Invoke();
+    }
+
     public void AddMarker()
     {
         if (Recorder.Session is not { } session) return;
@@ -208,7 +225,7 @@ public partial class App : Application
         deviceVolume = Recorder.DeviceVolume,
         dropouts = Recorder.Dropouts.Count,
         sampleRate = Recorder.Session?.SampleRate ?? 0,
-        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Manual }) ?? Enumerable.Empty<object>(),
+        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Manual }) ?? Enumerable.Empty<object>(),
         current = CurrentName == null ? null : new { CurrentName.Label, CurrentName.Artist, CurrentName.Title },
         source = RecordingSource,
         playing = Player.Playing,

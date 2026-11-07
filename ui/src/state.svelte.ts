@@ -7,7 +7,7 @@ export type Profile = { id: string; name: string; loopback?: boolean; deviceName
 export type NameSource = { key: string; kind: string; label: string; artist: string; title: string; playing: boolean; rule: string }
 
 export const app = $state({
-  status: null as null | { recording: boolean; capturing: boolean; sessionId: string; sessionName: string; device: string; deviceVolume: number; dropouts: number; sampleRate: number; changes: { frame: number; artist: string; title: string; manual: boolean }[]; current: null | { label: string; artist: string; title: string }; source: string; playing: boolean; playingSession: string; exporting: boolean; version: string; updateReady: string },
+  status: null as null | { recording: boolean; capturing: boolean; sessionId: string; sessionName: string; device: string; deviceVolume: number; dropouts: number; sampleRate: number; changes: { frame: number; artist: string; title: string; album: string; manual: boolean }[]; current: null | { label: string; artist: string; title: string }; source: string; playing: boolean; playingSession: string; exporting: boolean; version: string; updateReady: string },
   levels: { peaks: [] as number[], clipped: 0, seconds: 0, bytes: 0, minutesLeft: -1 },
   hints: { hidden: false, dismissed: [] as string[] },
   recordingProfiles: [] as Profile[], outputProfiles: [] as Profile[], activeRecording: '', activeOutput: '', auditionSeconds: 5,

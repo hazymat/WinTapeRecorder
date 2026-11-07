@@ -15,6 +15,7 @@ A Windows tape recorder for listening sessions. Record one long session to a sin
 - Input level check: live peak meters per channel with peak hold, and a clip light that latches (count of clipped samples) until clicked. No other meters. Nothing is adjusted during recording: loopback is the player's digital signal as it is.
 - Dropout detection: the audio engine has a half-second buffer and disk writes happen off the audio thread; the audio clock is checked against the wall clock, and any samples the engine still threw away are logged as dropouts (frame and length), shown on the recorder, in the session header and on the waveform's ruler.
 - Start/stop recording (Ctrl+R from anywhere); mark a new track by hand while recording (M).
+- Live editing: while recording, every marker noted so far can be moved (nudge buttons, a typed time, or dragging its line on the live waveform), its artist, title and album retyped, or removed. Capture is never interrupted.
 - Output devices are recorded through WASAPI loopback; the app plays silence to that device while recording so gaps in the audio keep their real length.
 - WAV size limit (4 GB): the app warns before it and stops cleanly at it.
 

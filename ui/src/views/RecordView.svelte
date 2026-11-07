@@ -48,11 +48,26 @@
       data.channels.forEach((values, lane) => { const middle = laneHeight * (lane + 0.5); for (let column = 0; column < values.length / 2; column++) { const low = values[column * 2], high = values[column * 2 + 1]; if (column * span / (values.length / 2) + start > totalFrames) break; context.fillRect(column, middle - high * (laneHeight / 2 - 1), 1, Math.max(1, (high - low) * (laneHeight / 2 - 1))) } })
       const marks = getComputedStyle(document.documentElement).getPropertyValue('--warn').trim() || '#ffb74d'
       context.fillStyle = marks
-      for (const change of status.changes) { const x = (change.frame - start) / span * liveWidth; if (x >= 0 && x <= liveWidth) context.fillRect(x, 0, 1.5, height) }
+      context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'
+      status.changes.forEach((change, index) => { const x = (change.frame - start) / span * liveWidth; if (x < 0 || x > liveWidth) return; context.fillRect(x - 1, 0, 2, height); context.fillText(`${index + 1} ${change.title || ''}`.trim(), x + 4, 3) })
     } catch { }
   }
   $effect(() => { if (recording) { liveTimer = window.setInterval(drawLive, 300); return () => clearInterval(liveTimer) } })
 
+  function nudge(index: number, frame: number, seconds: number) { sendToShell({ type: 'editChange', index, frame: Math.max(0, frame + seconds * (app.status?.sampleRate ?? 48000)) }) }
+  function setTime(index: number, text: string, rate: number) {
+    const parts = text.trim().split(':').map(Number)
+    if (parts.some(part => Number.isNaN(part))) return
+    const seconds = parts.reduce((total, part) => total * 60 + part, 0)
+    sendToShell({ type: 'editChange', index, frame: Math.round(seconds * rate) })
+  }
+  // Dragging a marker on the live waveform
+  let dragging: null | { index: number } = null
+  function markerAt(x: number) { const status = app.status; if (!status?.sampleRate) return -1; const { start, span } = liveRange(); return status.changes.findIndex(change => Math.abs((change.frame - start) / span * liveWidth - x) < 7) }
+  function liveRange() { const status = app.status!; const totalFrames = app.levels.seconds * status.sampleRate, span = Math.min(60, Math.max(10, app.levels.seconds)) * status.sampleRate; return { start: Math.max(0, totalFrames - span), span } }
+  function onLiveDown(event: PointerEvent) { const index = markerAt(event.offsetX); if (index < 0) return; dragging = { index }; liveCanvas?.setPointerCapture(event.pointerId) }
+  function onLiveMove(event: PointerEvent) { if (liveCanvas) liveCanvas.style.cursor = dragging || markerAt(event.offsetX) >= 0 ? 'ew-resize' : 'default'; if (!dragging) return; const { start, span } = liveRange(); sendToShell({ type: 'editChange', index: dragging.index, frame: Math.round(start + event.offsetX / liveWidth * span) }) }
+  function onLiveUp() { dragging = null }
   const sizeText = $derived(app.levels.bytes > 1e9 ? `${(app.levels.bytes / 1e9).toFixed(2)} GB` : `${(app.levels.bytes / 1e6).toFixed(0)} MB`)
   const current = $derived(app.status?.current)
 </script>
@@ -90,13 +105,24 @@
   <p class="now">{#if current?.title}<strong>{current.title}</strong>{#if current.artist}{' · '}{current.artist}{/if}<span class="quiet">{' · '}{current.label}</span>{:else}<span class="quiet">Nothing named yet. {source === 'none' ? 'Tracks will be split on gaps.' : 'Play something in a browser or app; gaps split tracks when there are no names.'}</span>{/if}</p>
 
   {#if recording}
-    <canvas class="live-wave" bind:this={liveCanvas} bind:clientWidth={liveWidth}></canvas>
+    <canvas class="live-wave" bind:this={liveCanvas} bind:clientWidth={liveWidth} onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp}></canvas>
     <h3>Tracks marked so far</h3>
-    <ol class="changes">
-      {#each app.status?.changes ?? [] as change}
-        <li><span class="time">{formatTime(change.frame, app.status?.sampleRate ?? 48000, false)}</span>{change.title || (change.manual ? 'Marked by hand' : 'Untitled')}{#if change.artist}<span class="quiet">{' · '}{change.artist}</span>{/if}</li>
-      {:else}<li class="quiet">None yet.</li>{/each}
-    </ol>
+    <Hint id="live-edit" text="Everything here can be fixed while the recording runs: retype a name, nudge a marker with the arrows, type a time, or drag the orange line on the waveform above. The audio is untouched." />
+    <div class="changes">
+      {#each app.status?.changes ?? [] as change, index (index + ':' + change.frame)}
+        {@const rate = app.status?.sampleRate ?? 48000}
+        <div class="change">
+          <span class="number">{index + 1}</span>
+          <span class="nudge"><button onclick={() => nudge(index, change.frame, -5)} title="5 s earlier">«</button><button onclick={() => nudge(index, change.frame, -1)} title="1 s earlier">‹</button></span>
+          <input class="time-box" value={formatTime(change.frame, rate, false)} onchange={(event) => setTime(index, (event.target as HTMLInputElement).value, rate)} title="Where this track starts (m:ss)" aria-label="Start time" />
+          <span class="nudge"><button onclick={() => nudge(index, change.frame, 1)} title="1 s later">›</button><button onclick={() => nudge(index, change.frame, 5)} title="5 s later">»</button></span>
+          <input value={change.artist} placeholder="Artist" onchange={(event) => sendToShell({ type: 'editChange', index, artist: (event.target as HTMLInputElement).value.trim() })} />
+          <input value={change.title} placeholder={change.manual ? 'Title (marked by hand)' : 'Title'} onchange={(event) => sendToShell({ type: 'editChange', index, title: (event.target as HTMLInputElement).value.trim() })} />
+          <input value={change.album} placeholder="Album" onchange={(event) => sendToShell({ type: 'editChange', index, album: (event.target as HTMLInputElement).value.trim() })} />
+          <button class="remove" onclick={() => sendToShell({ type: 'removeChange', index })} title="Remove this marker (the audio stays)" aria-label="Remove marker">✕</button>
+        </div>
+      {:else}<p class="quiet">None yet. Press M to mark where a track starts.</p>{/each}
+    </div>
   {/if}
 </div>
 
@@ -117,7 +143,14 @@
   .warn { color: var(--danger); font-size: 12.5px; margin: 8px 0 0; }
   .now { margin: 0; }
   .live-wave { display: block; width: 100%; height: 90px; margin-top: 14px; border-radius: 8px; background: var(--panel); }
-  .changes { margin: 0; padding-left: 22px; max-height: 260px; overflow-y: auto; }
-  .changes li { padding: 2px 0; }
-  .time { display: inline-block; min-width: 64px; font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
+  .changes { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
+  .change { display: grid; grid-template-columns: 24px auto 76px auto minmax(90px, 1fr) minmax(120px, 1.4fr) minmax(90px, 1fr) 28px; gap: 6px; align-items: center; }
+  .number { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); text-align: right; }
+  .nudge { display: flex; gap: 2px; }
+  .nudge button { width: 24px; height: 26px; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; color: var(--fg); font: inherit; cursor: pointer; }
+  .nudge button:hover { background: var(--hover); }
+  .time-box { font-family: var(--font-display); font-size: 12px; text-align: center; padding: 4px 4px; }
+  .remove { width: 26px; height: 26px; padding: 0; background: none; border: 0; border-radius: 5px; color: var(--fg-quiet); cursor: pointer; }
+  .remove:hover { background: var(--hover); color: var(--danger); }
+  .live-wave { cursor: default; }
 </style>
