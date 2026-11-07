@@ -206,14 +206,17 @@ public partial class MainWindow : Window
                     var wanted = message.GetProperty("trackIds").EnumerateArray().Select(element => element.GetString() ?? "").ToHashSet();
                     var exportTracks = exporting.session.Tracks.Where(track => wanted.Contains(track.Id)).ToList();
                     var outputProfile = App.Settings.OutputProfileOrActive(Text(message, "profileId"));
-                    App.Exporting = true; Push(App.StatusJson());
+                    App.Exporting = true; App.ExportingSessionId = exporting.session.Id; App.ExportDone = 0; App.ExportTotal = exportTracks.Count; Push(App.StatusJson());
                     exportCancel = new CancellationTokenSource();
                     var errors = "";
-                    var exportedCount = await Task.Run(() => Exporter.Export(exporting.session, exporting.audio, exportTracks, outputProfile, progress => { if (progress.Error != "") errors = progress.Error; Push(JsonSerializer.Serialize(new { type = "exportProgress", done = progress.Done, total = progress.Total, current = progress.Current })); }, exportCancel.Token));
+                    var exportSessionId = exporting.session.Id;
+                    var exportedCount = await Task.Run(() => Exporter.Export(exporting.session, exporting.audio, exportTracks, outputProfile, progress => { if (progress.Error != "") errors = progress.Error; App.ExportDone = progress.Done; Push(JsonSerializer.Serialize(new { type = "exportProgress", id = exportSessionId, done = progress.Done, total = progress.Total, current = progress.Current })); }, exportCancel.Token));
                     exporting.session.OutputProfileId = outputProfile.Id;
                     exporting.session.Save();
-                    App.Exporting = false; Push(App.StatusJson());
-                    Reply(message, new { done = exportedCount, error = errors, tracks = exporting.session.Tracks, folder = outputProfile.Folder.Trim() == "" ? AppPaths.DefaultOutputFolder : outputProfile.Folder.Trim() });
+                    App.Exporting = false; App.ExportingSessionId = ""; Push(App.StatusJson());
+                    var verifiedCount = exportTracks.Count(track => track.Verified);
+                    Reply(message, new { done = exportedCount, verified = verifiedCount, error = errors, tracks = exporting.session.Tracks, folder = outputProfile.Folder.Trim() == "" ? AppPaths.DefaultOutputFolder : outputProfile.Folder.Trim() });
+                    Push(JsonSerializer.Serialize(new { type = "exportDone", id = exportSessionId, done = exportedCount, verified = verifiedCount, total = exportTracks.Count, error = errors }));
                     App.NotifySessionsChanged();
                     break;
                 case "cancelExport": exportCancel?.Cancel(); break;
@@ -238,7 +241,7 @@ public partial class MainWindow : Window
     static object Summary(Session session) => new
     {
         id = session.Id, name = session.Name, created = session.Created, seconds = session.SampleRate == 0 ? 0 : (double)session.TotalFrames / session.SampleRate,
-        tracks = session.Tracks.Count, exported = session.Tracks.Count(track => track.Exported), recording = session.Recording && App.Instance.Recorder.Session?.Id == session.Id, crashed = session.Recording && App.Instance.Recorder.Session?.Id != session.Id,
+        tracks = session.Tracks.Count(track => !track.Skip), exported = session.Tracks.Count(track => track.Exported && !track.Skip), verified = session.Tracks.Count(track => track.Verified && !track.Skip), recording = session.Recording && App.Instance.Recorder.Session?.Id == session.Id, crashed = session.Recording && App.Instance.Recorder.Session?.Id != session.Id,
     };
 
     static object SessionDetail(Session session) => new

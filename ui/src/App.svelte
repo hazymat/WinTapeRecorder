@@ -17,6 +17,8 @@
   onShellMessage('sources', message => app.sources = message.sources)
   onShellMessage('settings', message => { app.hints = message.hints; app.recordingProfiles = message.recordingProfiles; app.outputProfiles = message.outputProfiles; app.activeRecording = message.activeRecording; app.activeOutput = message.activeOutput; app.auditionSeconds = message.auditionSeconds })
   onShellMessage('sessionsChanged', () => loadSessions())
+  // An export keeps running while the next session is recorded: its progress sits on the session in the sidebar, and the end is announced wherever you are
+  onShellMessage('exportDone', message => { loadSessions(); toast(message.error ? `Export finished with problems: ${message.done} of ${message.total} written, ${message.verified} verified. ${String(message.error).split('\n')[0]}` : `Export finished: ${message.done} track${message.done === 1 ? '' : 's'} written and verified`, { ms: message.error ? 15000 : 6000 }) })
   onShellMessage('tip', message => toast(`${message.title}: ${message.text}`, { ms: 10000 }))
   onShellMessage('window', message => app.window = { glass: !!message.glass, frameless: !!message.frameless, maximised: !!message.maximised })
   onShellMessage('skin', message => {
@@ -121,7 +123,7 @@
       {#each app.sessions as session (session.id)}
         <button class="session" class:on={nav.view === 'session' && nav.sessionId === session.id} onclick={() => openSession(session)} oncontextmenu={(event) => { event.preventDefault(); sessionMenu = { session, left: Math.min(event.clientX, innerWidth - 220), top: Math.min(event.clientY, innerHeight - 110) } }} title={session.crashed ? 'This recording was cut short (crash or power cut). It opens with what was saved.' : ''}>
           <span class="session-name">{session.name}{#if session.recording}<span class="badge live">REC</span>{:else if session.crashed}<span class="badge">!</span>{/if}</span>
-          <span class="session-facts">{dateLabel(session.created)} · {formatDuration(session.seconds)} · {session.exported}/{session.tracks} exported</span>
+          <span class="session-facts">{dateLabel(session.created)} · {formatDuration(session.seconds)} · {#if app.status?.exportingSession === session.id}<span class="exporting">exporting {app.status.exportDone}/{app.status.exportTotal}…</span>{:else}{session.exported}/{session.tracks} exported{session.exported && session.verified === session.exported ? ' ✓' : ''}{/if}</span>
         </button>
       {:else}
         <p class="no-sessions">Recordings you make appear here until you close them.</p>
@@ -170,6 +172,7 @@
   .session { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; background: none; border: 0; color: var(--fg); padding: 6px 10px; border-radius: 8px; cursor: pointer; font: inherit; text-align: left; }
   .session-name { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .session-facts { font-size: 11px; color: var(--fg-quiet); }
+  .exporting { color: var(--accent); font-weight: 600; }
   .badge { font-size: 9px; font-weight: 700; padding: 0 5px; border-radius: 4px; background: var(--warn); color: #000; }
   .badge.live { background: var(--danger); color: #fff; }
   .no-sessions { margin: 4px 10px; font-size: 12px; color: var(--fg-quiet); }

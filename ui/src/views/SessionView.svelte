@@ -314,13 +314,15 @@
     }
     clearTimeout(saveTimer); sendToShell({ type: 'saveSession', id: sessionId, tracks: $state.snapshot(tracks) })
     exportStatus = `Exporting ${chosen.length} track${chosen.length === 1 ? '' : 's'}…`
+    // The export carries on in the background: the next session can be recorded meanwhile (SPEC.md › Workflow)
+    toast(`Exporting ${chosen.length} track${chosen.length === 1 ? '' : 's'} in the background. You can start the next session now.`, { ms: 8000, action: { label: 'New session', key: 'N', run: () => { clearSelection(); nav.view = 'record' } } })
     try {
-      const result = await request<{ done: number; error: string; tracks: Track[]; folder: string }>({ type: 'export', id: sessionId, trackIds: chosen.map(track => track.id), profileId: outputProfileId })
+      const result = await request<{ done: number; verified: number; error: string; tracks: Track[]; folder: string }>({ type: 'export', id: sessionId, trackIds: chosen.map(track => track.id), profileId: outputProfileId })
       exportStatus = ''
       if (result.tracks) tracks = result.tracks
       const exportedPath = result.tracks?.find(track => chosen.some(chosenTrack => chosenTrack.id === track.id) && track.exportedPath)?.exportedPath
-      if (result.error) toast(`Exported ${result.done} of ${chosen.length}. ${result.error.split('\n')[0]}`, { ms: 12000 })
-      else toast(`Exported ${result.done} track${result.done === 1 ? '' : 's'}`, { action: { label: 'Show in Explorer', key: 'O', run: () => sendToShell({ type: 'openFolder', path: exportedPath ?? result.folder }) } })
+      if (result.error) toast(`${result.done} of ${chosen.length} written, ${result.verified} verified. ${result.error.split('\n')[0]}`, { ms: 15000 })
+      else toast(`${result.done} track${result.done === 1 ? '' : 's'} written and verified`, { action: { label: 'Show in Explorer', key: 'O', run: () => sendToShell({ type: 'openFolder', path: exportedPath ?? result.folder }) } })
     } catch (error) { exportStatus = ''; toast('Export failed: ' + (error as Error).message) }
   }
 
@@ -426,7 +428,7 @@
   <nav class="steps" aria-label="Steps">
     <button class="step" class:active={step === 'cuts'} class:done={unchecked.length === 0} onclick={() => step = 'cuts'}><span class="step-number">1</span><span class="step-text"><strong>Check the cuts</strong><span>{unchecked.length === 0 ? 'all checked' : `${unchecked.length} to go${doubtful.length ? `, ${doubtful.length} doubtful` : ''}`}</span></span></button>
     <button class="step" class:active={step === 'tags'} class:done={untagged.length === 0} onclick={() => step = 'tags'}><span class="step-number">2</span><span class="step-text"><strong>Tags</strong><span>{untagged.length === 0 ? 'complete' : `${untagged.length} track${untagged.length === 1 ? '' : 's'} missing details`}</span></span></button>
-    <button class="step" class:active={step === 'export'} class:done={unexported.length === 0 && exportable.length > 0} onclick={() => step = 'export'}><span class="step-number">3</span><span class="step-text"><strong>Export</strong><span>{exportable.length === 0 ? 'nothing to export' : unexported.length === 0 ? `${exportable.length} exported${unverified.length ? `, ${unverified.length} to verify` : ', verified'}` : `${unexported.length} of ${exportable.length} to go`}</span></span></button>
+    <button class="step" class:active={step === 'export'} class:done={unexported.length === 0 && exportable.length > 0} onclick={() => step = 'export'}><span class="step-number">3</span><span class="step-text"><strong>Export</strong><span>{exportable.length === 0 ? 'nothing to export' : unexported.length === 0 ? `${exportable.length} exported${unverified.length ? `, ${unverified.length} failed the check` : ', all verified'}` : `${unexported.length} of ${exportable.length} to go`}</span></span></button>
     <div class="step-actions">
       {#if step === 'cuts'}
         <button class="primary" onclick={checkNext} title="Jump to the next start or end, zoomed in, and play it (doubtful ones first)">{unchecked.length ? 'Check next' : 'Check again'}</button>
@@ -522,7 +524,7 @@
         <input class="no-hold" value={track.genre ?? ''} placeholder="Genre" onchange={(event) => editField(track, 'genre', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <span class="source-cell" title={cutoff ? `Spectrum stops at ${(cutoff / 1000).toFixed(1)} kHz: ${describeCutoff(cutoff)}` : 'Too little sound to tell'}>{shortCutoff(cutoff)}</span>
         <span class="fades">{track.fadeInMs || track.fadeOutMs ? `${track.fadeInMs}/${track.fadeOutMs} ms` : ''}</span>
-        <span class="status">{#if track.skip}<button class="skipped no-hold" title={`${track.skipReason}. Click to use this take after all.`} onclick={(event) => { event.stopPropagation(); setSkip(track, false) }}>Skipped</button>{:else if track.skipReason}<button class="damaged no-hold" title={`${track.skipReason}. Click to leave it out of the export.`} onclick={(event) => { event.stopPropagation(); setSkip(track, true) }}>Damaged?</button>{:else if track.exported}<button class="exported no-hold" title={track.exportedPath} onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: track.exportedPath }) }}>Exported</button>{/if}</span>
+        <span class="status">{#if track.verifyError}<button class="failed no-hold" title={`${track.verifyError}. Export it again.`} onclick={(event) => { event.stopPropagation(); exportTracks([track.id], true) }}>Failed check</button>{:else if track.skip}<button class="skipped no-hold" title={`${track.skipReason}. Click to use this take after all.`} onclick={(event) => { event.stopPropagation(); setSkip(track, false) }}>Skipped</button>{:else if track.skipReason}<button class="damaged no-hold" title={`${track.skipReason}. Click to leave it out of the export.`} onclick={(event) => { event.stopPropagation(); setSkip(track, true) }}>Damaged?</button>{:else if track.exported}<button class="exported no-hold" title={`${track.exportedPath}${track.verified ? ' · read back and checked' : ''}`} onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: track.exportedPath }) }}>Exported</button>{/if}</span>
       </div>
     {:else}
       <div class="none quiet">No tracks found. Place the playhead and press N to add one, or use Redetect.</div>
@@ -549,7 +551,7 @@
 {/if}
 {#if exportCheck}
   {@const check = exportCheck}
-  <Dialog title="Some tags are empty" text={`${check.keys.length === 1 ? 'This track has' : 'Some of these tracks have'} no ${check.missing}. Players and libraries sort by these, so it's worth filling them in first.`} confirmLabel="Fill in tags…" altLabel="Export anyway" onalt={() => { exportCheck = null; exportTracks(check.keys, true) }} onconfirm={() => { exportCheck = null; tagging = check.keys }} oncancel={() => exportCheck = null} />
+  <Dialog title="Some tags are empty" text={`${check.keys.length === 1 ? 'This track has' : 'Some of these tracks have'} no ${check.missing}. Players and libraries sort by these, so it's worth filling them in first.`} confirmLabel="Fill in tags…" altLabel="Export anyway" onalt={() => { const keys = check.keys; exportCheck = null; exportTracks(keys, true) }} onconfirm={() => { const keys = check.keys; exportCheck = null; tagging = keys }} oncancel={() => exportCheck = null} />
 {/if}
 {#if dialog?.kind === 'fades'}
   <Dialog title="Fades for {dialog.keys.length} track{dialog.keys.length === 1 ? '' : 's'}" text="Lengths in milliseconds; 0 is no fade. You hear them when auditioning, and they're in the exported files." confirmLabel="Set" onconfirm={applyDialog} oncancel={() => dialog = null}>
@@ -628,6 +630,7 @@
   .hear-head { display: flex; align-items: center; gap: 6px; }
   .hear-style { font: inherit; font-size: 10.5px; padding: 0 2px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
   .exported { background: none; border: 0; color: #3ecf6e; font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
+  .failed { background: none; border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent); border-radius: 999px; padding: 1px 8px; font: inherit; font-size: 11px; cursor: pointer; color: var(--danger); }
   .skipped, .damaged { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font: inherit; font-size: 11px; cursor: pointer; color: var(--fg-quiet); }
   .damaged { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
   .row:has(.skipped) { opacity: 0.55; }

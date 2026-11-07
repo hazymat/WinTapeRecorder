@@ -94,6 +94,7 @@ public class Track
     public bool Skip { get; set; } // left out of exports (a damaged take that was recorded again, or the user's choice)
     public string SkipReason { get; set; } = "";
     public bool Verified { get; set; } // the exported file was read back and checked
+    public string VerifyError { get; set; } = ""; // what the check found wrong, if anything
     public TagSuggestion? Suggestion { get; set; }
     public bool SuggestionDismissed { get; set; }
     public bool SuggestionLooked { get; set; } // looked up and nothing found, or found

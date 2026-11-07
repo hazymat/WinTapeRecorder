@@ -50,6 +50,36 @@ public static class NameTemplate
 
 public record ExportProgress(int Done, int Total, string Current, string Error);
 
+// Verification (SPEC.md › Export): each written file is opened again and must decode, be the right length and carry the right title
+public static class Verifier
+{
+    public static string Check(string path, Track track, int sampleRate)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return "the file is missing";
+            if (info.Length < 1024) return "the file is empty";
+            var expected = (track.End - track.Start) / (double)sampleRate;
+            using (var tagFile = TagLib.File.Create(path))
+            {
+                var title = tagFile.Tag.Title ?? "";
+                if (track.Title != "" && !string.Equals(title, track.Title, StringComparison.Ordinal)) return $"the title tag reads “{title}”";
+                var tagged = tagFile.Properties.Duration.TotalSeconds;
+                if (tagged > 0 && Math.Abs(tagged - expected) > Math.Max(1.5, expected * 0.02)) return $"its length is {tagged:0.0} s, not {expected:0.0} s";
+            }
+            // It must decode: Windows reads the start of it
+            using var reader = new NAudio.Wave.MediaFoundationReader(path);
+            var buffer = new byte[reader.WaveFormat.AverageBytesPerSecond];
+            if (reader.Read(buffer, 0, buffer.Length) <= 0) return "it doesn't decode";
+            var decoded = reader.TotalTime.TotalSeconds;
+            if (decoded > 0 && Math.Abs(decoded - expected) > Math.Max(1.5, expected * 0.02)) return $"it decodes to {decoded:0.0} s, not {expected:0.0} s";
+            return "";
+        }
+        catch (Exception error) { return error.Message; }
+    }
+}
+
 public static class Exporter
 {
     // Exports the tracks in order; returns how many succeeded. The album's numbering counts every track in the session
@@ -63,6 +93,7 @@ public static class Exporter
             if (cancel.IsCancellationRequested) break;
             if (track.Skip) continue; // a damaged take recorded again later, or left out on purpose
             var number = allTracks.IndexOf(track) + 1;
+            track.Verified = false; track.VerifyError = "";
             var relative = NameTemplate.Expand(profile.Template.Replace('\\', '/'), track, number, allTracks.Count, session, true);
             var parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(part => part.Trim()).Where(part => part != "").ToArray();
             if (parts.Length == 0) parts = new[] { $"{number:00}" };
@@ -75,6 +106,9 @@ public static class Exporter
                 WriteTags(path, track, number, allTracks.Count, session, profile);
                 SaveCoverFile(path, track, profile);
                 track.Exported = true; track.ExportedPath = path; done++;
+                progress(new ExportProgress(done, tracks.Count, "Checking " + Path.GetFileName(path), ""));
+                track.VerifyError = Verifier.Check(path, track, audio.SampleRate); track.Verified = track.VerifyError == "";
+                if (!track.Verified) errors.Add($"{Path.GetFileName(path)} failed the check: {track.VerifyError}");
             }
             catch (Exception exportError) { errors.Add($"{Path.GetFileName(path)}: {exportError.Message}"); try { if (File.Exists(path)) File.Delete(path); } catch { } }
         }

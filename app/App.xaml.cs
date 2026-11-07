@@ -19,6 +19,9 @@ public partial class App : Application
     public NowPlayingWatcher Watcher { get; private set; } = null!;
     public bool IsQuitting { get; private set; }
     public bool Exporting { get; set; }
+    public string ExportingSessionId { get; set; } = "";
+    public int ExportDone { get; set; }
+    public int ExportTotal { get; set; }
     public event Action? StatusChanged;
     public event Action? SessionsChanged;
     public event Action? HintsChanged;
@@ -318,6 +321,7 @@ public partial class App : Application
         playing = Player.Playing,
         playingSession = Player.SessionId,
         exporting = Exporting,
+        exportingSession = ExportingSessionId, exportDone = ExportDone, exportTotal = ExportTotal,
         version = Updater.CurrentVersion,
         updateReady = Updater.ReadyVersion,
     }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });

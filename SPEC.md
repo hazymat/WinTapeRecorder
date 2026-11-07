@@ -75,6 +75,8 @@ The session view is a step bar that says what is left and what to do next: **1 C
 - Tokens: `{artist}` `{title}` `{album}` `{albumartist}` (the album artist, else the track's artist) `{track}` `{track:00}` `{tracks}` `{genre}` `{year}` `{date}` `{session}` `{source}`. Characters Windows forbids are replaced.
 - Tags written: title, artist, album, album artist, track number and total, genre, year, comment.
 - Exported tracks are marked in the list; exporting again overwrites.
+- Verification: every written file is opened again straight away: it must exist, decode (Windows reads its start), be the track's length within 2%, and carry the track's title. A file that fails shows "Failed check" with the reason and one click exports it again. The step bar says "all verified" when done.
+- The export runs in the background: the next session can be recorded meanwhile; the sidebar shows "exporting 3/12…" on the old session and the end is announced wherever you are.
 - FLAC is written by the app's own encoder (lossless, no Windows codec needed); MP3 and AAC use Windows' encoders (16-bit, 44.1/48 kHz).
 
 ## Sessions
