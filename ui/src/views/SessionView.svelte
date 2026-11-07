@@ -212,6 +212,41 @@
     commit(next, `Track ${tracks.indexOf(track) + 1}: ${field} changed`)
   }
 
+  // ---- Albums in the track list (SPEC.md › Tags › Albums): runs of tracks sharing artist (or album artist) and album, each with a
+  // header that sets artist, album, year and genre for all its tracks; a track can be moved into the album above or below ----
+  const albumKey = (track: Track) => (track.albumArtist || track.artist || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') + '|' + (track.album || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+  type ListAlbum = { key: string; first: string; ids: string[]; artist: string; album: string; year: string; genre: string }
+  const listAlbums = $derived.by(() => {
+    const list: ListAlbum[] = []
+    for (const track of tracks) {
+      const key = albumKey(track), last = list[list.length - 1]
+      if (last && last.key === key) { last.ids.push(track.id); if (!last.year && track.year) last.year = track.year; if (!last.genre && track.genre) last.genre = track.genre }
+      else list.push({ key, first: track.id, ids: [track.id], artist: track.albumArtist || track.artist || '', album: track.album || '', year: track.year ?? '', genre: track.genre ?? '' })
+    }
+    return list
+  })
+  const albumOf = (trackId: string) => listAlbums.find(group => group.ids.includes(trackId))
+  function setAlbumField(group: ListAlbum, field: 'artist' | 'album' | 'year' | 'genre', value: string) {
+    const next = copy()
+    for (const track of next) if (group.ids.includes(track.id)) {
+      if (field === 'artist') { if (track.albumArtist) track.albumArtist = value; else track.artist = value }
+      else (track as any)[field] = value
+      track.exported = false
+    }
+    commit(next, `${field === 'artist' ? 'Artist' : field[0].toUpperCase() + field.slice(1)} set on ${group.ids.length} track${group.ids.length === 1 ? '' : 's'}`)
+  }
+  let joining = $state<null | { trackId: string; target: ListAlbum }>(null)
+  let dragTrack = ''
+  function joinAlbum(mode: 'theirs' | 'mine') {
+    const join = joining; joining = null; if (!join) return
+    const mover = tracks.find(track => track.id === join.trackId); if (!mover) return
+    const next = copy()
+    if (mode === 'theirs') { const edited = next.find(track => track.id === mover.id)!; const sample = tracks.find(track => track.id === join.target.first)!; edited.artist = sample.artist; edited.albumArtist = sample.albumArtist; edited.album = sample.album; edited.year = sample.year; edited.genre = sample.genre || edited.genre; edited.exported = false }
+    else for (const track of next) if (join.target.ids.includes(track.id)) { track.artist = mover.artist; track.albumArtist = mover.albumArtist; track.album = mover.album; track.year = mover.year || track.year; track.exported = false }
+    commit(next, 'Track moved into the album')
+  }
+  const albumName = (group: { artist: string; album: string; year?: string }) => `${group.artist || 'Unknown artist'} — ${group.album || 'no album'}${group.year ? ` (${group.year})` : ''}`
+
   // ---- Bulk dialogs: tags and fades for the selected tracks ----
   let dialog = $state<null | { kind: 'fades'; keys: string[]; fadeIn: string; fadeOut: string } | { kind: 'close' } | { kind: 'redetect' }>(null)
   // Tags (SPEC.md › Tags): the editor for the chosen tracks, and the online lookup it can open
@@ -657,8 +692,25 @@
     <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span>Hear · ✓</span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Album</span><span>Year</span><span>Title</span><span>Genre</span><span>Source</span><span>Fades</span><span></span></div>
     {#each tracks as track, index (track.id)}
       {@const cutoff = medianCutoff(session.quality ?? [], track.start, track.end)}
-      <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
-        <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
+      {@const group = albumOf(track.id)}
+      {#if group && group.first === track.id}
+        {@const groupIndex = listAlbums.indexOf(group)}
+        <div class="album-row" role="group" aria-label={albumName(group)}
+          ondragover={(event) => { if (dragTrack && !group.ids.includes(dragTrack)) event.preventDefault() }}
+          ondrop={(event) => { event.preventDefault(); if (dragTrack && !group.ids.includes(dragTrack)) joining = { trackId: dragTrack, target: group }; dragTrack = '' }}>
+          <span class="album-label">Album {groupIndex + 1}</span>
+          <input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks" onchange={(event) => setAlbumField(group, 'artist', (event.target as HTMLInputElement).value.trim())} />
+          <input value={group.album} placeholder="Album" title="This album's name, for all its tracks" onchange={(event) => setAlbumField(group, 'album', (event.target as HTMLInputElement).value.trim())} />
+          <input class="album-year" value={group.year} placeholder="Year" title="This album's year, for all its tracks" onchange={(event) => setAlbumField(group, 'year', (event.target as HTMLInputElement).value.trim())} />
+          <input value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks" onchange={(event) => setAlbumField(group, 'genre', (event.target as HTMLInputElement).value.trim())} />
+          <span class="quiet album-count">{group.ids.length} track{group.ids.length === 1 ? '' : 's'}</span>
+        </div>
+      {/if}
+      {@const groupIndex = group ? listAlbums.indexOf(group) : -1}
+      {@const above = groupIndex > 0 ? listAlbums[groupIndex - 1] : null}
+      {@const below = groupIndex >= 0 && groupIndex + 1 < listAlbums.length ? listAlbums[groupIndex + 1] : null}
+      <div class="row" draggable="true" ondragstart={(event) => { if ((event.target as HTMLElement)?.matches?.('input')) { event.preventDefault(); return } dragTrack = track.id }} ondragend={() => dragTrack = ''} class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
+        <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}{#if group && group.first === track.id && above}<button class="join no-hold" onclick={(event) => { event.stopPropagation(); joining = { trackId: track.id, target: above } }} title={`Move into the album above: ${albumName(above)}`}>⤒</button>{/if}{#if group && group.ids[group.ids.length - 1] === track.id && below}<button class="join no-hold" onclick={(event) => { event.stopPropagation(); joining = { trackId: track.id, target: below } }} title={`Move into the album below: ${albumName(below)}`}>⤓</button>{/if}</span>
         <span class="hear no-hold"><button class="hear-start" class:checked={track.startChecked} class:heard={focused?.trackId === track.id && focused.edge === 'start'} class:grabbed={grab?.trackId === track.id && grab.edge === 'start'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }} title="Hear this track's start, zoomed in" aria-label="Hear start"><Icon name="play" size={11} /><span>Start</span></button><button class="hear-end" class:checked={track.endChecked} class:heard={focused?.trackId === track.id && focused.edge === 'end'} class:grabbed={grab?.trackId === track.id && grab.edge === 'end'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }} title="Hear this track's end, zoomed in" aria-label="Hear end"><span>End</span><Icon name="play" size={11} /></button><button class="ok" class:on={track.startChecked && track.endChecked} class:half={!!track.startChecked !== !!track.endChecked} onclick={(event) => { event.stopPropagation(); confirmTrack(track) }} title={track.startChecked && track.endChecked ? 'Start and end confirmed. Click to undo (Y)' : 'Happy with this start and end? Click to confirm both (Y)'} aria-label="Confirm this track's start and end">✓</button></span>
         <span class="edge-cell"><button class="time edge no-hold" class:doubt={!track.startSure && !track.startChecked} class:checked={track.startChecked} title={`${track.startNote || 'Start'}${track.startChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }}>{formatTime(track.start, rate, false)}</button>{#if track.detectedStart != null && track.detectedStart >= 0 && track.start !== track.detectedStart}<button class="revert no-hold" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'start') }} title={`Back to where it was detected (${formatTime(track.detectedStart, rate, false)})`}>↺</button>{/if}</span>
         <span class="edge-cell"><button class="time edge no-hold" class:doubt={!track.endSure && !track.endChecked} class:checked={track.endChecked} title={`${track.endNote || 'End'}${track.endChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }}>{formatDuration((track.end - track.start) / rate)}</button>{#if track.detectedEnd != null && track.detectedEnd >= 0 && track.end !== track.detectedEnd}<button class="revert no-hold" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'end') }} title={`End back to where it was detected (${formatTime(track.detectedEnd, rate, false)})`}>↺</button>{/if}</span>
@@ -694,6 +746,12 @@
       {#each snapshots as snapshot (snapshot.index)}<div class="snapshot"><span class="when">{new Date(snapshot.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><span class="label">{snapshot.label}</span><span class="quiet">{snapshot.tracks} track{snapshot.tracks === 1 ? '' : 's'}</span><button class="ghost" onclick={() => restoreSnapshot(snapshot.index, snapshot.label)}>Restore</button></div>{:else}<p class="quiet">Nothing yet.</p>{/each}
     </div>
   </Dialog>
+{/if}
+{#if joining}
+  {@const join = joining}
+  {@const mover = tracks.find(track => track.id === join.trackId)}
+  <Dialog title="Move this track into that album?" wide text={`“${mover?.title || 'This track'}” (${albumName({ artist: mover?.albumArtist || mover?.artist || '', album: mover?.album ?? '', year: mover?.year })}) joins ${albumName(join.target)}. Which names should they share?`}
+    confirmLabel="Use that album's names" altLabel="Give that album this track's names" onconfirm={() => joinAlbum('theirs')} onalt={() => joinAlbum('mine')} oncancel={() => joining = null} />
 {/if}
 {#if exportCheck}
   {@const check = exportCheck}
@@ -775,6 +833,13 @@
   .hear .hear-start { border-radius: 7px 0 0 7px; } .hear .hear-end { border-radius: 0 7px 7px 0; border-left: 0; }
   .hear button:hover { background: var(--accent); color: var(--on-accent); }
   .hear button.checked { background: rgba(62, 207, 110, 0.18); color: #2e9e57; border-color: rgba(62, 207, 110, 0.5); }
+  .album-row { display: grid; grid-template-columns: 70px minmax(100px, 1fr) minmax(100px, 1fr) 64px minmax(80px, 0.7fr) auto; gap: 8px; align-items: center; margin-top: 8px; padding: 4px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+  .album-row input { font-weight: 600; }
+  .album-year { text-align: center; }
+  .album-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-quiet); font-weight: 600; }
+  .album-count { font-size: 12px; white-space: nowrap; }
+  .join { width: 20px; height: 20px; padding: 0; margin-left: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; color: var(--fg); cursor: pointer; font-size: 11px; vertical-align: middle; }
+  .join:hover { background: var(--hover); }
   .edge-cell { display: flex; align-items: center; gap: 2px; min-width: 0; white-space: nowrap; } /* never wraps: rows keep their shape whatever their state */
   .revert { width: 18px; height: 20px; padding: 0; flex: none; background: none; border: 0; border-radius: 4px; color: var(--warn); cursor: pointer; font-size: 13px; }
   .revert:hover { background: var(--hover); }

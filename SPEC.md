@@ -81,6 +81,8 @@ The session view is a step bar that says what is left and what to do next: **1 C
 - Online lookup by hand: MusicBrainz (covers from the Cover Art Archive) and iTunes need no account; Discogs uses the user's own token (Settings › General). Amazon has no public catalogue API. Pick a result and choose which fields to take.
 - Cover pictures are fetched or chosen from disk (JPEG or PNG), kept in the session folder, and on export embedded in the tags and/or saved beside the tracks as a picture file (output profile: on/off and its name, default folder.jpg).
 
+- Albums in the track list: in every step the session's tracks are grouped into albums (runs of tracks sharing artist, or album artist, and album). Each album has a header row where its artist, album, year and genre are typed once for all its tracks. A track that belongs to the album above or below: drag the row onto that album's header, or ⤒ / ⤓ on the album's first or last track; then choose whether it takes that album's names or gives that album its own.
+
 ## Export
 
 - One Export button, in the Export step beside the output profile picker, exports what's left (or the selected tracks, or all). The cut-checking tools (hear starts and ends, snap, auto height, split, find tracks again) show only in Check the cuts.
