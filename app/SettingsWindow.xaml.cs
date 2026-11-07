@@ -399,7 +399,7 @@ public partial class SettingsWindow : Window
             ("Home / End", "Start / end of the session"), ("Click", "Place the playhead"), ("Double-click a track", "Zoom to it"), ("Drag the overview", "Scroll"));
         editingKeysTable.ItemsSource = Rows(("C", "Next start or end to confirm, from the current track"), ("Y", "Confirm the current track's start and end (again to undo)"), ("S / E", "Set the current track's start / end at the playhead"), ("X", "Split the track at the playhead"), ("N", "New track at the playhead"), ("← →", "Nudge the playhead, or a grabbed edge (Shift: 10×, Ctrl: one sample)"), ("[ ]", "Previous / next track"),
             ("Del", "Remove the selected tracks (their audio is skipped on export)"), ("Ctrl+Z", "Undo"), ("Ctrl+Y, Ctrl+Shift+Z", "Redo"), ("Esc", "Let go of a grabbed edge, or clear the selection"));
-        listeningKeysTable.ItemsSource = Rows(("L", "Change how long you hear of each start or end (2, 5, 10, 20 s)"), ("Space", "Play / stop from the playhead"), (", and .", "Hear the current track's start / end"), ("Enter", "Hear a grabbed edge"), ("T", "Tags for the selected tracks"), ("L", "Look up tags online"), ("F", "Fades for the selected tracks"), ("Ctrl+E", "Export the selected tracks, or all"));
+        listeningKeysTable.ItemsSource = Rows(("A", "Audition: change how long you hear of each start or end (2, 5, 10, 20 s)"), ("Space", "Play / stop from the playhead"), (", and .", "Hear the current track's start / end"), ("Enter", "Hear a grabbed edge"), ("T", "Tags for the selected tracks"), ("L", "Look up tags online"), ("F", "Fades for the selected tracks"), ("Ctrl+E", "Export the selected tracks, or all"));
         appKeysTable.ItemsSource = Rows(("Ctrl+,", "Settings"), ("Ctrl+Q", "Quit"));
     }
 

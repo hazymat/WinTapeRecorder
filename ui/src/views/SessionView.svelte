@@ -43,7 +43,7 @@
     // Hearing an edge doesn't select its line on the wave: that's done by hand there (SPEC.md › Editing). The row's button shows it was the last heard
     focused = target; currentId = track.id
     const frame = track[target.edge]; cursor = frame
-    // Zoomed to what you'll hear (SPEC.md › Editing): a start shows half the Listen length before it and the full length after;
+    // Zoomed to what you'll hear (SPEC.md › Editing): a start shows half the Audition length before it and the full length after;
     // an end the full length before and half after. Zoom freely from there
     const listen = app.auditionSeconds * rate, span = listen * 1.5
     view = waveform.clampView({ start: target.edge === 'start' ? frame - listen / 2 : frame - listen, framesPerPixel: span / waveWidth() })
@@ -88,8 +88,8 @@
   let waveMode = $state<'wave' | 'spectrogram'>(readSetting('waveMode', 'wave') === 'spectrogram' ? 'spectrogram' : 'wave')
   function setWaveMode(mode: 'wave' | 'spectrogram') { waveMode = mode; writeSetting('waveMode', mode) }
   // How much of each start or end you hear; L steps through the lengths
-  function setListen(seconds: number) { app.auditionSeconds = seconds; sendToShell({ type: 'setAuditionSeconds', seconds }) }
-  function nextListen() { const choices = auditionChoices.map(([value]) => Number(value)); const at = choices.indexOf(app.auditionSeconds); setListen(choices[(at + 1) % choices.length]); toast(`Listening to ${app.auditionSeconds} s of each start or end`, { ms: 1500 }) }
+  function setAudition(seconds: number) { app.auditionSeconds = seconds; sendToShell({ type: 'setAuditionSeconds', seconds }) }
+  function nextAudition() { const choices = auditionChoices.map(([value]) => Number(value)); const at = choices.indexOf(app.auditionSeconds); setAudition(choices[(at + 1) % choices.length]); toast(`Auditioning ${app.auditionSeconds} s of each start or end`, { ms: 1500 }) }
   const sessionCutoff = $derived(session ? medianCutoff(session.quality ?? [], 0, session.totalFrames) : null)
   let exportStatus = $state('')
   let waveform = $state<ReturnType<typeof Waveform>>()
@@ -636,7 +636,7 @@
     else if (lower === 'y') confirmFocused()
     else if (lower === 'c') checkNext()
     else if (lower === 'w') setWaveMode(waveMode === 'wave' ? 'spectrogram' : 'wave')
-    else if (lower === 'l') nextListen()
+    else if (lower === 'a') nextAudition() // A, not L: with tracks ticked, L is Look up
     else if (key === ',') { if (current) focusEdge({ trackId: current.id, edge: 'start' }) }
     else if (key === '.') { if (current) focusEdge({ trackId: current.id, edge: 'end' }) }
     else if (key === 'Enter' && grab) hearEdge(grab.edge)
@@ -720,8 +720,7 @@
     <button class="ghost" class:on={playing} onclick={() => playing ? stop() : playFrom(cursor)} title="Play from the playhead: click in the wave or on a track to move it (Space)"><Icon name={playing ? 'stop' : 'play'} size={16} />{playing ? 'Stop' : 'Play'}<kbd>Space</kbd></button>
     {#if step === 'cuts'}
     <div class="group">
-      <Dropdown label="Listen" value={String(app.auditionSeconds)} options={auditionChoices} align="left" onchange={(value) => setListen(Number(value))} />
-      <kbd class="loose" title="L changes how much of each start or end you hear">L</kbd>
+      <Dropdown label="Audition" shortcut="A" value={String(app.auditionSeconds)} options={auditionChoices} align="left" onchange={(value) => setAudition(Number(value))} />
       <span class="group-label">{selectedIds.length ? 'Selected' : 'All tracks'}</span>
       <button class="ghost" onclick={() => audition('starts')} title="Run through the start of every track (selected, or all)">Starts</button>
       <button class="ghost" onclick={() => audition('ends')} title="Run through the end of every track">Ends</button>
@@ -965,7 +964,6 @@
   .wave-mode button:first-child { border-radius: 6px 0 0 6px; } .wave-mode button:nth-child(2) { border-radius: 0 6px 6px 0; border-left: 0; }
   .wave-mode button.on { background: var(--accent-soft); color: var(--accent); }
   .wave-mode kbd { margin-left: 5px; }
-  kbd.loose { margin: 0 6px 0 -2px; }
   .readout { display: flex; gap: 18px; font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
   .grabbed { color: var(--accent); font-family: var(--font-ui); }
   .key { margin-left: auto; display: flex; align-items: center; gap: 6px; font-family: var(--font-ui); font-size: 11.5px; white-space: nowrap; }

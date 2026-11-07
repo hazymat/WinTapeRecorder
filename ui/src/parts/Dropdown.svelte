@@ -1,6 +1,6 @@
 <script lang="ts">
   // Glass dropdown with its label always visible ("Sort  Album artist"), replacing native selects whose Windows popup ignores the skin
-  let { label, value, options, onchange, align = 'right' }: { label: string; value: string; options: [string, string][]; onchange: (value: string) => void; align?: 'left' | 'right' } = $props()
+  let { label, value, options, onchange, align = 'right', shortcut = '' }: { label: string; value: string; options: [string, string][]; onchange: (value: string) => void; align?: 'left' | 'right'; shortcut?: string } = $props()
   let open = $state(false)
   let root: HTMLElement
   const current = $derived(options.find(([optionValue]) => optionValue === value)?.[1] ?? value)
@@ -10,8 +10,8 @@
 <svelte:window onmousedown={(event) => { if (open && !root.contains(event.target as Node)) open = false }} onkeydown={(event) => { if (open && event.key === 'Escape') { event.stopPropagation(); open = false } }} />
 
 <div class="dropdown" bind:this={root}>
-  <button class="current" class:open onclick={() => open = !open} aria-haspopup="listbox" aria-expanded={open}>
-    <span class="text"><span class="label">{label}</span><span class="value">{current}</span></span><svg class="chevron" viewBox="0 0 10 6" width="9" height="6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+  <button class="current" class:open onclick={() => open = !open} aria-haspopup="listbox" aria-expanded={open} aria-keyshortcuts={shortcut || undefined}>
+    <span class="text"><span class="label">{label}</span><span class="value">{current}</span></span>{#if shortcut}<kbd>{shortcut}</kbd>{/if}<svg class="chevron" viewBox="0 0 10 6" width="9" height="6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
   </button>
   {#if open}
     <div class="menu {align}" role="listbox" aria-label={label}>
