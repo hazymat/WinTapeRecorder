@@ -20,6 +20,8 @@
   let view = $state<WaveView>({ start: 0, framesPerPixel: 1000 })
   let cursor = $state(0), currentId = $state(''), grab = $state<Grab>(null)
   let autoHeight = $state(readSetting('autoHeight', '1') !== '0')
+  // The session's name and details sit in the title-bar row (SPEC.md › Window and look): moved there, removed with the view
+  function intoTitleBar(node: HTMLElement) { const target = document.querySelector('.topbar .title'); if (target) target.appendChild(node); return { destroy() { node.remove() } } }
   // Track list columns (SPEC.md › Editing): drag a header's right edge to resize; remembered. Title (index 8) takes the space left
   const columnNames = ['select', 'hear', 'start', 'length', 'art', 'artist', 'album', 'year', 'number', 'title', 'genre', 'source', 'fades', 'status']
   const titleColumn = 9
@@ -747,7 +749,7 @@
   <div class="empty"><p class="quiet">Opening the session{loadProgress ? `, reading the waveform ${Math.round(loadProgress * 100)}%` : ''}…</p></div>
 {:else}
 <div class="session">
-  <header>
+  <header class="session-title" use:intoTitleBar>
     <input class="name" value={session.name} onchange={(event) => { const name = (event.target as HTMLInputElement).value.trim(); if (name && session) { session.name = name; sendToShell({ type: 'saveSession', id: sessionId, name }) } }} aria-label="Session name" />
     <span class="facts">{new Date(session.created).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} · {formatDuration(session.totalFrames / rate)} · {session.device || 'Unknown device'} · {rate / 1000} kHz {session.bitDepth === 32 ? 'float' : session.bitDepth + '-bit'} · {tracks.length} tracks{exportedCount ? `, ${exportedCount} exported` : ''}</span>
     {#if session.cutOff}<span class="clip-warning" title="The app or PC stopped while this was recording. Everything up to the last couple of seconds was saved.">Cut off by a crash or power cut at {formatTime(session.totalFrames, rate, false)}</span>{/if}
@@ -755,10 +757,6 @@
     {#if session.clippedSamples > 0}<span class="clip-warning" title="Samples recorded at full scale">{session.clippedSamples} clipped samples</span>{/if}
     {#if sessionCutoff}<span class="source-chip" title={describeCutoff(sessionCutoff)}>Source: spectrum stops at {(sessionCutoff / 1000).toFixed(1)} kHz, {describeCutoff(sessionCutoff)}</span>{/if}
     {#if session.dropouts?.length}<span class="clip-warning" title={session.dropouts.map(dropout => `${formatTime(dropout.frame, rate, false)}: ${dropout.ms} ms lost`).join('\n')}>{session.dropouts.length} dropout{session.dropouts.length === 1 ? '' : 's'} (marked in red on the ruler)</span>{/if}
-    <span class="header-actions">
-      <button class="ghost" onclick={() => sendToShell({ type: 'openFolder', path: session!.folder + '\\audio.wav' })} title="Open the session's folder in Explorer, with the WAV selected"><Icon name="folder" size={15} />Show files</button>
-      <button class="ghost danger" onclick={() => dialog = { kind: 'close' }}><Icon name="trash" size={15} />Close session…</button>
-    </span>
   </header>
 
   <nav class="steps" aria-label="Steps">
@@ -982,6 +980,7 @@
     {/each}
   </div>
   {/if}
+  <div class="session-foot"><button class="link-quiet" onclick={() => sendToShell({ type: 'openFolder', path: session!.folder + '\\audio.wav' })} title="Open the session's folder in Explorer, with the WAV selected">Show session files</button><span class="quiet">·</span><button class="link-quiet danger-text" onclick={() => dialog = { kind: 'close' }}>Close session…</button><span class="quiet">(also on right-click or ⋯ in the list on the left)</span></div>
   {#if step !== 'tags'}<Hint id="track-select" text="Tick tracks (or the box at the top for all) to tag, export, fade, merge or remove several at once; Ctrl/Shift+click and right-click work too. The small buttons on each row play that track's start or end." />{/if}
 </div>
 {/if}
@@ -1042,8 +1041,12 @@
 <style>
   .session { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 8px; }
   .empty { padding: 40px; }
-  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  .name { font-size: 20px; font-weight: 600; background: none; border: 1px solid transparent; padding: 2px 6px; margin-left: -7px; min-width: 120px; width: 22ch; }
+  :global(.session-title) { display: flex; align-items: baseline; gap: 10px; flex-wrap: nowrap; overflow: hidden; min-width: 0; }
+  :global(.session-title) .name { font-size: 15px; font-weight: 600; background: none; border: 1px solid transparent; padding: 1px 6px; margin-left: -7px; min-width: 100px; width: 20ch; flex: none; }
+  :global(.session-title) > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session-foot { display: flex; gap: 8px; align-items: center; font-size: 12px; padding: 0 2px; flex: none; }
+  .link-quiet { background: none; border: 0; padding: 0; color: var(--fg-quiet); font: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+  .link-quiet:hover { color: var(--fg); } .danger-text:hover { color: var(--danger); }
   .name:hover { border-color: var(--line); }
   .facts { color: var(--fg-quiet); font-size: 12.5px; }
   .clip-warning { color: var(--danger); font-size: 12px; font-weight: 600; }

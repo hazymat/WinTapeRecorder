@@ -126,6 +126,7 @@ Same layout as WinSqueeze: native window, left sidebar of pages grouped under sm
 No start with Windows, no tray.
 
 ## Window and look
+- A session's name (editable) and its details sit in the title-bar row beside the window buttons. Show session files and Close session… are quiet links at the foot of the session view; every session in the list on the left also has a ⋯ (on hover) with the same menu as right-click.
 - The bar at the bottom is a permanent status bar of fixed height: selections and their actions, messages with Undo, and otherwise the last message dimmed. It never appears or disappears, so nothing above it moves.
 
 - Normal Windows app. Close (X) quits, after warnings about an active recording or export in progress.

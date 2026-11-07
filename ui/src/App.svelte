@@ -124,6 +124,7 @@
       {#each app.sessions as session (session.id)}
         <button class="session" class:on={nav.view === 'session' && nav.sessionId === session.id} onclick={() => openSession(session)} oncontextmenu={(event) => { event.preventDefault(); sessionMenu = { session, left: Math.min(event.clientX, innerWidth - 220), top: Math.min(event.clientY, innerHeight - 110) } }} title={session.crashed ? 'This recording was cut short (crash or power cut). It opens with what was saved.' : ''}>
           <span class="session-name">{session.name}{#if session.recording}<span class="badge live">REC</span>{:else if session.crashed}<span class="badge">!</span>{/if}</span>
+          <span class="session-more" role="button" tabindex="-1" title="Show files, open or close this session (also on right-click)" onclick={(event) => { event.stopPropagation(); const box = (event.currentTarget as HTMLElement).getBoundingClientRect(); sessionMenu = { session, left: Math.min(box.left, innerWidth - 220), top: Math.min(box.bottom + 4, innerHeight - 110) } }} onkeydown={() => { }}>⋯</span>
           <span class="session-facts">{dateLabel(session.created)} · {formatDuration(session.seconds)} · {#if app.status?.exportingSession === session.id}<span class="exporting">exporting {app.status.exportDone}/{app.status.exportTotal}…</span>{:else}{session.exported}/{session.tracks} exported{session.exported && session.verified === session.exported ? ' ✓' : ''}{/if}</span>
         </button>
       {:else}
@@ -170,6 +171,11 @@
   @keyframes blink { to { visibility: hidden; } }
   .heading { margin: 16px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-quiet); }
   .sessions { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }
+  .session { position: relative; }
+  .session-more { position: absolute; right: 6px; top: 6px; width: 24px; height: 20px; display: grid; place-items: center; border-radius: 5px; color: var(--fg-quiet); opacity: 0; font-size: 15px; line-height: 1; }
+  .session:hover .session-more, .session.on .session-more { opacity: 1; }
+  .session-more:hover { background: var(--panel-strong); color: var(--fg); }
+  .topbar .title { flex: 1; min-width: 0; display: flex; align-items: center; }
   .session { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; background: none; border: 0; color: var(--fg); padding: 6px 10px; border-radius: 8px; cursor: pointer; font: inherit; text-align: left; }
   .session-name { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .session-facts { font-size: 11px; color: var(--fg-quiet); }
