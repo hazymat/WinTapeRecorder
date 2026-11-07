@@ -17,6 +17,9 @@
   const overviewHeight = 54, rulerHeight = 20, flagHeight = 16
   type PeakData = { mode: 'peaks' | 'samples' | 'none'; start: number; end: number; channels: number[][] }
   let detailData = $state<PeakData | null>(null), overviewData = $state<PeakData | null>(null)
+  // Ctrl+wheel makes the waveform taller (quiet passages, fades); a plain wheel zoom puts it back
+  let verticalScale = $state(1)
+  const minVerticalScale = 1, maxVerticalScale = 32
   let css = $state({ wave: '#5ccfff', waveDim: '#5ccfff', shade: 'rgba(92,207,255,0.08)', shadeOn: 'rgba(92,207,255,0.16)', start: '#4cd964', end: '#ff7a6b', playhead: '#fff', fg: '#eceef3', quiet: '#8e94a0', line: 'rgba(255,255,255,0.08)', accent: '#5ccfff', panel: 'rgba(255,255,255,0.06)', warn: '#ffb74d' })
   function readColours() { const style = getComputedStyle(document.documentElement), previous = untrack(() => css), read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback; css = { wave: read('--wave', previous.wave), waveDim: read('--wave-rms', previous.waveDim), shade: read('--track-shade', previous.shade), shadeOn: read('--track-shade-on', previous.shadeOn), start: read('--start', previous.start), end: read('--end', previous.end), playhead: read('--playhead', previous.playhead), fg: read('--fg', previous.fg), quiet: read('--fg-quiet', previous.quiet), line: read('--line', previous.line), accent: read('--accent', previous.accent), panel: read('--panel', previous.panel), warn: read('--warn', previous.warn) } }
   $effect(() => { untrack(readColours); const observer = new MutationObserver(readColours); observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-skin', 'class', 'style'] }); return () => observer.disconnect() })
@@ -57,7 +60,7 @@
     return context
   }
 
-  function drawPeaks(context: CanvasRenderingContext2D, data: PeakData, top: number, laneHeight: number, toX: (frame: number) => number, colour: string) {
+  function drawPeaks(context: CanvasRenderingContext2D, data: PeakData, top: number, laneHeight: number, toX: (frame: number) => number, colour: string, scale = 1) {
     const lanes = data.channels.length
     context.fillStyle = colour
     for (let lane = 0; lane < lanes; lane++) {
@@ -66,8 +69,8 @@
       for (let column = 0; column < columns; column++) {
         const left = toX(data.start + column * framesPerColumn), right = toX(data.start + (column + 1) * framesPerColumn)
         if (right < 0 || left > width) continue
-        const low = values[column * 2], high = values[column * 2 + 1]
-        const y1 = middle - Math.min(1, high) * half, y2 = middle - Math.max(-1, low) * half
+        const low = values[column * 2] * scale, high = values[column * 2 + 1] * scale
+        const y1 = middle - Math.max(-1, Math.min(1, high)) * half, y2 = middle - Math.max(-1, Math.min(1, low)) * half
         context.fillRect(left, y1, Math.max(right - left, 1 / devicePixelRatio), Math.max(y2 - y1, 1 / devicePixelRatio))
       }
     }
@@ -79,7 +82,8 @@
       const samples = data.channels[lane], middle = top + laneHeight * (lane + 0.5), half = laneHeight / 2 - 4
       context.strokeStyle = css.line; context.lineWidth = 1; context.beginPath(); context.moveTo(0, middle); context.lineTo(width, middle); context.stroke() // zero line
       context.strokeStyle = css.wave; context.lineWidth = 1.4; context.beginPath()
-      samples.forEach((sample, index) => { const x = frameToX(data.start + index), y = middle - sample * half; if (index === 0) context.moveTo(x, y); else context.lineTo(x, y) })
+      const yOf = (sample: number) => middle - Math.max(-1, Math.min(1, sample * verticalScale)) * half
+      samples.forEach((sample, index) => { const x = frameToX(data.start + index), y = yOf(sample); if (index === 0) context.moveTo(x, y); else context.lineTo(x, y) })
       context.stroke()
       // Zero crossings: where the line passes through zero between two samples
       if (pixelsPerSample >= 3) {
@@ -91,7 +95,7 @@
       }
       if (pixelsPerSample >= 6) {
         context.fillStyle = css.wave
-        samples.forEach((sample, index) => { context.beginPath(); context.arc(frameToX(data.start + index), middle - sample * half, Math.min(3.5, pixelsPerSample / 6), 0, Math.PI * 2); context.fill() })
+        samples.forEach((sample, index) => { context.beginPath(); context.arc(frameToX(data.start + index), yOf(sample), Math.min(3.5, pixelsPerSample / 6), 0, Math.PI * 2); context.fill() })
       }
     }
   }
@@ -136,7 +140,8 @@
     context.fillStyle = css.line
     for (let lane = 1; lane < laneCount; lane++) context.fillRect(0, waveTop + lane * laneHeight, width, 1)
     if (detailData?.mode === 'samples' && view.framesPerPixel < 1.5) drawSamples(context, detailData, waveTop, laneHeight)
-    else if (detailData) drawPeaks(context, detailData.mode === 'samples' ? toPeaks(detailData) : detailData, waveTop, laneHeight, frameToX, css.wave)
+    else if (detailData) drawPeaks(context, detailData.mode === 'samples' ? toPeaks(detailData) : detailData, waveTop, laneHeight, frameToX, css.wave, verticalScale)
+    if (verticalScale > 1) { context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'; context.fillStyle = css.quiet; context.fillText(`Height ×${verticalScale < 10 ? verticalScale.toFixed(1) : Math.round(verticalScale)} (wheel resets)`, width - 160, waveTop + 4) }
     // Ruler
     drawRuler(context, detailHeight - rulerHeight)
     // Cursor and playhead
@@ -176,7 +181,7 @@
     if (playhead >= 0) { context.fillStyle = css.playhead; context.fillRect(toX(playhead) - 0.5, 0, 1, overviewHeight) }
   }
 
-  $effect(() => { detailData; tracks; changes; selectedIds; currentId; cursor; playhead; grab; view.start; view.framesPerPixel; width; detailHeight; css; channels; requestAnimationFrame(drawDetail) })
+  $effect(() => { detailData; tracks; changes; selectedIds; currentId; cursor; playhead; grab; view.start; view.framesPerPixel; width; detailHeight; css; channels; verticalScale; requestAnimationFrame(drawDetail) })
   $effect(() => { overviewData; tracks; selectedIds; currentId; playhead; view.start; view.framesPerPixel; width; css; requestAnimationFrame(drawOverview) })
 
   // ---- Mouse ----
@@ -185,6 +190,8 @@
     event.preventDefault()
     const x = event.offsetX
     if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) { const delta = (Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY); view = clampView({ start: view.start + delta * view.framesPerPixel, framesPerPixel: view.framesPerPixel }); return }
+    if (event.ctrlKey) { verticalScale = Math.max(minVerticalScale, Math.min(maxVerticalScale, verticalScale * Math.pow(1.0025, -event.deltaY))); return }
+    verticalScale = 1
     zoomAt(Math.pow(1.0018, event.deltaY), x)
   }
 

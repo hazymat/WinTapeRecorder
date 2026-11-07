@@ -148,23 +148,22 @@
   // ---- Listening (SPEC.md › Auditioning) ----
   function playFrom(frame: number) { sendToShell({ type: 'play', id: sessionId, segments: [[Math.max(0, Math.round(frame)), session!.totalFrames]] }) }
   function stop() { sendToShell({ type: 'stopPlayback' }) }
-  function audition(which: 'starts' | 'ends' | 'both', keys?: string[]) {
+  function audition(which: 'starts' | 'ends', keys?: string[]) {
     const length = app.auditionSeconds * rate, segments: number[][] = []
     for (const track of targets(keys)) {
-      if (which !== 'ends') segments.push([track.start, Math.min(track.end, track.start + length)])
-      if (which !== 'starts') segments.push([Math.max(track.start, track.end - length), track.end])
+      segments.push(which === 'starts' ? [track.start, Math.min(track.end, track.start + length)] : [Math.max(track.start, track.end - length), track.end])
     }
     if (!segments.length) return
     sendToShell({ type: 'play', id: sessionId, segments })
-    toast(`Playing the ${which === 'both' ? 'start and end' : which === 'starts' ? 'start' : 'end'} of ${segments.length / (which === 'both' ? 2 : 1)} track${segments.length === 1 ? '' : 's'}, ${app.auditionSeconds} s each`, { ms: 3000 })
+    toast(`Playing the ${which === 'starts' ? 'start' : 'end'} of ${segments.length} track${segments.length === 1 ? '' : 's'}, ${app.auditionSeconds} s each`, { ms: 3000 })
   }
   // Just one edge of the current track (or of the grabbed edge's track): for working on a start or an end without waiting through the other
-  function hearEdge(edge: 'start' | 'end') {
-    const track = (grab ? tracks.find(candidate => candidate.id === grab!.trackId) : null) ?? current
+  function hearEdge(edge: 'start' | 'end', trackId = '') {
+    const track = (trackId ? tracks.find(candidate => candidate.id === trackId) : grab ? tracks.find(candidate => candidate.id === grab!.trackId) : null) ?? current
     if (!track) { toast('Click a track first'); return }
     const length = app.auditionSeconds * rate
     sendToShell({ type: 'play', id: sessionId, segments: [edge === 'start' ? [track.start, Math.min(track.end, track.start + length)] : [Math.max(track.start, track.end - length), track.end]] })
-    showFrame(edge === 'start' ? track.start : track.end)
+    if (!trackId) showFrame(edge === 'start' ? track.start : track.end)
   }
   // The waveform follows what's playing
   $effect(() => {
@@ -230,7 +229,6 @@
     else if (lower === 'e') setEdgeAtCursor('end')
     else if (lower === 'x') splitAtCursor()
     else if (lower === 'n') addTrackAtCursor()
-    else if (lower === 'a') audition('both')
     else if (key === ',') hearEdge('start')
     else if (key === '.') hearEdge('end')
     else if (key === 'Enter' && grab) hearEdge(grab.edge)
@@ -249,7 +247,8 @@
 
   // ---- Track list selection and its actions (the multi-select bar) ----
   const actions: SelectionAction[] = [
-    { label: 'Audition', key: 'A', run: keys => audition('both', keys) },
+    { label: 'Hear starts', run: keys => audition('starts', keys) },
+    { label: 'Hear ends', run: keys => audition('ends', keys) },
     { label: 'Export', run: keys => exportTracks(keys) },
     { label: 'Tags…', key: 'T', run: keys => { const chosen = tracks.filter(track => keys.includes(track.id)); dialog = { kind: 'tags', keys, artist: chosen.every(track => track.artist === chosen[0].artist) ? chosen[0].artist : '', album: chosen.every(track => track.album === chosen[0].album) ? chosen[0].album : '' } } },
     { label: 'Fades…', key: 'F', run: keys => { const first = tracks.find(track => keys.includes(track.id)); dialog = { kind: 'fades', keys, fadeIn: String(first?.fadeInMs ?? 0), fadeOut: String(first?.fadeOutMs ?? 0) } } },
@@ -286,7 +285,6 @@
       <span class="group-label">{selectedIds.length ? 'Selected' : 'All tracks'}</span>
       <button class="ghost" onclick={() => audition('starts')} title="Run through the start of every track (selected, or all)">Starts</button>
       <button class="ghost" onclick={() => audition('ends')} title="Run through the end of every track">Ends</button>
-      <button class="ghost" onclick={() => audition('both')} title="Start and end of every track, in turn (A)">Both<kbd>A</kbd></button>
       <Dropdown label="Each" value={String(app.auditionSeconds)} options={auditionChoices} align="left" onchange={(value) => { app.auditionSeconds = Number(value); sendToShell({ type: 'setAuditionSeconds', seconds: Number(value) }) }} />
     </div>
     <div class="group">
@@ -305,7 +303,7 @@
     <button class="primary export" disabled={!!app.status?.exporting || !tracks.length} onclick={() => exportTracks()} title="Export the selected tracks, or all (Ctrl+E)"><Icon name="export" size={16} />Export {selectedIds.length ? selectedIds.length : 'all'}</button>
   </div>
 
-  <Hint id="waveform-basics" text="Wheel zooms (down to single samples), Shift+wheel scrolls. Drag a green start or red end line to move it. Click to place the playhead; S and E set the current track's start and end there." />
+  <Hint id="waveform-basics" text="Wheel zooms (down to single samples), Ctrl+wheel makes the wave taller, Shift+wheel scrolls. Drag a green start or red end line to move it. Click to place the playhead; S and E set the current track's start and end there." />
   <div class="wave-host" bind:this={waveHost}>
     <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
       onCursor={(frame) => { cursor = frame; grab = null; if (playing) playFrom(frame) }} {onEdge} {onEdgeDone} onPickTrack={(trackId, additive) => { currentId = trackId; if (additive) selectKeys(scope, Array.from(new Set(selectedIds.concat([trackId]))), actions, 'track'); scrollRowIntoView(trackId) }} onZoomTrack={zoomToTrack} />
@@ -313,10 +311,11 @@
   <div class="readout"><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
 
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }}>
-    <div class="row head"><span>#</span><span>Start</span><span>Length</span><span>Artist</span><span>Title</span><span>Album</span><span>Fades</span><span></span></div>
+    <div class="row head"><span>#</span><span>Hear</span><span>Start</span><span>Length</span><span>Artist</span><span>Title</span><span>Album</span><span>Fades</span><span></span></div>
     {#each tracks as track, index (track.id)}
       <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number">{index + 1}</span>
+        <span class="hear no-hold"><button onclick={(event) => { event.stopPropagation(); hearEdge('start', track.id) }} title="Hear this track's start" aria-label="Hear start"><Icon name="starts" size={14} /></button><button onclick={(event) => { event.stopPropagation(); hearEdge('end', track.id) }} title="Hear this track's end" aria-label="Hear end"><Icon name="ends" size={14} /></button></span>
         <span class="time">{formatTime(track.start, rate, false)}</span>
         <span class="time">{formatDuration((track.end - track.start) / rate)}</span>
         <input class="no-hold" value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
@@ -330,7 +329,7 @@
     {/each}
   </div>
   <div class="footer">
-    <Hint id="track-select" text="Hold a row, right-click it or Ctrl+click to select several tracks: the bar at the bottom auditions, exports, tags, fades, merges or removes them." />
+    <Hint id="track-select" text="The two small buttons on each row play that track's start or end. Hold a row, right-click it or Ctrl+click to select several: the bar at the bottom runs through their starts or ends, exports, tags, fades, merges or removes them." />
     <button class="ghost danger" onclick={() => dialog = { kind: 'close' }}><Icon name="trash" size={15} />Close session…</button>
   </div>
 </div>
@@ -375,7 +374,7 @@
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
   .list { flex: 1 1 38%; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: 34px 78px 72px minmax(80px, 1fr) minmax(120px, 1.6fr) minmax(80px, 1fr) 90px 80px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
+  .row { display: grid; grid-template-columns: 34px 58px 78px 72px minmax(80px, 1fr) minmax(120px, 1.6fr) minmax(80px, 1fr) 90px 80px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
@@ -383,6 +382,9 @@
   .row input { background: transparent; border-color: transparent; padding: 3px 6px; min-width: 0; }
   .row input:hover { border-color: var(--line); }
   .row input:focus { background: var(--panel); }
+  .hear { display: flex; gap: 2px; }
+  .hear button { display: grid; place-items: center; width: 26px; height: 24px; padding: 0; background: none; border: 1px solid transparent; border-radius: 6px; color: var(--fg-quiet); cursor: pointer; }
+  .hear button:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--line); }
   .exported { background: none; border: 0; color: #3ecf6e; font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
   .exported:hover { text-decoration: underline; }
   .none { padding: 16px 8px; }

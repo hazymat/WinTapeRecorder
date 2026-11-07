@@ -42,7 +42,8 @@ A change of now-playing text drops a marker at that moment (minus a latency offs
 
 - Play from anywhere (click the waveform, Space).
 - Hear just the current track's start or just its end, for working on one edge.
-- Run through the starts, the ends, or both of every track (or the selected ones), each for a chosen length (2, 5, 10 or 20 s), with a short pause between. The waveform follows the playhead. Cuts fade over a few milliseconds so jumps don't click.
+- Each row in the track list has small buttons to hear that track's start or end.
+- Run through the starts or the ends of every track (or the selected ones), each for a chosen length (2, 5, 10 or 20 s), with a short pause between. The waveform follows the playhead. Cuts fade over a few milliseconds so jumps don't click.
 - Dotted lines mark where the playing name changed while recording; hovering a line says what it is.
 - Output device for auditioning chosen in Settings › Audio (default: Windows default).
 
@@ -82,7 +83,7 @@ No start with Windows, no tray.
 - Normal Windows app. Close (X) quits, after warnings about an active recording or export in progress.
 - Frameless by default, glass (Windows 11 acrylic) with transparency and tint, skins (follow Windows, dark, light). Taken from WinSqueeze.
 - Hints around the app, dismissable, all hidden or reset from Settings › General.
-- Keyboard shortcuts (Settings › Shortcuts lists them): Ctrl+R record/stop, M new track while recording, Space play/stop, S and E set start and end at the playhead, X split, N new track, +/- or the wheel zoom, Ctrl+0 fit, Z zoom to track, [ ] previous/next track, , and . hear this track's start or end, A run through every start and end, Left/Right nudge the playhead or a grabbed edge (Shift: 10×, Ctrl: one sample), Ctrl+E export, Ctrl+Z/Y undo/redo, Del remove, Ctrl+, settings, Esc clear.
+- Keyboard shortcuts (Settings › Shortcuts lists them): Ctrl+R record/stop, M new track while recording, Space play/stop, S and E set start and end at the playhead, X split, N new track, +/- or the wheel zoom (and reset the height), Ctrl+wheel waveform height, Ctrl+0 fit, Z zoom to track, [ ] previous/next track, , and . hear this track's start or end, Left/Right nudge the playhead or a grabbed edge (Shift: 10×, Ctrl: one sample), Ctrl+E export, Ctrl+Z/Y undo/redo, Del remove, Ctrl+, settings, Esc clear.
 
 ## Updates and versions
 

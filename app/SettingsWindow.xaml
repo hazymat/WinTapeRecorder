@@ -270,11 +270,11 @@
         <TextBlock Text="Recording" FontWeight="SemiBold" />
         <TextBlock Style="{StaticResource Quiet}" Text="Ctrl+R start or stop recording · M mark a new track here (while recording)" />
         <TextBlock Text="Waveform" FontWeight="SemiBold" Margin="0,14,0,0" />
-        <TextBlock Style="{StaticResource Quiet}" Text="Wheel or Ctrl+wheel zoom at the pointer · Shift+wheel scroll · + and - zoom · Ctrl+0 whole session · Z zoom to the track · Home/End session start/end · drag the overview to scroll · click to place the playhead" />
+        <TextBlock Style="{StaticResource Quiet}" Text="Wheel zoom at the pointer (resets the height) · Ctrl+wheel taller or shorter · Shift+wheel scroll · + and - zoom · Ctrl+0 whole session · Z zoom to the track · Home/End session start/end · drag the overview to scroll · click to place the playhead" />
         <TextBlock Text="Editing" FontWeight="SemiBold" Margin="0,14,0,0" />
         <TextBlock Style="{StaticResource Quiet}" Text="S set the track's start at the playhead · E set its end · X split here · Left/Right nudge the playhead or a grabbed edge (Shift: 10×, Ctrl: one sample) · [ and ] previous/next track · Del delete selected tracks · Ctrl+Z undo · Ctrl+Y or Ctrl+Shift+Z redo" />
         <TextBlock Text="Listening" FontWeight="SemiBold" Margin="0,14,0,0" />
-        <TextBlock Style="{StaticResource Quiet}" Text="Space play/stop from the playhead · , hear this track's start · . hear its end · Enter hear a grabbed edge · A run through every start and end · Ctrl+E export · Esc clear selection" />
+        <TextBlock Style="{StaticResource Quiet}" Text="Space play/stop from the playhead · , hear this track's start · . hear its end · Enter hear a grabbed edge · Ctrl+E export · Esc clear selection" />
         <TextBlock Text="App" FontWeight="SemiBold" Margin="0,14,0,0" />
         <TextBlock Style="{StaticResource Quiet}" Text="Ctrl+, settings · Ctrl+Q quit" />
       </StackPanel>
