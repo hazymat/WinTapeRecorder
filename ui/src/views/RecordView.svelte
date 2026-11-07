@@ -2,6 +2,7 @@
   import { request, sendToShell } from '../bridge'
   import { app, nav, toast, formatTime, formatLength, writeSetting, readSetting } from '../state.svelte'
   import LevelMeter from '../parts/LevelMeter.svelte'
+  import CutoffInfo from '../parts/CutoffInfo.svelte'
   import Dropdown from '../parts/Dropdown.svelte'
   import Dialog from '../parts/Dialog.svelte'
   import Hint from '../parts/Hint.svelte'
@@ -436,7 +437,7 @@
     {#if summaryOpen}
   {#if recording}
     <!-- One line each while recording (SPEC.md › Recording › Compact view): only what the source gives, in the order artist, album, year, title -->
-    <p class="line"><span class="line-label">Source</span>{#if app.status?.cutoffHz}<strong>spectrum stops at {(app.status.cutoffHz / 1000).toFixed(1)} kHz</strong><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">measuring…</span>{/if}</p>
+    <p class="line"><span class="line-label">Source</span>{#if app.status?.cutoffHz}<CutoffInfo hz={app.status.cutoffHz} text={app.status.cutoffText} /><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">measuring…</span>{/if}</p>
     <p class="line now-line"><span class="line-label">Now playing</span>
       {#if currentSource}
         {#if currentSource.artist}<span class="field"><i>Artist</i>{currentSource.artist}</span>{/if}
@@ -467,7 +468,7 @@
     {/if}
   {:else}
     <h3>Source quality</h3>
-    <p class="source">{#if app.status?.cutoffHz}<strong>Spectrum stops at {(app.status.cutoffHz / 1000).toFixed(1)} kHz</strong><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">{app.status?.capturing ? 'Measuring: needs a couple of seconds of sound.' : 'Measured from the sound as it arrives.'}</span>{/if}</p>
+    <p class="source">{#if app.status?.cutoffHz}<CutoffInfo hz={app.status.cutoffHz} text={app.status.cutoffText} capital /><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">{app.status?.capturing ? 'Measuring: needs a couple of seconds of sound.' : 'Measured from the sound as it arrives.'}</span>{/if}</p>
     <h3>Now playing</h3>
     {#if currentSource}
       {@const missing = 'not provided'}

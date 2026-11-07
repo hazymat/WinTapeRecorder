@@ -5,6 +5,7 @@
   import { selection, selectKeys, clearSelection, type SelectionAction } from '../lib/selection.svelte'
   import { selectable } from '../lib/selectable.svelte'
   import Waveform, { type WaveView, type Grab } from '../parts/Waveform.svelte'
+  import CutoffInfo from '../parts/CutoffInfo.svelte'
   import Icon from '../parts/Icon.svelte'
   import Hint from '../parts/Hint.svelte'
   import Dropdown from '../parts/Dropdown.svelte'
@@ -824,7 +825,7 @@
     {#if session.cutOff}<span class="clip-warning" title="The app or PC stopped while this was recording. Everything up to the last couple of seconds was saved.">Cut off by a crash or power cut at {formatTime(session.totalFrames, rate, false)}</span>{/if}
     {#if session.otherSounds?.length}<span class="clip-warning" title={session.otherSounds.map(other => `${formatTime(other.frame, rate, false)}: ${other.app}, ${(other.ms / 1000).toFixed(1)} s`).join(String.fromCharCode(10))}>{session.otherSounds.length} sound{session.otherSounds.length === 1 ? '' : 's'} from other apps</span>{/if}
     {#if session.clippedSamples > 0}<span class="clip-warning" title="Samples recorded at full scale">{session.clippedSamples} clipped samples</span>{/if}
-    {#if sessionCutoff}<span class="source-chip" title={describeCutoff(sessionCutoff)}>Source: spectrum stops at {(sessionCutoff / 1000).toFixed(1)} kHz, {describeCutoff(sessionCutoff)}</span>{/if}
+    {#if sessionCutoff}<span class="source-chip">Source: <CutoffInfo hz={sessionCutoff} />, {describeCutoff(sessionCutoff)}</span>{/if}
     {#if session.dropouts?.length}<span class="clip-warning" title={session.dropouts.map(dropout => `${formatTime(dropout.frame, rate, false)}: ${dropout.ms} ms lost`).join('\n')}>{session.dropouts.length} dropout{session.dropouts.length === 1 ? '' : 's'} (marked in red on the ruler)</span>{/if}
   </header>
 
