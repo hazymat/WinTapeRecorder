@@ -55,6 +55,8 @@ The session view is a step bar that says what is left and what to do next: **1 C
 - Track list under the waveform: number, start, length, artist, title, album, status. Edit tags inline. Multi-select with the selection bar (as WinSqueeze): audition, export, set album or artist for all, fades, snap to gaps, merge, delete.
 - Edits save automatically; undo and redo (Ctrl+Z, Ctrl+Y).
 
+- Confirming cuts: each row has a ✓ either side of its Start | End buttons; clicking one confirms that start or end (it and its Hear half turn green), clicking again undoes it. Looks right (Y) does the same from the step bar. Moving an edge doesn't confirm it. Export points out unconfirmed starts and ends but can always go ahead.
+
 ## Auditioning
 
 - Play from anywhere (click the waveform, Space).
