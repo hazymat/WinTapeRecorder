@@ -155,6 +155,7 @@ public partial class App : Application
         {
             var profile = Settings.RecordingProfileOrActive(note.ProfileId);
             Player.Stop();
+            issueOwners.Clear();
             Recorder.Start(profile, session, resume: true);
             session.Recording = true; session.Save();
             RecordingSource = note.Source; lastNameKey = session.Changes.Count > 0 ? "" : lastNameKey;
@@ -178,6 +179,7 @@ public partial class App : Application
         Session? session = null;
         try
         {
+            issueOwners.Clear(); // keyed by frame: a new recording starts afresh
             session = SessionStore.Create(profile, name);
             session.OutputProfileId = Settings.ActiveOutputProfile.Id;
             Recorder.Start(profile, session);
@@ -264,6 +266,19 @@ public partial class App : Application
     // M while recording: a marker here, named by whatever is playing
     // Live editing while recording (SPEC.md › Recording): the markers and names noted so far can be moved, retyped or removed; capture carries on untouched
     // A dropout or clipping burst marks the track playing at the time as damaged (SPEC.md › Recording › Issues); a later take with the same name replaces it
+    // Each issue belongs to the take that was playing when it happened, fixed the first time it's seen: moving or removing markers
+    // afterwards never hands it to a neighbour (SPEC.md › Recording › Issues)
+    readonly Dictionary<string, string> issueOwners = new();
+    string IssueOwner(string kind, long frame)
+    {
+        if (Recorder.Session is not { } session) return "";
+        var key = kind + ":" + frame;
+        if (issueOwners.TryGetValue(key, out var owner)) return owner;
+        owner = session.Changes.Where(change => change.Frame <= frame).OrderByDescending(change => change.Frame).FirstOrDefault()?.Id ?? "";
+        if (owner != "") issueOwners[key] = owner;
+        return owner;
+    }
+
     void NoteProblem(string kind, long? frame = null)
     {
         if (Recorder.Session is not { } session) return;
@@ -546,11 +561,11 @@ public partial class App : Application
         channels = Recorder.Session?.Channels ?? 0,
         cutoffText = SpectralCutoff.Describe(Recorder.CurrentCutoffHz),
         sampleRate = Recorder.Session?.SampleRate ?? 0,
-        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.DetectedFrame, change.Artist, change.Title, change.Album, change.Year, change.Genre, change.Composer, change.Confirmed, change.Manual, change.Problem, change.Note }) ?? Enumerable.Empty<object>(),
-        dropoutList = Recorder.Dropouts.Select(dropout => new { dropout.Frame, dropout.Ms }),
-        gapList = Recorder.GapsNow().Select(gap => new { gap.Frame, gap.Ms }),
-        otherSounds = Recorder.OtherSoundsSoFar,
-        clips = Recorder.Clips.Select(clip => new { clip.Frame, clip.Samples }),
+        changes = Recorder.Session?.Changes.Select(change => new { change.Id, change.Frame, change.DetectedFrame, change.Artist, change.Title, change.Album, change.Year, change.Genre, change.Composer, change.Confirmed, change.Manual, change.Problem, change.Note }) ?? Enumerable.Empty<object>(),
+        dropoutList = Recorder.Dropouts.ToList().Select(dropout => new { dropout.Frame, dropout.Ms, changeId = IssueOwner("dropout", dropout.Frame) }),
+        gapList = Recorder.GapsNow().Select(gap => new { gap.Frame, gap.Ms, changeId = IssueOwner("gap", gap.Frame) }),
+        otherSounds = Recorder.OtherSoundsSoFar.Select(other => new { other.Frame, other.Ms, other.App, other.PeakDb, changeId = IssueOwner("other", other.Frame) }),
+        clips = Recorder.Clips.ToList().Select(clip => new { clip.Frame, clip.Samples, changeId = IssueOwner("clip", clip.Frame) }),
         current = CurrentName == null ? null : new { CurrentName.Key, CurrentName.Label, CurrentName.Artist, CurrentName.Title, CurrentName.Album, year = YearFor(CurrentName) },
         source = RecordingSource,
         playing = Player.Playing,

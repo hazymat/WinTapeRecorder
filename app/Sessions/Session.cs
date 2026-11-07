@@ -7,6 +7,7 @@ namespace WinTapeRecorder.Sessions;
 // A now-playing name seen while recording, at the frame it appeared (SPEC.md › Track detection)
 public class NameChange
 {
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8]; // lets an issue follow the take it hit, whatever is moved or removed around it
     public long Frame { get; set; }
     public long DetectedFrame { get; set; } = -1; // where it was placed by itself, once it has been moved by hand (for ↺)
     public string Artist { get; set; } = "";

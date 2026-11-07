@@ -234,12 +234,14 @@
     const status = app.status; if (!status?.recording) return []
     const rate = status.sampleRate || 48000, recorded = app.levels.seconds * rate
     const trackAt = (frame: number) => { let found = -1; status.changes.forEach((change, index) => { if (change.frame <= frame) found = index }); return found }
+    // The take an issue hit, by its id: -2 when that take has since been removed (the issue goes with it)
+    const ownerOf = (item: { frame: number; changeId?: string }) => { if (!item.changeId) return trackAt(item.frame); return status.changes.findIndex(change => change.id === item.changeId) }
     const name = (index: number) => { const change = status.changes[index]; return change?.title ? `“${change.title}”` : index >= 0 ? `track ${index + 1}` : 'the recording' }
     const list: Issue[] = []
-    for (const dropout of status.dropoutList ?? []) { const index = trackAt(dropout.frame); list.push({ kind: 'dropout', frame: dropout.frame, index, text: `Dropout at ${formatTime(dropout.frame, rate, false)} in ${name(index)}: about ${dropout.ms} ms lost.`, action: 'Play that track again; the new take replaces this one.' }) }
-    for (const gap of status.gapList ?? []) { const index = trackAt(gap.frame); list.push({ kind: 'gap', frame: gap.frame, index, text: `The sound cut out at ${formatTime(gap.frame, rate, false)} in ${name(index)} for ${gap.ms < 1000 ? gap.ms + ' ms' : (gap.ms / 1000).toFixed(1) + ' s'}: the player stalled (a busy PC?).`, action: 'The gap is in the recording: play that track again; the new take replaces this one.' }) }
-    for (const other of status.otherSounds ?? []) { const index = trackAt(other.frame); list.push({ kind: 'other', frame: other.frame, index, text: `${other.app} made a sound at ${formatTime(other.frame, rate, false)} in ${name(index)} (${(other.ms / 1000).toFixed(1)} s, peak ${other.peakDb} dB).`, action: 'It is in the recording: play that track again, or turn on Do not disturb so it does not happen again.' }) }
-    for (const clip of status.clips ?? []) { const index = trackAt(clip.frame); list.push({ kind: 'clipping', frame: clip.frame, index, text: `Clipping at ${formatTime(clip.frame, rate, false)} in ${name(index)}: ${clip.samples} samples at full scale.`, action: 'Turn the source down a little and play that track again.' }) }
+    for (const dropout of status.dropoutList ?? []) { const index = ownerOf(dropout); if (index < 0 && dropout.changeId) continue; list.push({ kind: 'dropout', frame: dropout.frame, index, text: `Dropout at ${formatTime(dropout.frame, rate, false)} in ${name(index)}: about ${dropout.ms} ms lost.`, action: 'Play that track again; the new take replaces this one.' }) }
+    for (const gap of status.gapList ?? []) { const index = ownerOf(gap); if (index < 0 && gap.changeId) continue; list.push({ kind: 'gap', frame: gap.frame, index, text: `The sound cut out at ${formatTime(gap.frame, rate, false)} in ${name(index)} for ${gap.ms < 1000 ? gap.ms + ' ms' : (gap.ms / 1000).toFixed(1) + ' s'}: the player stalled (a busy PC?).`, action: 'The gap is in the recording: play that track again; the new take replaces this one.' }) }
+    for (const other of status.otherSounds ?? []) { const index = ownerOf(other); if (index < 0 && other.changeId) continue; list.push({ kind: 'other', frame: other.frame, index, text: `${other.app} made a sound at ${formatTime(other.frame, rate, false)} in ${name(index)} (${(other.ms / 1000).toFixed(1)} s, peak ${other.peakDb} dB).`, action: 'It is in the recording: play that track again, or turn on Do not disturb so it does not happen again.' }) }
+    for (const clip of status.clips ?? []) { const index = ownerOf(clip); if (index < 0 && clip.changeId) continue; list.push({ kind: 'clipping', frame: clip.frame, index, text: `Clipping at ${formatTime(clip.frame, rate, false)} in ${name(index)}: ${clip.samples} samples at full scale.`, action: 'Turn the source down a little and play that track again.' }) }
     status.changes.forEach((change, index) => {
       if (!change.title && recorded - change.frame > 10 * rate && !change.problem) list.push({ kind: 'noname', frame: change.frame, index, text: `Track ${index + 1} (from ${formatTime(change.frame, rate, false)}) has no name.`, action: 'Type its artist and title in the list below.' })
       if (change.problem === 'retake' && !list.some(issue => issue.index === index)) list.push({ kind: 'retake', frame: change.frame, index, text: `Track ${index + 1} ${name(index)} is marked for a retake.`, action: 'Play it again; the new take replaces this one.' })
@@ -273,7 +275,15 @@
   function toggleFold(group: { key: string; indexes: number[] }) { const key = foldKey(group); foldedAlbums = foldedAlbums.includes(key) ? foldedAlbums.filter(other => other !== key) : [...foldedAlbums, key] }
   // Removing a marker between two others: the track before runs on, the next one starts earlier, or they meet in the middle
   let removing = $state(-1)
-  function removeMarker(index: number) { const count = app.status?.changes.length ?? 0; if (index > 0 && index < count - 1) removing = index; else sendToShell({ type: 'removeChange', index }) }
+  // A take marked as faulty is replaced by a later take of the same track (same title and artist): left out on export by itself
+  const faulty = (problem: string) => problem !== '' && problem !== 'note' && problem !== 'skip'
+  function replacedBy(index: number) {
+    const changes = app.status?.changes ?? [], change = changes[index]
+    if (!change || !faulty(change.problem) || !change.title) return -1
+    const same = (text: string | undefined, other: string | undefined) => (text ?? '').trim().toLowerCase() === (other ?? '').trim().toLowerCase()
+    return changes.findIndex((later, at) => at > index && same(later.title, change.title) && same(later.artist, change.artist))
+  }
+  function removeMarker(index: number) { const count = app.status?.changes.length ?? 0; if ((index > 0 && index < count - 1) || faulty(app.status?.changes[index]?.problem ?? '')) removing = index; else sendToShell({ type: 'removeChange', index }) }
   function closeGap(how: 'previous' | 'next' | 'middle') {
     const index = removing; removing = -1
     const changes = app.status?.changes ?? [], here = changes[index]?.frame, next = changes[index + 1]?.frame
@@ -538,7 +548,7 @@
           {@const change = changes[index]}
           {@const rate = app.status?.sampleRate ?? 48000}
           {@const nextFrame = changes[index + 1]?.frame ?? app.levels.seconds * rate}
-          <div class="row" class:lifting={liftingIndex === index} class:lifted={liftedIndex === index} class:current={selected === index} onpointerdown={(event) => liftDown(index, event)} role="listitem">
+          <div class="row" class:replaced={replacedBy(index) >= 0} class:lifting={liftingIndex === index} class:lifted={liftedIndex === index} class:current={selected === index} onpointerdown={(event) => liftDown(index, event)} role="listitem">
             <span class="tick-cell"><input type="checkbox" class="tick" checked={ticked.includes(String(index))} onchange={() => tickIndexes([index], !ticked.includes(String(index)))} aria-label="Select track {index + 1}" /> {index + 1}</span>
             <span class="hear"><button class="hear-start locate" class:grabbed={selected === index} class:checked={change.confirmed} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Find this start in the wave above, zoomed in (click again to let go)"><span class="pill-time">{formatTime(change.frame, rate, false)}</span>{#if change.detectedFrame != null && change.detectedFrame >= 0 && change.detectedFrame !== change.frame}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'editChange', index, frame: change.detectedFrame }) }} onkeydown={() => { }} title={`Moved. Click to put it back where it was placed (${formatTime(change.detectedFrame, rate, false)})`}>↺</span>{/if}<span class="locate-icon">⌖</span></button><button class="hear-end locate" onclick={() => selectMarker(index, true)} title="Length so far"><span class="pill-time">{formatLength(Math.max(0, nextFrame - change.frame), rate)}</span></button></span>
             <input value={change.artist} placeholder="Artist" onchange={(event) => sendToShell({ type: 'editChange', index, artist: (event.target as HTMLInputElement).value.trim() })} />
@@ -548,7 +558,7 @@
             <input value={change.title} placeholder={change.manual ? 'Title (marked by hand)' : 'Title'} onchange={(event) => sendToShell({ type: 'editChange', index, title: (event.target as HTMLInputElement).value.trim() })} />
             <input value={change.genre ?? ''} placeholder={group.genre || 'Genre'} onchange={(event) => sendToShell({ type: 'editChanges', indexes: [index], genre: (event.target as HTMLInputElement).value.trim() })} />
             <input value={change.composer ?? ''} placeholder={group.composer || 'Composer'} onchange={(event) => sendToShell({ type: 'editChanges', indexes: [index], composer: (event.target as HTMLInputElement).value.trim() })} />
-            <button class="retake" class:on={!!change.problem} onclick={() => { problemFor = index; problemNote = change.note ?? '' }} title={change.problem ? `${problemLabel(change.problem)}${change.note ? ': ' + change.note : ''}. Click to change it` : 'Problem with this track? Note it, play it again or leave it out'}>{change.problem ? problemLabel(change.problem) : 'Problem?'}</button>
+            <button class="retake" class:on={!!change.problem} onclick={() => { problemFor = index; problemNote = change.note ?? '' }} title={change.problem ? `${problemLabel(change.problem)}${change.note ? ': ' + change.note : ''}. Click to change it` : 'Problem with this track? Note it, play it again or leave it out'}>{change.problem ? (replacedBy(index) >= 0 ? `Replaced by ${replacedBy(index) + 1}` : problemLabel(change.problem)) : 'Problem?'}</button>
             <button class="remove" onclick={() => removeMarker(index)} title="Remove this marker (the audio stays)" aria-label="Remove marker">✕</button>
           </div>
           {#if liftedIndex >= 0 && group.indexes.includes(liftedIndex) && group.indexes[group.indexes.length - 1] === index}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
@@ -568,10 +578,20 @@
 {#if removing >= 0}
   <div class="backdrop" role="presentation" onpointerdown={(event) => { if (event.target === event.currentTarget) removing = -1 }}>
     <div class="gap-box" role="dialog" aria-label="Remove this track">
+      {#if faulty(app.status?.changes[removing]?.problem ?? '')}
+        <h3>Track {removing + 1} is a faulty take</h3>
+        <p class="quiet gap-note">{replacedBy(removing) >= 0 ? `Track ${replacedBy(removing) + 1} is the new take, so this one is already left out of the export.` : 'Once you play it again, the new take replaces it and this one is left out by itself.'} There's no need to remove it, and removing it would hand its audio to a neighbour.</p>
+        <button class="primary gap-choice" onclick={() => { const index = removing; removing = -1; sendToShell({ type: 'setProblem', index, problem: 'skip' }) }}>Leave this take out now</button>
+        <button class="ghost gap-choice" onclick={() => removing = -1}>Keep it as it is</button>
+        {#if removing > 0 && removing < (app.status?.changes.length ?? 0) - 1}<div class="quiet gap-note">Or remove the marker anyway:</div>{/if}
+      {:else}
       <h3>Remove track {removing + 1}: how should its neighbours meet?</h3>
+      {/if}
+      {#if removing > 0 && removing < (app.status?.changes.length ?? 0) - 1}
       <button class="ghost gap-choice" onclick={() => closeGap('previous')}>Track {removing} runs on until track {removing + 2} starts</button>
       <button class="ghost gap-choice" onclick={() => closeGap('next')}>Track {removing + 2} starts where track {removing} ends now</button>
       <button class="ghost gap-choice" onclick={() => closeGap('middle')}>They meet in the middle</button>
+      {:else}<button class="ghost gap-choice" onclick={() => { const index = removing; removing = -1; sendToShell({ type: 'removeChange', index }) }}>Remove the marker anyway</button>{/if}
       <div class="gap-foot"><button class="ghost" onclick={() => removing = -1}>Cancel</button></div>
     </div>
   </div>
@@ -581,6 +601,9 @@
   .gap-box { width: min(460px, calc(100vw - 40px)); display: flex; flex-direction: column; gap: 6px; padding: 16px 18px 14px; border-radius: 14px; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: 0 24px 60px var(--shadow); }
   .gap-box h3 { margin: 0 0 6px; font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--fg); }
   .gap-choice { text-align: left; padding: 7px 12px; }
+  .gap-note { margin: 0 0 4px; font-size: 12.5px; }
+  .row.replaced { opacity: 0.55; }
+  .replaced-tag { font-size: 11px; color: var(--fg-quiet); white-space: nowrap; }
   .gap-foot { display: flex; justify-content: flex-end; margin-top: 4px; }
 
   .record { padding-bottom: 20px; }
