@@ -385,7 +385,7 @@
   function coverInUse(group: ListAlbum, ownCover: string | null, playerCover: string): '' | 'database' | 'player' | 'own' {
     if (!ownCover) return ''
     const known = coverSources[group.first]; if (known) return known
-    return playerCover && ownCover === playerCover ? 'player' : 'own'
+    return playerCover && ownCover === playerCover ? 'player' : /[\\/]art-web-[^\\/]*$/.test(ownCover) ? 'database' : 'own'
   }
   async function useCoverUrl(group: ListAlbum, url: string) {
     try { const saved = await request<{ path: string; thumb: string }>({ type: 'fetchArt', id: sessionId, url }); thumbs = Object.assign({}, thumbs, { [saved.path]: saved.thumb }); coverSources = Object.assign({}, coverSources, { [group.first]: 'database' }); applyTags(group.ids, { artPath: saved.path }, false) }

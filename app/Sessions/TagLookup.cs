@@ -273,22 +273,22 @@ public static class TagLookup
     public static async Task<string> SaveArtAsync(string url, string sessionFolder)
     {
         var bytes = await client.GetByteArrayAsync(url);
-        return SaveArtBytes(bytes, sessionFolder);
+        return SaveArtBytes(bytes, sessionFolder, "art-web-"); // the prefix lets the UI tell an online cover from your own after reopening
     }
 
     public static async Task<byte[]> ArtBytesAsync(string url) => await client.GetByteArrayAsync(url);
 
-    public static string SaveArtBytes(byte[] bytes, string sessionFolder)
+    public static string SaveArtBytes(byte[] bytes, string sessionFolder, string prefix = "art-")
     {
         var isPng = bytes.Length > 4 && bytes[0] == 0x89 && bytes[1] == 0x50;
-        var name = "art-" + Convert.ToHexString(SHA1.HashData(bytes))[..12].ToLowerInvariant() + (isPng ? ".png" : ".jpg");
+        var name = prefix + Convert.ToHexString(SHA1.HashData(bytes))[..12].ToLowerInvariant() + (isPng ? ".png" : ".jpg");
         var path = Path.Combine(sessionFolder, name);
         if (!File.Exists(path)) File.WriteAllBytes(path, bytes);
         return path;
     }
 
     // A small preview for the track list, as a data URL (the page can't read files itself)
-    public static string Thumbnail(string path, int size = 96)
+    public static string Thumbnail(string path, int size = 256) // 256 px: the 84 px tiles stay sharp at 200% scaling
     {
         try
         {
