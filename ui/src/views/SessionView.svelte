@@ -248,7 +248,7 @@
     edited.trackNumber = number; edited.exported = false
     commit(next, `Track ${tracks.indexOf(track) + 1} is number ${number || 'by position'}`)
   }
-  function editField(track: Track, field: 'artist' | 'title' | 'album' | 'year' | 'genre', value: string) {
+  function editField(track: Track, field: 'artist' | 'title' | 'album' | 'year' | 'genre' | 'albumArtist', value: string) {
     if ((track[field] ?? '') === value) return
     const next = copy(); const edited = next.find(candidate => candidate.id === track.id)!; edited[field] = value; edited.exported = edited.exported && false
     commit(next, `Track ${tracks.indexOf(track) + 1}: ${field} changed`)
@@ -711,7 +711,7 @@
     { label: 'Look up…', key: 'L', run: keys => openLookup(keys) },
     { label: 'Fades…', key: 'F', run: keys => { const first = tracks.find(track => keys.includes(track.id)); dialog = { kind: 'fades', keys, fadeIn: String(first?.fadeInMs ?? 0), fadeOut: String(first?.fadeOutMs ?? 0) } } },
     { label: 'Merge', run: keys => mergeTracks(keys) },
-    { label: 'Captured names…', run: keys => reverting = { keys, artist: true, title: true, album: true } },
+    { label: 'Revert to captured tags…', run: keys => reverting = { keys, artist: true, title: true, album: true } },
     { label: 'Remove', key: 'Delete', danger: true, run: keys => deleteTracks(keys) },
   ]
   const exportedCount = $derived(tracks.filter(track => track.exported).length)
@@ -816,7 +816,7 @@
     {#if exportStatus && step !== 'export'}<span class="export-status">{exportStatus}</span>{/if}
   </div>
 
-  {#if step !== 'tags'}
+  {#if step === 'cuts'}
   <Hint id="waveform-cuts" text="Find next to confirm (C) jumps to the next start or end without a ✓, from the track you're on, and plays it. Drag the line, nudge it with ← →, or press S / E to set it at the playhead; then tick ✓ beside it in the list. Wheel zooms, Shift+wheel scrolls, Ctrl+wheel sets the height, W switches wave and spectrogram." />
   <div class="wave-host" bind:this={waveHost} style:height="{waveHeight}px">
 
@@ -902,32 +902,49 @@
       {/each}
       {#if session.albumLooked}<p class="tags-foot"><button class="link" onclick={() => { if (session) session.albumLooked = false; sendToShell({ type: 'suggestAgain', id: sessionId }) }}>Look all albums up again</button></p>{/if}
     </div>
-  {:else}
-  {#if step === 'export'}
-    <!-- Export plan: each album, its profile (the session's unless set) and its size -->
-    <div class="export-plan">
-      <table class="tag-table export-table">
-        <thead><tr><th>Album</th><th>Tracks</th><th>Output profile</th><th>Size</th></tr></thead>
-        <tbody>
-          {#each listAlbums as group (group.key + group.first)}
-            {@const list = tracks.filter(track => group.ids.includes(track.id))}
-            {@const own = commonOf(list, 'outputProfileId')}
-            <tr>
-              <td class="plan-album"><strong>{group.album || 'No album'}</strong><span class="quiet">{' — '}{group.artist || 'unknown artist'}</span></td>
-              <td class="quiet">{list.filter(track => !track.skip).length}</td>
-              <td><select value={own ? own : '__session'} onchange={(event) => setAlbumProfile(group, (event.target as HTMLSelectElement).value)}>
-                <option value="__session">Session's ({app.outputProfiles.find(profile => profile.id === outputProfileId)?.name ?? 'default'})</option>
-                {#each app.outputProfiles as profile (profile.id)}<option value={profile.id}>{profile.name}</option>{/each}
-                <option value="__manage">Manage output profiles…</option>
-              </select></td>
-              <td class="plan-size">≈ {sizeText(estimateBytes(list))}</td>
-            </tr>
-          {/each}
-          <tr class="plan-total"><td><strong>Whole session</strong></td><td class="quiet">{exportable.length}</td><td></td><td class="plan-size"><strong>≈ {sizeText(estimateBytes(exportable))}</strong></td></tr>
-        </tbody>
-      </table>
+  {:else if step === 'export'}
+    <!-- Export report (SPEC.md › Export): one page, album by album, every tag that will be written, editable to the last minute -->
+    <div class="tags-page export-page">
+      <p class="export-total"><strong>{exportable.length} track{exportable.length === 1 ? '' : 's'} in {listAlbums.length} album{listAlbums.length === 1 ? '' : 's'}</strong>{' · '}≈ {sizeText(estimateBytes(exportable))} in all{' · '}albums without their own profile use {app.outputProfiles.find(profile => profile.id === outputProfileId)?.name ?? 'the default'}</p>
+      {#each listAlbums as group (group.key + group.first)}
+        {@const list = tracks.filter(track => group.ids.includes(track.id))}
+        {@const own = commonOf(list, 'outputProfileId')}
+        {@const allTicked = group.ids.every(id => selectedIds.includes(id))}
+        <section class="report-card">
+          <header class="report-head">
+            <input type="checkbox" class="tick" checked={allTicked} indeterminate={!allTicked && group.ids.some(id => selectedIds.includes(id))} onchange={() => { const next = allTicked ? selectedIds.filter(id => !group.ids.includes(id)) : Array.from(new Set(selectedIds.concat(group.ids))); if (next.length) selectKeys(scope, tracks.filter(track => next.includes(track.id)).map(track => track.id), actions, 'track'); else clearSelection() }} title="Tick every track in this album" aria-label="Select this album's tracks" />
+            <span class="report-title"><strong>{group.album || 'No album'}</strong><span class="quiet">{' — '}{group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}{group.genre ? ` · ${group.genre}` : ''}</span></span>
+            <select class="report-profile" value={own ? own : '__session'} onchange={(event) => setAlbumProfile(group, (event.target as HTMLSelectElement).value)} title="This album's output profile">
+              <option value="__session">{app.outputProfiles.find(profile => profile.id === outputProfileId)?.name ?? 'Default'} (session)</option>
+              {#each app.outputProfiles as profile (profile.id)}<option value={profile.id}>{profile.name}</option>{/each}
+              <option value="__manage">Manage output profiles…</option>
+            </select>
+            <span class="plan-size">≈ {sizeText(estimateBytes(list))}</span>
+            <button class="ghost small-button" disabled={!!app.status?.exporting} onclick={() => exportTracks(group.ids.filter(id => !tracks.find(track => track.id === id)?.skip))}>Export album</button>
+          </header>
+          <table class="tag-table report">
+            <thead><tr><th class="c-tick"></th><th class="c-no">No.</th><th>Artist</th><th>Title</th><th>Album artist</th><th>Album</th><th class="c-year">Year</th><th>Genre</th><th class="c-art">Cover</th><th class="c-status"></th></tr></thead>
+            <tbody>
+              {#each list as track, position (track.id)}
+                <tr class:skipped-row={track.skip}>
+                  <td class="c-tick"><input type="checkbox" class="tick" checked={selectedIds.includes(track.id)} onchange={() => toggleOne(track.id)} aria-label="Select track" /></td>
+                  <td class="c-no"><input class="track-number" value={track.trackNumber || position + 1} onchange={(event) => setTrackNumber(track, (event.target as HTMLInputElement).value)} /></td>
+                  <td><input value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} /></td>
+                  <td><input value={track.title} placeholder="Title" onchange={(event) => editField(track, 'title', (event.target as HTMLInputElement).value.trim())} /></td>
+                  <td><input value={track.albumArtist ?? ''} placeholder={`(${list.map(member => member.artist).filter(Boolean)[0] ?? 'artist'})`} title="Blank: the album's main artist is written" onchange={(event) => editField(track, 'albumArtist', (event.target as HTMLInputElement).value.trim())} /></td>
+                  <td><input value={track.album} placeholder="Album" onchange={(event) => editField(track, 'album', (event.target as HTMLInputElement).value.trim())} /></td>
+                  <td class="c-year"><input value={track.year ?? ''} placeholder="Year" onchange={(event) => editField(track, 'year', (event.target as HTMLInputElement).value.trim())} /></td>
+                  <td><input value={track.genre ?? ''} placeholder="Genre" onchange={(event) => editField(track, 'genre', (event.target as HTMLInputElement).value.trim())} /></td>
+                  <td class="c-art">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="Cover" />{:else}<span class="quiet">none</span>{/if}</td>
+                  <td class="c-status">{#if track.verifyError}<button class="failed no-hold" title={`${track.verifyError}. Export it again.`} onclick={() => exportTracks([track.id], true)}>Failed check</button>{:else if track.skip}<span class="quiet">left out</span>{:else if track.exported}<button class="exported no-hold" title={`${track.exportedPath}${track.verified ? ' · read back and checked' : ''}`} onclick={() => sendToShell({ type: 'openFolder', path: track.exportedPath })}>Exported</button>{/if}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </section>
+      {/each}
     </div>
-  {/if}
+  {:else}
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }} style:--columns={gridColumns}>
     <div class="row head" ondblclick={resetColumns} title="Drag a column's right edge to resize it; double-click here to reset"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /><i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(0, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Start · Length · ✓<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(1, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell"><i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(2, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Artist<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(3, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Album<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(4, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Year<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(5, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">No.<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(6, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Title<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(7, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Genre<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(8, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Source<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(9, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Fades<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(10, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell"></span></div>
     {#each tracks as track, index (track.id)}
@@ -979,7 +996,7 @@
     {/each}
   </div>
   {/if}
-  {#if step !== 'tags'}<Hint id="track-select" text="Tick tracks (or the box at the top for all) to tag, export, fade, merge or remove several at once; Ctrl/Shift+click and right-click work too. The small buttons on each row play that track's start or end." />{/if}
+  {#if step === 'cuts'}<Hint id="track-select" text="Tick tracks (or the box at the top for all) to tag, export, fade, merge or remove several at once; Ctrl/Shift+click and right-click work too. The small buttons on each row play that track's start or end." />{/if}
 </div>
 {/if}
 
@@ -1013,7 +1030,7 @@
 {#if reverting}
   {@const job = reverting}
   {@const preview = tracks.filter(track => job.keys.includes(track.id)).slice(0, 4).map(track => { const captured = capturedFor(track); return captured ? `${captured.artist || '?'} — ${captured.album || 'no album'} — ${captured.title || '?'}` : `${track.title || 'Track'}: nothing captured` })}
-  <Dialog title="Back to the captured names" wide text={`Put ${job.keys.length === 1 ? 'this track' : `these ${job.keys.length} tracks`} back to what the player said while recording. Choose which tags:`} confirmLabel="Revert" onconfirm={revertCaptured} oncancel={() => reverting = null}>
+  <Dialog title="Revert to captured tags" wide text={`Put ${job.keys.length === 1 ? 'this track' : `these ${job.keys.length} tracks`} back to what the player said while recording. Choose which tags:`} confirmLabel="Revert" onconfirm={revertCaptured} oncancel={() => reverting = null}>
     <label class="check"><input type="checkbox" checked={job.artist} onchange={(event) => { if (reverting) reverting.artist = (event.target as HTMLInputElement).checked }} /> Artist</label>
     <label class="check"><input type="checkbox" checked={job.album} onchange={(event) => { if (reverting) reverting.album = (event.target as HTMLInputElement).checked }} /> Album</label>
     <label class="check"><input type="checkbox" checked={job.title} onchange={(event) => { if (reverting) reverting.title = (event.target as HTMLInputElement).checked }} /> Title</label>
@@ -1185,6 +1202,21 @@
   @keyframes wiggle { 0%, 100% { transform: none; } 25% { transform: rotate(-0.4deg); } 75% { transform: rotate(0.4deg); } }
   .row.lifted :global(*) { user-select: none; }
   .row.lifted { opacity: 0.85; box-shadow: 0 8px 22px var(--shadow); transform: scale(1.01); background: var(--panel-solid); cursor: grabbing; position: relative; z-index: 2; }
+  .export-page { gap: 10px; }
+  .export-total { margin: 0; font-size: 13px; color: var(--fg-quiet); }
+  .export-total strong { color: var(--fg); }
+  .report-card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 6px 10px 8px; }
+  .report-head { display: flex; align-items: center; gap: 10px; padding: 2px 0 6px; }
+  .report-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+  .report-profile { width: auto; max-width: 200px; padding: 2px 6px; font-size: 12.5px; }
+  .tag-table.report { font-size: 12.5px; }
+  .tag-table.report th { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; padding: 2px 6px 2px 0; }
+  .tag-table.report td { padding: 1px 6px 1px 0; }
+  .tag-table.report td input:not(.tick) { width: 100%; box-sizing: border-box; padding: 1px 6px; background: transparent; border-color: transparent; font-size: 12.5px; }
+  .tag-table.report td input:not(.tick):hover { border-color: var(--line); } .tag-table.report td input:not(.tick):focus { background: var(--panel-solid); }
+  .report .c-tick { width: 24px; } .report .c-no { width: 40px; } .report .c-year { width: 54px; } .report .c-art { width: 44px; } .report .c-status { width: 92px; }
+  .report .c-art img { width: 26px; height: 26px; object-fit: cover; border-radius: 3px; display: block; }
+  .skipped-row { opacity: 0.5; }
   .export-plan { flex: none; max-height: 36%; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 6px 12px; }
   .export-table th:first-child { width: auto; }
   .export-table th:nth-child(2) { width: 60px; } .export-table th:nth-child(3) { width: 230px; } .export-table th:nth-child(4) { width: 90px; }
