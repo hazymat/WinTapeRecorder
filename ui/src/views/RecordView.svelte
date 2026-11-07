@@ -39,21 +39,24 @@
   let following = $state(true)
   let viewStart = 0, viewSpan = 0 // the paused view, in frames
   let selected = $state(-1) // the selected marker's index
+  let liveScale = 1 // Ctrl+wheel: wave height, as in the session's waveform; a plain wheel resets it
   let hovered = $state(-1)
-  let secondsToWiden = $state(10)
-  let overviewSpan = 0 // frames shown while following; grows in steps of 10 s as the recording reaches the edge
+  let followSeconds = $state(60) // following: the latest this many seconds, newest at the right; Catch up keeps the last zoom used
+  let overviewSpan = 0 // the whole recording so far, for the strip above
   let dragging: null | { startX: number; startViewStart: number; pinX: number; moved: boolean; onMarker: number } = null
   function liveRange() {
     const status = app.status!; const rate = status.sampleRate, recorded = app.levels.seconds * rate
-    if (recorded >= overviewSpan) overviewSpan = recorded + 10 * rate
-    return following ? { start: 0, span: overviewSpan } : { start: viewStart, span: viewSpan }
+    overviewSpan = Math.max(recorded, rate)
+    if (!following) return { start: viewStart, span: viewSpan }
+    const span = followSeconds * rate
+    return { start: Math.max(0, recorded - span * 0.97), span }
   }
   // Where a marker is: the selected one being dragged follows the audio under its fixed screen position
   function markerFrame(index: number) { const change = app.status?.changes[index]; if (!change) return 0; if (dragging && dragging.moved && index === selected) { const { span } = liveRange(); return Math.max(0, Math.min(app.levels.seconds * (app.status?.sampleRate ?? 48000), viewStart + dragging.pinX * span / liveWidth)) } return change.frame }
   function markerX(index: number) { const { start, span } = liveRange(); return (markerFrame(index) - start) / span * liveWidth }
   function markerAt(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((_, index) => { const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
   function pause() { if (!following || !app.status) return; const { start, span } = liveRange(); viewStart = start; viewSpan = span; following = false }
-  export function catchUp() { following = true; selected = -1; dragging = null; drawLive() }
+  export function catchUp() { if (!following && app.status) followSeconds = Math.round(Math.max(10, Math.min(1800, viewSpan / app.status.sampleRate))); following = true; selected = -1; dragging = null; drawLive() }
   function selectMarker(index: number, centre = false) {
     const status = app.status; if (!status) return
     pause()
@@ -61,6 +64,30 @@
     selected = index; drawLive()
   }
   function deselect() { selected = -1; drawLive() }
+  // The whole recording as a thin strip, with the part shown below boxed; click or drag on it to look there
+  let stripCanvas = $state<HTMLCanvasElement>(), stripPeaks: number[] = [], stripAsked = 0
+  const stripHeight = 26
+  function drawStrip(start: number, span: number, recorded: number, rate: number, colour: (name: string, fallback: string) => string) {
+    const status = app.status; if (!stripCanvas || !status) return
+    const ratio = devicePixelRatio, width = liveWidth, context = stripCanvas.getContext('2d')!
+    if (stripCanvas.width !== Math.round(width * ratio)) { stripCanvas.width = Math.round(width * ratio); stripCanvas.height = stripHeight * ratio }
+    if (Date.now() - stripAsked > 2000) { stripAsked = Date.now(); request<{ mode: string; channels: number[][] }>({ type: 'peaks', id: status.sessionId, start: 0, end: Math.max(recorded, 1), columns: Math.round(width) }).then(data => { if (data.mode === 'peaks') stripPeaks = data.channels[0] ?? [] }).catch(() => { }) }
+    context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, stripHeight)
+    context.fillStyle = colour('--wave', '#5ccfff'); context.globalAlpha = 0.7
+    const columns = stripPeaks.length / 2
+    for (let column = 0; column < columns; column++) { const high = Math.min(1, stripPeaks[column * 2 + 1]), low = Math.max(-1, stripPeaks[column * 2]); context.fillRect(column * width / columns, stripHeight / 2 - high * (stripHeight / 2 - 1), Math.max(1, width / columns), Math.max(1, (high - low) * (stripHeight / 2 - 1))) }
+    context.globalAlpha = 1
+    context.fillStyle = colour('--warn', '#ffb74d'); for (const change of status.changes) context.fillRect(change.frame / overviewSpan * width, 0, 1, stripHeight)
+    const left = Math.max(0, start) / overviewSpan * width, right = Math.min(recorded, start + span) / overviewSpan * width
+    context.strokeStyle = colour('--accent', '#5ccfff'); context.lineWidth = 1.5; context.strokeRect(left, 1, Math.max(3, right - left), stripHeight - 2)
+  }
+  function onStrip(event: PointerEvent) {
+    if (!app.status || (event.type === 'pointermove' && !(event.buttons & 1))) return
+    if (event.type === 'pointerdown') stripCanvas?.setPointerCapture(event.pointerId)
+    pause()
+    const frame = event.offsetX / liveWidth * overviewSpan
+    viewStart = frame - viewSpan / 2; selected = -1; drawLive()
+  }
   let drawing = false
   async function drawLive() {
     const status = app.status
@@ -79,10 +106,10 @@
       // The audio before the start (a view starting before 0) is simply blank
       const dataStart = Math.max(0, start), lanes = data.channels.length, laneHeight = height / lanes, columns = data.channels[0]?.length / 2 || 0, framesPerColumn = (start + span - dataStart) / columns
       context.fillStyle = colour('--wave', '#5ccfff')
-      data.channels.forEach((values, lane) => { const middle = laneHeight * (lane + 0.5); for (let column = 0; column < columns; column++) { const at = dataStart + column * framesPerColumn; if (at > recorded) break; const x = toX(at), low = values[column * 2], high = values[column * 2 + 1]; context.fillRect(x, middle - high * (laneHeight / 2 - 1), Math.max(1, liveWidth * framesPerColumn / now.span), Math.max(1, (high - low) * (laneHeight / 2 - 1))) } })
+      data.channels.forEach((values, lane) => { const middle = laneHeight * (lane + 0.5); for (let column = 0; column < columns; column++) { const at = dataStart + column * framesPerColumn; if (at > recorded) break; const x = toX(at), low = Math.max(-1, values[column * 2] * liveScale), high = Math.min(1, values[column * 2 + 1] * liveScale); context.fillRect(x, middle - high * (laneHeight / 2 - 1), Math.max(1, liveWidth * framesPerColumn / now.span), Math.max(1, (high - low) * (laneHeight / 2 - 1))) } })
       // What's still to come, and where "now" is
       context.fillStyle = colour('--panel-strong', 'rgba(255,255,255,0.1)'); const nowX = toX(recorded); if (nowX < liveWidth) context.fillRect(Math.max(0, nowX), 0, liveWidth - Math.max(0, nowX), height)
-      if (following) secondsToWiden = Math.max(0, Math.round((now.span - recorded) / rate))
+      drawStrip(now.start, now.span, recorded, rate, colour)
       // Markers: the selected one in the accent colour with a band; the hovered one brighter
       context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'
       status.changes.forEach((change, index) => {
@@ -92,6 +119,7 @@
         if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.2 : 0.12; context.fillRect(x - 8, 0, 16, height); context.globalAlpha = 1 }
         context.fillRect(x - 1, 0, isSelected || isHovered ? 3 : 2, height); context.fillText(`${index + 1} ${change.title || ''}`.trim(), x + 5, 3)
       })
+      if (liveScale > 1.05) { context.fillStyle = colour('--fg-quiet', '#888'); context.textBaseline = 'top'; context.fillText(`Height ×${liveScale < 10 ? liveScale.toFixed(1) : Math.round(liveScale)} (wheel resets)`, liveWidth - 140, 3) }
       // The time scale
       context.fillStyle = colour('--fg-quiet', '#888'); context.textBaseline = 'bottom'; context.font = '10px "Segoe UI Variable Text", "Segoe UI", sans-serif'
       const stepSeconds = [0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600, 900, 1800].find(step => step * rate / now.span * liveWidth >= 70) ?? 1800
@@ -111,7 +139,7 @@
       const index = markerAt(event.offsetX)
       if (index !== hovered) { hovered = index; drawLive() }
       if (liveCanvas) liveCanvas.style.cursor = index >= 0 ? 'pointer' : 'grab'
-      liveCanvas?.setAttribute('title', index >= 0 ? (index === selected ? `Marker ${index + 1} is selected: drag the audio under it, click it to let go` : `Click to select marker ${index + 1}, then drag the audio under it`) : following ? 'Drag to stop following and look around; the wheel zooms' : 'Drag to pan, wheel to zoom')
+      liveCanvas?.setAttribute('title', index >= 0 ? (index === selected ? `Marker ${index + 1} is selected: drag the audio under it, click it to let go` : `Click to select marker ${index + 1}, then drag the audio under it`) : following ? 'Drag to stop following and look around; the wheel zooms, Ctrl+wheel makes the wave taller' : 'Drag to pan, wheel to zoom, Ctrl+wheel for height')
       return
     }
     if (!app.status) return
@@ -138,11 +166,13 @@
   function onLiveWheel(event: WheelEvent) {
     if (!app.status) return
     event.preventDefault()
+    if (event.ctrlKey) { liveScale = Math.max(1, Math.min(64, liveScale * Math.pow(1.0025, -event.deltaY))); drawLive(); return }
+    liveScale = 1
     pause()
     const rate = app.status.sampleRate, factor = Math.exp(event.deltaY * 0.0015)
     const anchorX = selected >= 0 ? markerX(selected) : event.offsetX
     const anchorFrame = viewStart + anchorX * viewSpan / liveWidth
-    viewSpan = Math.max(0.2 * rate, Math.min(Math.max(overviewSpan, 20 * rate) * 1.5, viewSpan * factor))
+    viewSpan = Math.max(0.2 * rate, Math.min(Math.max(overviewSpan, 60 * rate) * 1.5, viewSpan * factor))
     viewStart = anchorFrame - anchorX * viewSpan / liveWidth
     drawLive()
   }
@@ -270,9 +300,10 @@
     <div class="live-head">
       {#if selected >= 0}<span><strong>Marker {selected + 1} selected</strong><span class="quiet">{' · '}drag the audio under it and let go to place it; click it or press Esc to let go of it</span></span>
       {:else if !following}<span><strong>Paused view</strong><span class="quiet">{' · '}recording carries on. Drag to pan, wheel to zoom, click a marker to select it</span></span>
-      {:else}<span><strong>Following the recording</strong><span class="quiet">{' · '}drag or zoom to stop and look around; click a marker to select it</span></span><span class="quiet">{secondsToWiden} s until the view widens</span>{/if}
+      {:else}<span><strong>Following the recording</strong><span class="quiet">{' · '}drag or zoom to stop and look around; click a marker to select it</span></span><span class="quiet">the last {followSeconds >= 120 ? `${Math.round(followSeconds / 60)} min` : `${followSeconds} s`}</span>{/if}
       {#if !following}<button class="primary catch-up" onclick={catchUp} title="Back to the whole recording, following as it grows (Esc)">Catch up</button>{/if}
     </div>
+    <canvas class="live-strip" bind:this={stripCanvas} title="The whole recording so far: click or drag to look there" onpointerdown={onStrip} onpointermove={onStrip}></canvas>
     <canvas class="live-wave" bind:this={liveCanvas} bind:clientWidth={liveWidth} tabindex="-1" onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp} onpointercancel={onLiveUp} onpointerleave={() => { if (!dragging && hovered >= 0) { hovered = -1; drawLive() } }}></canvas>
     <h3>Tracks marked so far</h3>
     <Hint id="live-edit" text="Obvious slips can be fixed while the recording runs: retype a name, nudge a marker with the arrows or a typed time, or click its number to zoom in and drag the audio under the line. Fine listening comes afterwards, in Check the cuts." />
@@ -314,6 +345,7 @@
   .estimate { border-bottom: 1px dotted var(--fg-quiet); cursor: help; }
   .live-wave { display: block; width: 100%; height: 110px; border-radius: 8px; background: var(--panel); outline: none; cursor: grab; touch-action: none; }
   .catch-up { flex: none; }
+  .live-strip { display: block; width: 100%; height: 26px; border-radius: 6px; background: var(--panel); margin-bottom: 4px; cursor: pointer; touch-action: none; }
   .now-table { border-collapse: collapse; font-size: 13px; margin: 2px 0 6px; }
   .now-table th { text-align: left; font-weight: 500; color: var(--fg-quiet); padding: 2px 16px 2px 0; white-space: nowrap; vertical-align: top; }
   .now-table td { padding: 2px 0; }
