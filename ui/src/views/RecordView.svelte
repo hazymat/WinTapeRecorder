@@ -3,6 +3,7 @@
   import { app, nav, toast, formatTime, writeSetting } from '../state.svelte'
   import LevelMeter from '../parts/LevelMeter.svelte'
   import Dropdown from '../parts/Dropdown.svelte'
+  import Dialog from '../parts/Dialog.svelte'
   import Hint from '../parts/Hint.svelte'
   import Icon from '../parts/Icon.svelte'
   // The recorder (SPEC.md › Recording): choose a profile and where track names come from, check the level, record
@@ -41,7 +42,7 @@
   let selected = $state(-1) // the selected marker's index
   let liveScale = 1 // Ctrl+wheel: wave height, as in the session's waveform; kept while zooming
   let hovered = $state(-1)
-  let followSeconds = $state(60) // following: the latest this many seconds, newest at the right; Catch up keeps the last zoom used
+  let followSeconds = $state(60) // following: the latest minute, newest at the right; Catch up comes back to it
   let overviewSpan = 0 // the whole recording so far, for the strip above
   let dragging: null | { startX: number; startViewStart: number; pinX: number; moved: boolean; onMarker: number } = null
   function liveRange() {
@@ -56,7 +57,7 @@
   function markerX(index: number) { const { start, span } = liveRange(); return (markerFrame(index) - start) / span * liveWidth }
   function markerAt(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((_, index) => { const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
   function pause() { if (!following || !app.status) return; const { start, span } = liveRange(); viewStart = start; viewSpan = span; following = false }
-  export function catchUp() { if (!following && app.status) followSeconds = Math.round(Math.max(10, Math.min(1800, viewSpan / app.status.sampleRate))); following = true; selected = -1; dragging = null; drawLive() }
+  export function catchUp() { followSeconds = 60; following = true; selected = -1; dragging = null; drawLive() }
   function selectMarker(index: number, centre = false) {
     const status = app.status; if (!status) return
     pause()
@@ -224,35 +225,71 @@
   })
   const firstEstimate = $derived(estimates.find(estimate => app.outputProfiles.find(profile => profile.name === estimate.name)?.id === app.activeOutput) ?? estimates[0])
   const current = $derived(app.status?.current)
+  // Albums so far (SPEC.md › Recording › Live editing): runs of markers sharing artist and album, in order. Track numbers count up
+  // within each (a marker set for a retake doesn't count); the list below and the strip above both use these
+  type Change = NonNullable<typeof app.status>['changes'][number]
+  type Album = { key: string; artist: string; album: string; year: string; indexes: number[] }
+  const loose = (text: string) => (text ?? '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+  const changes = $derived<Change[]>(app.status?.changes ?? [])
+  const albums = $derived.by(() => {
+    const list: Album[] = []
+    changes.forEach((change, index) => {
+      const key = loose(change.artist) + '|' + loose(change.album), last = list[list.length - 1]
+      if (last && last.key === key) { last.indexes.push(index); if (!last.year && change.year) last.year = change.year }
+      else list.push({ key, artist: change.artist, album: change.album, year: change.year ?? '', indexes: [index] })
+    })
+    return list
+  })
+  function trackNumber(group: Album, index: number) { if (changes[index]?.problem) return 0; return group.indexes.filter(other => !changes[other]?.problem).indexOf(index) + 1 }
+  let openAlbum = $state('') // the album card showing its tracks
+  function hue(text: string) { let hash = 0; for (const char of text) hash = (hash * 31 + char.charCodeAt(0)) | 0; return Math.abs(hash) % 360 }
+  function initials(group: Album) { return ((group.album || group.artist || '?').match(/\p{L}|\p{N}/gu) ?? ['?']).slice(0, 2).join('').toUpperCase() }
+  function showAlbum(group: Album) { openAlbum = openAlbum === group.key + group.indexes[0] ? '' : group.key + group.indexes[0]; document.getElementById('album-' + group.indexes[0])?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }
+  // An album's artist, name or year, for all its tracks at once
+  function editAlbum(group: Album, field: 'artist' | 'album' | 'year', value: string) { sendToShell({ type: 'editChanges', indexes: group.indexes, [field]: value.trim() }) }
+  // A track joining the album above or below: take that album's names, or give that album this track's names
+  let joining = $state<null | { index: number; target: Album }>(null)
+  let dragIndex = -1
+  function joinAs(mode: 'theirs' | 'mine') {
+    const join = joining; joining = null; if (!join) return
+    const change = changes[join.index]; if (!change) return
+    if (mode === 'theirs') sendToShell({ type: 'editChanges', indexes: [join.index], artist: join.target.artist, album: join.target.album, year: join.target.year })
+    else sendToShell({ type: 'editChanges', indexes: join.target.indexes, artist: change.artist, album: change.album, year: change.year ?? '' })
+  }
+  const albumLine = (group: { artist: string; album: string; year?: string }) => [group.artist || 'Unknown artist', group.album ? group.album + (group.year ? ` (${group.year})` : '') : 'no album'].join(' — ')
   // Every field the chosen source gives, so it's clear what is picked up (SPEC.md › Recording › Now playing)
   const currentSource = $derived(current?.title ? (app.sources.find(candidate => candidate.key === current.key) ?? { key: '', kind: '', label: current.label, artist: current.artist, title: current.title, album: current.album ?? '', playing: true, rule: '' }) : null)
 </script>
 
 <svelte:window onkeydown={onLiveKey} />
-<div class="record">
-  <h2>Record</h2>
+<div class="record" class:recording>
+  {#if !recording}
+    <h2>Record</h2>
+    <Hint id="record-intro" text="Record a whole listening session into one file. Each time the playing track's name changes, a new track is marked; with no names, gaps split them. You fine-tune and export afterwards." />
+  {/if}
   <Hint id="other-sounds" text="Recording what the PC plays records everything it plays: turn on Do not disturb (Windows notifications) and close apps that ding. Any other app's sound during a recording is flagged in Issues." />
-  <Hint id="record-intro" text="Record a whole listening session into one file. Each time the playing track's name changes, a new track is marked; with no names, gaps split them. You fine-tune and export afterwards." />
-  <div class="settings-row">
-    <Dropdown label="Recording profile" value={profileId} options={profileChoices} align="left" onchange={(value) => { if (!recording) sendToShell({ type: 'setActiveProfile', kind: 'recording', profileId: value }) }} />
-    <Dropdown label="Track names" value={source} options={sourceChoices} align="left" onchange={(value) => source = value} />
-    <button class="ghost" onclick={() => sendToShell({ type: 'openSettings', tab: 'Recording' })}>Edit profiles…</button>
-  </div>
+  {#if !recording}
+    <div class="settings-row">
+      <Dropdown label="Recording profile" value={profileId} options={profileChoices} align="left" onchange={(value) => sendToShell({ type: 'setActiveProfile', kind: 'recording', profileId: value })} />
+      <Dropdown label="Track names" value={source} options={sourceChoices} align="left" onchange={(value) => source = value} />
+      <button class="ghost" onclick={() => sendToShell({ type: 'openSettings', tab: 'Recording' })}>Edit profiles…</button>
+    </div>
+    <p class="quiet device">{app.status?.device ? `From ${app.status.device}${profile?.loopback ? ' (what it plays)' : ''}` : 'No audio device open.'}{profile?.bitDepth ? ` · ${profile.bitDepth === 32 ? '32-bit float' : profile.bitDepth + '-bit'} WAV` : ''}</p>
+  {/if}
   {#if recording && app.status?.dropouts}<p class="warn">{app.status.dropouts} dropout{app.status.dropouts === 1 ? '' : 's'}: the PC was too busy and samples were lost. They're marked in the session.</p>{/if}
-  <p class="quiet device">{app.status?.device ? `From ${app.status.device}${profile?.loopback ? ' (what it plays)' : ''}` : 'No audio device open.'}{profile?.bitDepth ? ` · ${profile.bitDepth === 32 ? '32-bit float' : profile.bitDepth + '-bit'} WAV` : ''}</p>
 
   <div class="deck" class:live={recording}>
-    <button class="record-button" class:on={recording} onclick={toggleRecording} title={recording ? 'Stop (Ctrl+R)' : 'Record (Ctrl+R)'} aria-label={recording ? 'Stop recording' : 'Start recording'}><Icon name={recording ? 'stop' : 'record'} size={34} /></button>
+    <button class="record-button" class:on={recording} onclick={toggleRecording} title={recording ? 'Stop (Ctrl+R)' : 'Record (Ctrl+R)'} aria-label={recording ? 'Stop recording' : 'Start recording'}><Icon name={recording ? 'stop' : 'record'} size={recording ? 16 : 34} /></button>
     <div class="deck-info">
       {#if recording}
         <div class="clock">{formatTime(app.levels.seconds * 1000, 1000, false)}</div>
-        <div class="quiet">{app.status?.sessionName} · {sizeText} WAV{#if firstEstimate}{' · '}<span class="estimate" title={estimates.map(estimate => `${estimate.name}: ${estimate.text}`).join('\n')}>{firstEstimate.text} as {firstEstimate.name}{estimates.length > 1 ? ` (+${estimates.length - 1} more)` : ''}</span>{/if}{app.levels.minutesLeft >= 0 && app.levels.minutesLeft < 15 ? ` · WAV limit in ${Math.max(0, Math.floor(app.levels.minutesLeft))} min` : ''}</div>
+        <div class="quiet info">{app.status?.sessionName} · {sizeText} WAV{#if firstEstimate}{' · '}<span class="estimate" title={estimates.map(estimate => `${estimate.name}: ${estimate.text}`).join(String.fromCharCode(10))}>{firstEstimate.text} as {firstEstimate.name}{estimates.length > 1 ? ` (+${estimates.length - 1} more)` : ''}</span>{/if}</div>
       {:else}
         <input class="session-name" bind:value={sessionName} placeholder="Session name (optional)" onkeydown={(event) => { if (event.key === 'Enter') toggleRecording() }} />
         <div class="quiet">Ctrl+R starts and stops recording from anywhere in the app.</div>
       {/if}
     </div>
-    {#if recording}<button class="ghost marker" onclick={() => sendToShell({ type: 'marker' })} title="Mark a new track here (M)"><Icon name="marker" size={16} />New track here<kbd>M</kbd></button>{/if}
+    {#if recording}<button class="ghost marker" onclick={() => sendToShell({ type: 'marker' })} title="Mark a new track here (M)"><Icon name="marker" size={14} />New track here<kbd>M</kbd></button>{/if}
   </div>
 
   {#if issues.length}
@@ -272,73 +309,145 @@
   <LevelMeter />
   {#if app.levels.clipped > 0}<p class="warn">The input reached full scale. Turn the source down a little to avoid clipping.</p>{/if}
 
-  <h3>Source quality</h3>
-  <p class="source">{#if app.status?.cutoffHz}<strong>Spectrum stops at {(app.status.cutoffHz / 1000).toFixed(1)} kHz</strong><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">{app.status?.capturing ? 'Measuring: needs a couple of seconds of sound.' : 'Measured from the sound as it arrives.'}</span>{/if}</p>
-  <h3>Now playing</h3>
-  {#if currentSource}
-    {@const missing = 'not provided'}
-    <table class="now-table">
-      <tbody>
-        <tr><th>From</th><td>{currentSource.label}{currentSource.playing ? '' : ' (paused)'}</td></tr>
-        <tr><th>Title</th><td class:none={!currentSource.title}>{currentSource.title || missing}</td></tr>
-        <tr><th>Artist</th><td class:none={!currentSource.artist}>{currentSource.artist || missing}</td></tr>
-        <tr><th>Album</th><td class:none={!currentSource.album}>{currentSource.album || missing}</td></tr>
-        {#if currentSource.kind === 'media'}
-          <tr><th>Album artist</th><td class:none={!currentSource.albumArtist}>{currentSource.albumArtist || missing}</td></tr>
-          <tr><th>Track no.</th><td class:none={!currentSource.trackNumber}>{currentSource.trackNumber ? `${currentSource.trackNumber}${currentSource.trackCount ? ' of ' + currentSource.trackCount : ''}` : missing}</td></tr>
-          {#if currentSource.subtitle}<tr><th>Subtitle</th><td>{currentSource.subtitle}</td></tr>{/if}
-          {#if currentSource.genres}<tr><th>Genre</th><td>{currentSource.genres}</td></tr>{/if}
-          <tr><th>Picture</th><td class:none={!currentSource.picture}>{currentSource.picture ? 'provided' : missing}</td></tr>
-        {:else if currentSource.rule}<tr><th>Rule</th><td>{currentSource.rule}</td></tr>{/if}
-        <tr><th>Year</th>{#if current?.year}<td>{current.year} <span class="quiet">· looked up on MusicBrainz (Windows media info has no year)</span></td>{:else}<td class="none">{currentSource.album ? 'looking it up…' : 'not provided (needs an album name to look up)'}</td>{/if}</tr>
-      </tbody>
-    </table>
+  {#if recording}
+    <!-- One line each while recording (SPEC.md › Recording › Compact view): only what the source gives, in the order artist, album, year, title -->
+    <p class="line"><span class="line-label">Source</span>{#if app.status?.cutoffHz}<strong>spectrum stops at {(app.status.cutoffHz / 1000).toFixed(1)} kHz</strong><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">measuring…</span>{/if}</p>
+    <p class="line now-line"><span class="line-label">Now playing</span>
+      {#if currentSource}
+        {#if currentSource.artist}<span class="field"><i>Artist</i>{currentSource.artist}</span>{/if}
+        {#if currentSource.album}<span class="field"><i>Album</i>{currentSource.album}{current?.year ? ` (${current.year})` : ''}</span>{/if}
+        {#if currentSource.albumArtist && currentSource.albumArtist !== currentSource.artist}<span class="field"><i>Album artist</i>{currentSource.albumArtist}</span>{/if}
+        {#if currentSource.trackNumber}<span class="field"><i>No.</i>{currentSource.trackNumber}{currentSource.trackCount ? '/' + currentSource.trackCount : ''}</span>{/if}
+        <span class="field"><i>Title</i>{currentSource.title}</span>
+        <span class="quiet small">{currentSource.label.replace('Media info: ', 'via ')}{currentSource.playing ? '' : ' (paused)'}</span>
+      {:else}<span class="quiet">nothing named; gaps split tracks</span>{/if}
+    </p>
   {:else}
-    <p class="now"><span class="quiet">Nothing named yet. {source === 'none' ? 'Tracks will be split on gaps.' : 'Play something in a browser or app; gaps split tracks when there are no names.'}</span></p>
+    <h3>Source quality</h3>
+    <p class="source">{#if app.status?.cutoffHz}<strong>Spectrum stops at {(app.status.cutoffHz / 1000).toFixed(1)} kHz</strong><span class="quiet">{' · '}{app.status.cutoffText}</span>{:else}<span class="quiet">{app.status?.capturing ? 'Measuring: needs a couple of seconds of sound.' : 'Measured from the sound as it arrives.'}</span>{/if}</p>
+    <h3>Now playing</h3>
+    {#if currentSource}
+      {@const missing = 'not provided'}
+      <table class="now-table">
+        <tbody>
+          <tr><th>From</th><td>{currentSource.label}{currentSource.playing ? '' : ' (paused)'}</td></tr>
+          <tr><th>Artist</th><td class:none={!currentSource.artist}>{currentSource.artist || missing}</td></tr>
+          <tr><th>Album</th><td class:none={!currentSource.album}>{currentSource.album || missing}</td></tr>
+          <tr><th>Year</th>{#if current?.year}<td>{current.year} <span class="quiet">· looked up on MusicBrainz (Windows media info has no year)</span></td>{:else}<td class="none">{currentSource.album ? 'looking it up…' : 'not provided (needs an album name to look up)'}</td>{/if}</tr>
+          <tr><th>Title</th><td class:none={!currentSource.title}>{currentSource.title || missing}</td></tr>
+          {#if currentSource.kind === 'media'}
+            <tr><th>Album artist</th><td class:none={!currentSource.albumArtist}>{currentSource.albumArtist || missing}</td></tr>
+            <tr><th>Track no.</th><td class:none={!currentSource.trackNumber}>{currentSource.trackNumber ? `${currentSource.trackNumber}${currentSource.trackCount ? ' of ' + currentSource.trackCount : ''}` : missing}</td></tr>
+            {#if currentSource.genres}<tr><th>Genre</th><td>{currentSource.genres}</td></tr>{/if}
+            <tr><th>Picture</th><td class:none={!currentSource.picture}>{currentSource.picture ? 'provided' : missing}</td></tr>
+          {:else if currentSource.rule}<tr><th>Rule</th><td>{currentSource.rule}</td></tr>{/if}
+        </tbody>
+      </table>
+    {:else}
+      <p class="now"><span class="quiet">Nothing named yet. {source === 'none' ? 'Tracks will be split on gaps.' : 'Play something in a browser or app; gaps split tracks when there are no names.'}</span></p>
+    {/if}
   {/if}
 
   {#if recording}
+    {#if albums.length}
+      <h3>Albums so far</h3>
+      <div class="album-strip">
+        {#each albums.slice().reverse() as group, position (group.key + group.indexes[0])}
+          {@const latest = changes[group.indexes[group.indexes.length - 1]]}
+          {@const open = openAlbum === group.key + group.indexes[0]}
+          <button class="album-card" class:latest={position === 0} class:open onclick={() => showAlbum(group)} title={open ? 'Hide its tracks' : 'Show its tracks'}>
+            <span class="disc" style:--hue={hue(group.key)}>{initials(group)}</span>
+            <span class="album-text">
+              <span class="album-name">{albumLine(group)}</span>
+              {#if position === 0}<span class="album-track">{trackNumber(group, group.indexes[group.indexes.length - 1]) || '–'}. {latest?.title || 'untitled'}</span>
+              {:else}<span class="album-track quiet">{group.indexes.length} track{group.indexes.length === 1 ? '' : 's'}</span>{/if}
+              {#if open}<span class="album-tracks">{#each group.indexes as index}<span>{trackNumber(group, index) || '–'}. {changes[index].title || 'untitled'}</span>{/each}</span>{/if}
+            </span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+
     <div class="live-head">
-      {#if selected >= 0}<span><strong>Marker {selected + 1} selected</strong><span class="quiet">{' · '}drag the audio under it and let go to place it; click it or press Esc to let go of it</span></span>
-      {:else if !following}<span><strong>Paused view</strong><span class="quiet">{' · '}recording carries on. Drag to pan, wheel to zoom, click a marker to select it</span></span>
-      {:else}<span><strong>Following the recording</strong><span class="quiet">{' · '}drag or zoom to stop and look around; click a marker to select it</span></span><span class="quiet">the last {followSeconds >= 120 ? `${Math.round(followSeconds / 60)} min` : `${followSeconds} s`}</span>{/if}
-      {#if !following}<button class="primary catch-up" onclick={catchUp} title="Back to the whole recording, following as it grows (Esc)">Catch up</button>{/if}
+      {#if selected >= 0}<span><strong>Marker {selected + 1} selected</strong></span>
+      {:else if !following}<span><strong>Paused view</strong><span class="quiet">{' · '}recording carries on</span></span>
+      {:else}<span><strong>Following</strong><span class="quiet">{' · '}the last minute</span></span>{/if}
+      {#if !following}<button class="primary catch-up" onclick={catchUp} title="Back to following the last minute (Esc)">Catch up</button>{/if}
     </div>
+    <Hint id="live-wave" text="Drag or zoom (wheel) the wave to stop following and look around; Ctrl+wheel sets its height. Click a marker to select it, then drag the audio under it and let go to place it; click it again or press Esc to let go. Catch up goes back to the last minute. The strip above is the whole recording: click it to look there." />
     <canvas class="live-strip" bind:this={stripCanvas} title="The whole recording so far: click or drag to look there" onpointerdown={onStrip} onpointermove={onStrip}></canvas>
     <canvas class="live-wave" bind:this={liveCanvas} bind:clientWidth={liveWidth} tabindex="-1" onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp} onpointercancel={onLiveUp} onpointerleave={() => { if (!dragging && hovered >= 0) { hovered = -1; drawLive() } }}></canvas>
-    <h3>Tracks marked so far</h3>
-    <Hint id="live-edit" text="Obvious slips can be fixed while the recording runs: retype a name, nudge a marker with the arrows or a typed time, or click its number to zoom in and drag the audio under the line. Fine listening comes afterwards, in Check the cuts." />
+
+    <div class="tracks-head">
+      <h3>Tracks marked so far</h3>
+      <Dropdown label="Track names" value={source} options={sourceChoices} align="right" onchange={(value) => source = value} />
+    </div>
+    <Hint id="live-edit-albums" text="Tracks are grouped by album; numbers count up by themselves. Edit an album's artist, name or year in its header to change all its tracks. A track that should belong to the album above or below: drag it by ⋮⋮ onto that album, or use ⤒ / ⤓." />
     <div class="changes">
-      {#each app.status?.changes ?? [] as change, index (index + ':' + change.frame)}
-        {@const rate = app.status?.sampleRate ?? 48000}
-        <div class="change">
-          <button class="number" class:on={selected === index} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Select this marker, zoomed in around it, to drag the audio under it">{index + 1}</button>
-          <span class="nudge"><button onclick={() => nudge(index, change.frame, -5)} title="5 s earlier">«</button><button onclick={() => nudge(index, change.frame, -1)} title="1 s earlier">‹</button></span>
-          <input class="time-box" value={formatTime(change.frame, rate, false)} onchange={(event) => setTime(index, (event.target as HTMLInputElement).value, rate)} title="Where this track starts (m:ss)" aria-label="Start time" />
-          <span class="nudge"><button onclick={() => nudge(index, change.frame, 1)} title="1 s later">›</button><button onclick={() => nudge(index, change.frame, 5)} title="5 s later">»</button></span>
-          <input value={change.artist} placeholder="Artist" onchange={(event) => sendToShell({ type: 'editChange', index, artist: (event.target as HTMLInputElement).value.trim() })} />
-          <input value={change.title} placeholder={change.manual ? 'Title (marked by hand)' : 'Title'} onchange={(event) => sendToShell({ type: 'editChange', index, title: (event.target as HTMLInputElement).value.trim() })} />
-          <input value={change.album} placeholder="Album" onchange={(event) => sendToShell({ type: 'editChange', index, album: (event.target as HTMLInputElement).value.trim() })} />
-          <button class="retake" class:on={!!change.problem} onclick={() => sendToShell({ type: 'setProblem', index, problem: change.problem ? '' : 'retake' })} title={change.problem ? `${change.problem === 'dropout' ? 'Dropout' : change.problem === 'clipping' ? 'Clipping' : 'Marked for a retake'}: a later take of the same track replaces this one. Click to keep this take.` : 'Something went wrong with this take: mark it for a retake, then play the track again'}>{change.problem ? 'Retake' : '↻'}</button>
-          <button class="remove" onclick={() => sendToShell({ type: 'removeChange', index })} title="Remove this marker (the audio stays)" aria-label="Remove marker">✕</button>
+      {#each albums as group, groupIndex (group.key + group.indexes[0])}
+        {@const above = albums[groupIndex - 1]}
+        {@const below = albums[groupIndex + 1]}
+        <div class="album-head" id={'album-' + group.indexes[0]} role="group" aria-label={albumLine(group)}
+          ondragover={(event) => { if (dragIndex >= 0 && !group.indexes.includes(dragIndex)) event.preventDefault() }}
+          ondrop={(event) => { event.preventDefault(); if (dragIndex >= 0 && !group.indexes.includes(dragIndex)) joining = { index: dragIndex, target: group }; dragIndex = -1 }}>
+          <span class="disc small" style:--hue={hue(group.key)}>{initials(group)}</span>
+          <input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks" onchange={(event) => editAlbum(group, 'artist', (event.target as HTMLInputElement).value)} />
+          <input value={group.album} placeholder="Album" title="This album's name, for all its tracks" onchange={(event) => editAlbum(group, 'album', (event.target as HTMLInputElement).value)} />
+          <input class="year" value={group.year} placeholder="Year" title="This album's year, for all its tracks" onchange={(event) => editAlbum(group, 'year', (event.target as HTMLInputElement).value)} />
+          <span class="quiet small">{group.indexes.length} track{group.indexes.length === 1 ? '' : 's'}</span>
         </div>
+        {#each group.indexes as index, position (index + ':' + changes[index].frame)}
+          {@const change = changes[index]}
+          {@const rate = app.status?.sampleRate ?? 48000}
+          <div class="change" role="listitem">
+            <span class="handle" draggable="true" ondragstart={(event) => { dragIndex = index; event.dataTransfer?.setData('text/plain', String(index)) }} ondragend={() => dragIndex = -1} title="Drag onto another album to move this track into it">⋮⋮</span>
+            <button class="number" class:on={selected === index} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Select this marker in the wave above, zoomed in around it">{index + 1}</button>
+            <span class="nudge"><button onclick={() => nudge(index, change.frame, -5)} title="5 s earlier">«</button><button onclick={() => nudge(index, change.frame, -1)} title="1 s earlier">‹</button></span>
+            <input class="time-box" value={formatTime(change.frame, rate, false)} onchange={(event) => setTime(index, (event.target as HTMLInputElement).value, rate)} title="Where this track starts (m:ss)" aria-label="Start time" />
+            <span class="nudge"><button onclick={() => nudge(index, change.frame, 1)} title="1 s later">›</button><button onclick={() => nudge(index, change.frame, 5)} title="5 s later">»</button></span>
+            <input value={change.artist} placeholder="Artist" onchange={(event) => sendToShell({ type: 'editChange', index, artist: (event.target as HTMLInputElement).value.trim() })} />
+            <input value={change.album} placeholder="Album" onchange={(event) => sendToShell({ type: 'editChange', index, album: (event.target as HTMLInputElement).value.trim() })} />
+            <input class="year" value={change.year ?? ''} placeholder={group.year || 'Year'} title={group.year && !change.year ? `The album's year (${group.year}) goes on this track too` : 'Year'} onchange={(event) => sendToShell({ type: 'editChange', index, year: (event.target as HTMLInputElement).value.trim() })} />
+            <span class="track-no" title="Track number: counts up within the album">{trackNumber(group, index) || '–'}</span>
+            <input value={change.title} placeholder={change.manual ? 'Title (marked by hand)' : 'Title'} onchange={(event) => sendToShell({ type: 'editChange', index, title: (event.target as HTMLInputElement).value.trim() })} />
+            <span class="joins">
+              {#if position === 0 && above}<button onclick={() => joining = { index, target: above }} title={`Move into the album above: ${albumLine(above)}`}>⤒</button>{/if}
+              {#if position === group.indexes.length - 1 && below}<button onclick={() => joining = { index, target: below }} title={`Move into the album below: ${albumLine(below)}`}>⤓</button>{/if}
+            </span>
+            <button class="retake" class:on={!!change.problem} onclick={() => sendToShell({ type: 'setProblem', index, problem: change.problem ? '' : 'retake' })} title={change.problem ? `${change.problem === 'dropout' ? 'Dropout' : change.problem === 'clipping' ? 'Clipping' : 'Marked for a retake'}: a later take of the same track replaces this one. Click to keep this take.` : 'Something went wrong with this take: mark it for a retake, then play the track again'}>{change.problem ? 'Retake' : '↻'}</button>
+            <button class="remove" onclick={() => sendToShell({ type: 'removeChange', index })} title="Remove this marker (the audio stays)" aria-label="Remove marker">✕</button>
+          </div>
+        {/each}
       {:else}<p class="quiet">None yet. Press M to mark where a track starts.</p>{/each}
     </div>
   {/if}
 </div>
+{#if joining}
+  {@const join = joining}
+  {@const change = changes[join.index]}
+  <Dialog title="Move this track into that album?" wide text={`“${change?.title || 'This track'}” (${albumLine({ artist: change?.artist ?? '', album: change?.album ?? '', year: change?.year })}) joins ${albumLine(join.target)}. Which names should they share?`}
+    confirmLabel="Use that album's names" altLabel="Give that album this track's names" onconfirm={() => joinAs('theirs')} onalt={() => joinAs('mine')} oncancel={() => joining = null} />
+{/if}
 
 <style>
-  .record { max-width: 860px; padding-bottom: 20px; }
+  .record { max-width: 980px; padding-bottom: 20px; }
+  .record.recording h3 { margin-top: 10px; }
   .settings-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .device { margin: 8px 0 14px; font-size: 12.5px; }
-  .deck { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding: 16px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
-  .deck.live { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); }
-  .record-button { flex: none; width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; border: 2px solid color-mix(in srgb, var(--danger) 60%, transparent); background: var(--panel-strong); color: var(--danger); cursor: pointer; transition: transform 120ms, background 120ms; }
+  .deck { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding: 16px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); transition: padding 300ms ease, gap 300ms ease, border-radius 300ms ease; }
+  /* While recording the deck shrinks to a small bar (SPEC.md › Recording › Compact view) */
+  .deck.live { display: inline-flex; flex-wrap: nowrap; gap: 12px; padding: 6px 12px 6px 6px; border-radius: 999px; border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); max-width: 100%; }
+  .deck.live .record-button { width: 34px; height: 34px; }
+  .deck.live .deck-info { flex-direction: row; align-items: baseline; gap: 10px; min-width: 0; }
+  .deck.live .clock { font-size: 20px; font-weight: 700; }
+  .deck.live .info { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .deck.live .marker { padding: 3px 10px; font-size: 12px; }
+  .record-button { flex: none; width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; border: 2px solid color-mix(in srgb, var(--danger) 60%, transparent); background: var(--panel-strong); color: var(--danger); cursor: pointer; transition: transform 120ms, background 120ms, width 300ms ease, height 300ms ease; }
   .record-button:hover { transform: scale(1.04); }
   .record-button.on { background: var(--danger); color: #fff; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 60%, transparent); } 60% { box-shadow: 0 0 0 12px color-mix(in srgb, var(--danger) 0%, transparent); } }
   .deck-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  .clock { font-family: var(--font-display); font-size: 34px; color: var(--readout); text-shadow: 0 0 10px var(--readout-glow); letter-spacing: 0.04em; }
+  .clock { font-family: var(--font-display); font-size: 34px; color: var(--readout); text-shadow: 0 0 10px var(--readout-glow); letter-spacing: 0.04em; transition: font-size 300ms ease; }
   .session-name { font-size: 16px; padding: 6px 10px; max-width: 360px; }
   .marker { flex: none; }
   .warn { color: var(--danger); font-size: 12.5px; margin: 8px 0 0; }
@@ -352,8 +461,31 @@
   .now-table td { padding: 2px 0; }
   .now-table td.none { color: var(--fg-quiet); font-style: italic; }
   .live-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 4px; font-size: 12px; }
-  .changes { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
-  .change { display: grid; grid-template-columns: 30px auto 76px auto minmax(90px, 1fr) minmax(120px, 1.4fr) minmax(90px, 1fr) auto 28px; gap: 6px; align-items: center; }
+  .changes { display: flex; flex-direction: column; gap: 3px; }
+  .change { display: grid; grid-template-columns: 14px 30px auto 64px auto minmax(80px, 1fr) minmax(80px, 1fr) 52px 24px minmax(110px, 1.5fr) 30px auto 26px; gap: 5px; align-items: center; }
+  .album-head { display: grid; grid-template-columns: 26px minmax(100px, 1fr) minmax(100px, 1fr) 60px auto; gap: 6px; align-items: center; margin-top: 8px; padding: 4px 6px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+  .album-head input { font-weight: 600; }
+  .year { text-align: center; }
+  .track-no { font-family: var(--font-display); font-size: 12px; text-align: center; color: var(--fg-quiet); }
+  .handle { cursor: grab; color: var(--fg-quiet); font-size: 12px; user-select: none; text-align: center; }
+  .joins { display: flex; gap: 2px; min-width: 30px; }
+  .joins button { width: 24px; height: 26px; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; color: var(--fg); cursor: pointer; }
+  .joins button:hover { background: var(--hover); }
+  .tracks-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .line { margin: 4px 0; font-size: 13px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+  .line-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-quiet); font-weight: 600; min-width: 92px; }
+  .field i { font-style: normal; font-size: 11px; color: var(--fg-quiet); margin-right: 5px; }
+  .small { font-size: 11.5px; }
+  .album-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 8px; scrollbar-width: thin; }
+  .album-card { flex: none; display: flex; gap: 8px; align-items: flex-start; max-width: 300px; min-width: 180px; padding: 6px 10px 6px 6px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .album-card:hover { background: var(--hover); }
+  .album-card.latest { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
+  .disc { flex: none; width: 40px; height: 40px; border-radius: 6px; display: grid; place-items: center; font-family: var(--font-display); font-size: 13px; font-weight: 700; color: #fff; background: linear-gradient(135deg, hsl(var(--hue) 55% 45%), hsl(calc(var(--hue) + 40) 60% 35%)); }
+  .disc.small { width: 26px; height: 26px; font-size: 10px; border-radius: 5px; }
+  .album-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 12.5px; }
+  .album-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .album-track { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .album-tracks { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; font-size: 12px; color: var(--fg-quiet); max-height: 160px; overflow-y: auto; }
   .retake { height: 26px; padding: 0 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; color: var(--fg-quiet); font: inherit; font-size: 12px; cursor: pointer; }
   .retake:hover { background: var(--hover); } .retake.on { background: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--fg); border-color: transparent; }
   .issues { display: flex; flex-direction: column; gap: 6px; }

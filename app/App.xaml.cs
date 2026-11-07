@@ -190,6 +190,25 @@ public partial class App : Application
         return session;
     }
 
+    // Track numbers count up within each run of tracks sharing artist and album (SPEC.md › Recording): what the live list showed
+    static void NumberTracks(Session session)
+    {
+        string key(Track track) => TagLookup.Loose(track.AlbumArtist != "" ? track.AlbumArtist : track.Artist) + "|" + TagLookup.Loose(track.Album);
+        string previous = ""; int number = 0;
+        foreach (var track in session.Tracks.Where(track => !track.Skip))
+        {
+            if (track.Album == "") { previous = ""; continue; }
+            number = key(track) == previous ? number + 1 : 1; previous = key(track);
+            track.TrackNumber = number;
+        }
+        // An album's year, typed or looked up on any of its tracks, goes on all of them
+        foreach (var run in session.Tracks.Where(track => track.Album != "").GroupBy(key))
+        {
+            var year = run.Select(track => track.Year).FirstOrDefault(year => year != "") ?? "";
+            if (year != "") foreach (var track in run) if (track.Year == "") track.Year = year;
+        }
+    }
+
     Session? FinishRecording()
     {
         var peaks = Recorder.Peaks;
@@ -197,7 +216,7 @@ public partial class App : Application
         var session = stopped ?? fromAudioSide; // stopped from the audio side already: finish that one
         if (session != null && peaks != null)
         {
-            try { session.Tracks = TrackBuilder.Build(session, peaks, Settings.RecordingProfileOrActive(session.RecordingProfileId)); session.Save(); }
+            try { session.Tracks = TrackBuilder.Build(session, peaks, Settings.RecordingProfileOrActive(session.RecordingProfileId)); NumberTracks(session); session.Save(); }
             catch (Exception buildError) { CrashReporter.Write("Track detection failed", buildError, false); }
         }
         StatusChanged?.Invoke(); SessionsChanged?.Invoke();
@@ -221,12 +240,24 @@ public partial class App : Application
         session.Changes[index].Problem = problem; session.Save(); StatusChanged?.Invoke();
     }
 
-    public void EditChange(int index, long? frame, string? artist, string? title, string? album)
+    // Several markers at once (SPEC.md › Recording › Live editing): an album's artist, name or year, or a track joining an album
+    public void EditChanges(List<int> indexes, string? artist, string? album, string? year)
+    {
+        if (Recorder.Session is not { } session) return;
+        foreach (var index in indexes.Where(index => index >= 0 && index < session.Changes.Count))
+        {
+            var change = session.Changes[index];
+            if (artist != null) change.Artist = artist; if (album != null) change.Album = album; if (year != null) change.Year = year;
+        }
+        session.Save(); StatusChanged?.Invoke();
+    }
+
+    public void EditChange(int index, long? frame, string? artist, string? title, string? album, string? year = null)
     {
         if (Recorder.Session is not { } session || index < 0 || index >= session.Changes.Count) return;
         var change = session.Changes[index];
         if (frame.HasValue) change.Frame = Math.Clamp(frame.Value, 0, Math.Max(0, Recorder.FramesWritten));
-        if (artist != null) change.Artist = artist; if (title != null) change.Title = title; if (album != null) change.Album = album;
+        if (artist != null) change.Artist = artist; if (title != null) change.Title = title; if (album != null) change.Album = album; if (year != null) change.Year = year;
         change.Manual = true; // edited by hand: the track builder keeps it even if it's short
         session.Changes.Sort((first, second) => first.Frame.CompareTo(second.Frame));
         session.Save(); StatusChanged?.Invoke();
@@ -240,7 +271,7 @@ public partial class App : Application
     public void AddMarker()
     {
         if (Recorder.Session is not { } session) return;
-        session.Changes.Add(new NameChange { Frame = Recorder.FramesWritten, Artist = CurrentName?.Artist ?? "", Title = CurrentName?.Title ?? "", Album = CurrentName?.Album ?? "", AlbumArtist = CurrentName?.AlbumArtist ?? "", TrackNumber = CurrentName?.TrackNumber ?? 0, Source = "marker", Manual = true });
+        session.Changes.Add(new NameChange { Frame = Recorder.FramesWritten, Artist = CurrentName?.Artist ?? "", Title = CurrentName?.Title ?? "", Album = CurrentName?.Album ?? "", AlbumArtist = CurrentName?.AlbumArtist ?? "", TrackNumber = CurrentName?.TrackNumber ?? 0, Year = YearFor(CurrentName), Source = "marker", Manual = true });
         session.Save(); StatusChanged?.Invoke();
     }
 
@@ -452,7 +483,7 @@ public partial class App : Application
         channels = Recorder.Session?.Channels ?? 0,
         cutoffText = SpectralCutoff.Describe(Recorder.CurrentCutoffHz),
         sampleRate = Recorder.Session?.SampleRate ?? 0,
-        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Manual, change.Problem }) ?? Enumerable.Empty<object>(),
+        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Year, change.Manual, change.Problem }) ?? Enumerable.Empty<object>(),
         dropoutList = Recorder.Dropouts.Select(dropout => new { dropout.Frame, dropout.Ms }),
         otherSounds = Recorder.OtherSoundsSoFar,
         clips = Recorder.Clips.Select(clip => new { clip.Frame, clip.Samples }),
