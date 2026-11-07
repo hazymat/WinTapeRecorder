@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { request, sendToShell, onShellMessage } from '../bridge'
-  import { app, nav, toast, formatTime, formatDuration, writeSetting, type SessionDetail, type Track } from '../state.svelte'
+  import { app, nav, toast, formatTime, formatDuration, writeSetting, readSetting, type SessionDetail, type Track } from '../state.svelte'
   import { selection, selectKeys, clearSelection, type SelectionAction } from '../lib/selection.svelte'
   import { selectable } from '../lib/selectable.svelte'
   import Waveform, { type WaveView, type Grab } from '../parts/Waveform.svelte'
@@ -20,6 +20,7 @@
   let view = $state<WaveView>({ start: 0, framesPerPixel: 1000 })
   let cursor = $state(0), currentId = $state(''), grab = $state<Grab>(null)
   let snapToZero = $state(readFlag('snapZero'))
+  let hearStyle = $state(readSetting('hearStyle', 'pills'))
   let exportStatus = $state('')
   let waveform = $state<ReturnType<typeof Waveform>>()
   const scope = $derived('tracks:' + sessionId)
@@ -361,11 +362,11 @@
   <div class="readout"><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
 
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }}>
-    <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span>Hear</span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Title</span><span>Album</span><span>Year</span><span>Genre</span><span>Fades</span><span></span></div>
+    <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span class="hear-head">Hear <select class="hear-style no-hold" value={hearStyle} onchange={(event) => { hearStyle = (event.target as HTMLSelectElement).value; writeSetting('hearStyle', hearStyle) }} title="Try the button styles (temporary, while you choose)"><option value="pills">A</option><option value="split">B</option><option value="coloured">C</option></select></span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Title</span><span>Album</span><span>Year</span><span>Genre</span><span>Fades</span><span></span></div>
     {#each tracks as track, index (track.id)}
       <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
-        <span class="hear no-hold"><button onclick={(event) => { event.stopPropagation(); hearEdge('start', track.id) }} title="Hear this track's start" aria-label="Hear start"><Icon name="starts" size={14} /></button><button onclick={(event) => { event.stopPropagation(); hearEdge('end', track.id) }} title="Hear this track's end" aria-label="Hear end"><Icon name="ends" size={14} /></button></span>
+        <span class="hear no-hold {hearStyle}"><button class="hear-start" onclick={(event) => { event.stopPropagation(); hearEdge('start', track.id) }} title="Hear this track's start" aria-label="Hear start"><Icon name="play" size={11} /><span>Start</span></button><button class="hear-end" onclick={(event) => { event.stopPropagation(); hearEdge('end', track.id) }} title="Hear this track's end" aria-label="Hear end"><span>End</span><Icon name="play" size={11} /></button></span>
         <span class="time">{formatTime(track.start, rate, false)}</span>
         <span class="time">{formatDuration((track.end - track.start) / rate)}</span>
         <button class="art-cell no-hold" onclick={(event) => { event.stopPropagation(); tagging = selectedIds.includes(track.id) ? selectedIds.slice() : [track.id] }} title="Edit tags and picture">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="" />{:else}<span>♪</span>{/if}</button>
@@ -427,7 +428,7 @@
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
   .list { flex: 1 1 38%; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: 52px 58px 70px 64px 30px minmax(80px, 1fr) minmax(120px, 1.5fr) minmax(80px, 1fr) 56px minmax(60px, 0.6fr) 76px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
+  .row { display: grid; grid-template-columns: 52px 140px 70px 64px 30px minmax(80px, 1fr) minmax(120px, 1.5fr) minmax(80px, 1fr) 56px minmax(60px, 0.6fr) 76px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
@@ -438,9 +439,20 @@
   .art-cell { width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg-quiet); cursor: pointer; overflow: hidden; display: grid; place-items: center; font-size: 12px; }
   .art-cell img { width: 100%; height: 100%; object-fit: cover; }
   .art-cell:hover { border-color: var(--accent); }
-  .hear { display: flex; gap: 2px; }
-  .hear button { display: grid; place-items: center; width: 26px; height: 24px; padding: 0; background: none; border: 1px solid transparent; border-radius: 6px; color: var(--fg-quiet); cursor: pointer; }
-  .hear button:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--line); }
+  /* Hear start / end buttons: three styles to choose from (A pills, B one split control, C green and red like the waveform's lines) */
+  .hear { display: flex; gap: 4px; }
+  .hear button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 24px; padding: 0 9px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .hear.pills button { background: var(--panel-strong); color: var(--fg); border: 1px solid var(--line); border-radius: 999px; }
+  .hear.pills button:hover { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+  .hear.split { gap: 0; }
+  .hear.split button { background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  .hear.split .hear-start { border-radius: 7px 0 0 7px; } .hear.split .hear-end { border-radius: 0 7px 7px 0; border-left: 0; }
+  .hear.split button:hover { background: var(--accent); color: var(--on-accent); }
+  .hear.coloured button { border: 0; border-radius: 6px; color: #fff; }
+  .hear.coloured .hear-start { background: color-mix(in srgb, var(--start) 85%, #000); } .hear.coloured .hear-end { background: color-mix(in srgb, var(--end) 85%, #000); }
+  .hear.coloured button:hover { filter: brightness(1.12); }
+  .hear-head { display: flex; align-items: center; gap: 6px; }
+  .hear-style { font: inherit; font-size: 10.5px; padding: 0 2px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
   .exported { background: none; border: 0; color: #3ecf6e; font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
   .exported:hover { text-decoration: underline; }
   .none { padding: 16px 8px; }
