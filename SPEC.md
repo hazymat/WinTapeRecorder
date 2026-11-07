@@ -129,7 +129,7 @@ No start with Windows, no tray.
 ## Window and look
 - The interface uses plain hyphens, never long dashes.
 - A session's name (editable) and its details sit in the title-bar row beside the window buttons. The open session in the list on the left shows two small buttons, Files and Close…; every session there also has a ⋯ (on hover) with the same menu as right-click.
-- The bar at the bottom is a permanent status bar of fixed height: selections and their actions, messages with Undo, and otherwise the last message dimmed. It never appears or disappears, so nothing above it moves.
+- The bar at the bottom is a permanent status bar of fixed height: selections and their actions, messages with Undo, and otherwise the last message dimmed, with the running version at the right. It never appears or disappears, so nothing above it moves.
 
 - Normal Windows app. Close (X) quits, after warnings about an active recording or export in progress.
 - Frameless by default, glass (Windows 11 acrylic) with transparency and tint, skins (follow Windows, dark, light). Taken from WinSqueeze.

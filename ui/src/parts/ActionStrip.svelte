@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ui, undoToast } from '../state.svelte'
+  import { app, ui, undoToast } from '../state.svelte'
   import { selection, clearSelection, runAction, actionKey, type SelectionAction, type MenuChoice } from '../lib/selection.svelte'
   // The multi-select bar (as WinSqueeze): one fixed place at the bottom for the selection's actions and for messages with Undo
   const count = $derived(selection.keys.length)
@@ -46,6 +46,7 @@
     </div>
   {:else}
     <span class="message idle">{lastText || 'Ready'}</span>
+    {#if app.status?.version}<span class="version" title="The version you're running: compare with the notes in the chat">v{app.status.version}</span>{/if}
   {/if}
 </div>
 </div>
@@ -53,6 +54,7 @@
 <style>
   .wrap { position: relative; }
   .strip { display: flex; align-items: center; gap: 12px; height: 46px; flex: none; overflow: hidden; padding: 0 16px; background: var(--glass); backdrop-filter: blur(var(--blur)) saturate(1.4); border-top: 1px solid var(--line); font-size: 13px; }
+  .version { margin-left: auto; font-family: var(--font-display); font-size: 11.5px; color: var(--fg-quiet); white-space: nowrap; }
   .message.idle { color: var(--fg-quiet); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .count { font-weight: 600; white-space: nowrap; }
   .actions { display: flex; gap: 6px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
