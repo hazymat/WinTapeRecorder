@@ -20,6 +20,16 @@
   let view = $state<WaveView>({ start: 0, framesPerPixel: 1000 })
   let cursor = $state(0), currentId = $state(''), grab = $state<Grab>(null)
   let autoHeight = $state(readSetting('autoHeight', '1') !== '0')
+  // Track list columns (SPEC.md › Editing): drag a header's right edge to resize; remembered. Title (index 8) takes the space left
+  const columnNames = ['select', 'hear', 'start', 'length', 'art', 'artist', 'album', 'year', 'title', 'genre', 'source', 'fades', 'status']
+  const defaultWidths = [48, 132, 66, 56, 30, 150, 160, 50, 0, 110, 44, 34, 72]
+  let columnWidths = $state<number[]>((() => { try { const saved = JSON.parse(readSetting('columnWidths', '[]')); return Array.isArray(saved) && saved.length === defaultWidths.length ? saved : defaultWidths.slice() } catch { return defaultWidths.slice() } })())
+  const gridColumns = $derived(columnWidths.map((width, index) => index === 8 ? 'minmax(120px, 1fr)' : `${width}px`).join(' '))
+  let resizing: null | { index: number; x: number; width: number } = null
+  function resizeDown(index: number, event: PointerEvent) { event.preventDefault(); event.stopPropagation(); resizing = { index, x: event.clientX, width: columnWidths[index] }; (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId) }
+  function resizeMove(event: PointerEvent) { if (!resizing) return; const next = columnWidths.slice(); next[resizing.index] = Math.round(Math.max(24, Math.min(600, resizing.width + event.clientX - resizing.x))); columnWidths = next }
+  function resizeUp() { if (!resizing) return; resizing = null; writeSetting('columnWidths', JSON.stringify(columnWidths)) }
+  function resetColumns() { columnWidths = defaultWidths.slice(); writeSetting('columnWidths', JSON.stringify(columnWidths)) }
   // The splitter between the wave and the track list (SPEC.md › Editing): drag it; the height is remembered
   let waveHeight = $state(Math.max(140, Number(readSetting('waveHeight', '240')) || 240))
   let splitting: null | { y: number; height: number } = null
@@ -841,8 +851,8 @@
       {#if session.albumLooked}<p class="tags-foot"><button class="link" onclick={() => { if (session) session.albumLooked = false; sendToShell({ type: 'suggestAgain', id: sessionId }) }}>Look all albums up again</button></p>{/if}
     </div>
   {:else}
-  <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }}>
-    <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span>Hear · ✓</span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Album</span><span>Year</span><span>Title</span><span>Genre</span><span>Source</span><span>Fades</span><span></span></div>
+  <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }} style:--columns={gridColumns}>
+    <div class="row head" ondblclick={resetColumns} title="Drag a column's right edge to resize it; double-click here to reset"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /><i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(0, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Hear · ✓<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(1, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Start<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(2, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Length<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(3, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell"><i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(4, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Artist<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(5, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Album<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(6, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Year<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(7, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Title</span><span class="head-cell">Genre<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(9, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Source<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(10, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Fades<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(11, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell"></span></div>
     {#each tracks as track, index (track.id)}
       {@const cutoff = medianCutoff(session.quality ?? [], track.start, track.end)}
       {@const group = albumOf(track.id)}
@@ -882,7 +892,7 @@
         <input class="no-hold" value={track.title} placeholder="Title" onchange={(event) => editField(track, 'title', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.genre ?? ''} placeholder="Genre" onchange={(event) => editField(track, 'genre', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <span class="source-cell" title={cutoff ? `Spectrum stops at ${(cutoff / 1000).toFixed(1)} kHz: ${describeCutoff(cutoff)}` : 'Too little sound to tell'}>{shortCutoff(cutoff)}</span>
-        <span class="fades">{track.fadeInMs || track.fadeOutMs ? `${track.fadeInMs}/${track.fadeOutMs} ms` : ''}</span>
+        <span class="fades" title={track.fadeInMs || track.fadeOutMs ? `Fade in ${track.fadeInMs} ms, fade out ${track.fadeOutMs} ms` : 'No fades'}><span class="fade-mark">{track.fadeInMs ? '◢' : ''}{track.fadeOutMs ? '◣' : ''}</span></span>
         <span class="status">{#if track.verifyError}<button class="failed no-hold" title={`${track.verifyError}. Export it again.`} onclick={(event) => { event.stopPropagation(); exportTracks([track.id], true) }}>Failed check</button>{:else if track.skip}<button class="skipped no-hold" title={`${track.skipReason}. Click to use this take after all.`} onclick={(event) => { event.stopPropagation(); setSkip(track, false) }}>Skipped</button>{:else if track.skipReason}<button class="damaged no-hold" title={`${track.skipReason}. Click to leave it out of the export.`} onclick={(event) => { event.stopPropagation(); setSkip(track, true) }}>Damaged?</button>{:else if track.exported}<button class="exported no-hold" title={`${track.exportedPath}${track.verified ? ' · read back and checked' : ''}`} onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: track.exportedPath }) }}>Exported</button>{/if}</span>
       </div>
       {#if lifted && group.ids[group.ids.length - 1] === track.id}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
@@ -972,7 +982,7 @@
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
   .list { flex: 1 1 auto; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: 52px 160px 88px 82px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; align-items: center; padding: 1px 8px; border-radius: 6px; cursor: default; font-size: 12.5px; }
+  .row { display: grid; grid-template-columns: var(--columns); gap: 8px; align-items: center; padding: 1px 8px; border-radius: 6px; cursor: default; font-size: 12.5px; }
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
@@ -1000,7 +1010,12 @@
   .art-cell:hover { border-color: var(--accent); }
   /* Hear start / end: one split control per row, Start | End */
   .hear { display: flex; gap: 0; white-space: nowrap; }
-  .hear .hear-start, .hear .hear-end { width: 62px; }
+  .hear .hear-start, .hear .hear-end { width: 50px; padding: 0 5px; }
+  .head-cell { position: relative; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .col-resize { position: absolute; top: -4px; right: -6px; width: 9px; bottom: -4px; cursor: col-resize; z-index: 2; }
+  .col-resize::after { content: ''; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 1px; background: var(--line); }
+  .col-resize:hover::after { background: var(--accent); width: 2px; }
+  .fade-mark { color: var(--accent); font-size: 13px; letter-spacing: 1px; }
   .hear button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 21px; padding: 0 9px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
   .hear .hear-start { border-radius: 7px 0 0 7px; } .hear .hear-end { border-radius: 0 7px 7px 0; border-left: 0; }
   .hear button:hover { background: var(--accent); color: var(--on-accent); }
@@ -1058,7 +1073,7 @@
   .chevron { color: var(--fg-quiet); font-size: 16px; }
   .album-row.open { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); cursor: grab; }
   /* The open album's header uses the track rows' columns, so its fields sit right above the tracks' own */
-  .album-row.row-grid { display: grid; grid-template-columns: 52px 160px 88px 82px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; padding: 3px 8px; }
+  .album-row.row-grid { display: grid; grid-template-columns: var(--columns); gap: 8px; padding: 3px 8px; }
   .row-grid .album-label .album-count { text-transform: none; letter-spacing: 0; font-weight: 400; }
   .row-grid .album-label { grid-column: 1 / 6; display: flex; gap: 10px; align-items: baseline; white-space: nowrap; overflow: hidden; }
   .row-grid .cell-artist { grid-column: 6; } .row-grid .cell-album { grid-column: 7; } .row-grid .cell-year { grid-column: 8; } .row-grid .cell-genre { grid-column: 10; } .row-grid .cell-fill { grid-column: 9; justify-self: start; margin-left: 0; }
