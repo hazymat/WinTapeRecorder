@@ -103,6 +103,29 @@ public partial class App : Application
         StatusChanged?.Invoke(); SessionsChanged?.Invoke();
     }
 
+    // Auto-stop (SPEC.md › Recording): after the profile's minutes of silence the recording finishes by itself, the last track ending
+    // a second after the sound did. Checked by the level timer
+    public event Action<string, string>? RecordingStoppedItself;
+    public double SilenceStopIn()
+    {
+        if (!Recorder.Recording || Recorder.KeepThroughSilence) return -1;
+        var minutes = Settings.RecordingProfileOrActive(Recorder.Session?.RecordingProfileId ?? "").StopAfterSilenceMinutes;
+        return minutes <= 0 ? -1 : Math.Max(0, minutes * 60 - Recorder.SilentSeconds);
+    }
+    public void CheckSilence()
+    {
+        if (SilenceStopIn() != 0) return;
+        var minutes = Settings.RecordingProfileOrActive(Recorder.Session?.RecordingProfileId ?? "").StopAfterSilenceMinutes;
+        var soundEnd = Recorder.LastSoundFrame; var rate = Recorder.Session?.SampleRate ?? 48000;
+        var session = FinishRecording();
+        if (session == null) return;
+        var limit = Math.Min(session.TotalFrames, soundEnd + rate);
+        session.Tracks = session.Tracks.Where(track => track.Start < limit).ToList();
+        foreach (var track in session.Tracks) if (track.End > limit) track.End = limit;
+        session.Save();
+        RecordingStoppedItself?.Invoke(session.Id, $"Recording stopped by itself after {minutes} minute{(minutes == 1 ? "" : "s")} of silence. The silence at the end isn't part of any track.");
+    }
+
     public Session? StopRecording()
     {
         var session = FinishRecording();

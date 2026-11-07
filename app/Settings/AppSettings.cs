@@ -30,6 +30,7 @@ public class RecordingProfile
     public bool UseWindowTitles { get; set; } = true; // browser window titles through the detection rules
     public bool SplitOnGaps { get; set; } = true; // with no names, split on gaps
     public int LatencyMs { get; set; } = 0; // a name change is marked this much earlier
+    public int StopAfterSilenceMinutes { get; set; } = 5; // recording stops by itself after this long below -70 dBFS; 0 = never
     public GapSettings Gaps { get; set; } = new();
     public override string ToString() => Name;
 }

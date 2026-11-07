@@ -42,6 +42,7 @@ public partial class MainWindow : Window
         App.Tip += (title, text) => Push(JsonSerializer.Serialize(new { type = "tip", title, text }));
         App.SuggestionFound += (sessionId, track) => Push(JsonSerializer.Serialize(new { type = "suggestion", id = sessionId, trackId = track.Id, suggestion = track.Suggestion, looked = track.SuggestionLooked }, camel));
         App.AlbumChecked += (sessionId, check) => Push(JsonSerializer.Serialize(new { type = "albumCheck", id = sessionId, check }, camel));
+        App.RecordingStoppedItself += (sessionId, reason) => Push(JsonSerializer.Serialize(new { type = "recordingStopped", sessionId, reason }));
         App.AlbumProgress += (sessionId, done, total) => Push(JsonSerializer.Serialize(new { type = "albumProgress", id = sessionId, done, total }, camel));
         App.AlbumMatched += (sessionId, matched) => Push(JsonSerializer.Serialize(new { type = "albumMatch", id = sessionId, albums = matched.Albums, tracks = matched.Tracks.Select(track => new { trackId = track.Id, suggestion = track.Suggestion, offAlbum = track.OffAlbum }) }, camel));
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += (sender, args) => Dispatcher.BeginInvoke(RestoreBoundsForDisplays);
@@ -100,6 +101,7 @@ public partial class MainWindow : Window
                 // ---- Recording ----
                 case "monitor": if (message.GetProperty("on").GetBoolean()) App.StartMonitoring(Text(message, "profileId")); else App.StopMonitoring(); break;
                 case "record": App.StartRecording(Text(message, "profileId"), Text(message, "source") is { Length: > 0 } source ? source : "auto", Text(message, "name")); break;
+                case "keepThroughSilence": App.Recorder.KeepThroughSilence = true; break;
                 case "stopRecording": var stopped = App.StopRecording(); Reply(message, new { sessionId = stopped?.Id ?? "" }); break;
                 case "marker": App.AddMarker(); break;
                 case "editChange": App.EditChange((int)Number(message, "index", -1), message.TryGetProperty("frame", out var frameValue) && frameValue.ValueKind == JsonValueKind.Number ? (long)frameValue.GetDouble() : null, message.TryGetProperty("artist", out _) ? Text(message, "artist") : null, message.TryGetProperty("title", out _) ? Text(message, "title") : null, message.TryGetProperty("album", out _) ? Text(message, "album") : null); break;
@@ -355,7 +357,8 @@ public partial class MainWindow : Window
     {
         if (!App.Recorder.Capturing) { levelTimer.Stop(); return; }
         var recorder = App.Recorder;
-        Push(JsonSerializer.Serialize(new { type = "levels", peaks = recorder.TakePeaks(), clipped = recorder.ClippedSamples, seconds = recorder.SecondsRecorded, bytes = recorder.BytesWritten, minutesLeft = recorder.Recording ? recorder.MinutesLeftUnderLimit : -1 }));
+        Push(JsonSerializer.Serialize(new { type = "levels", peaks = recorder.TakePeaks(), clipped = recorder.ClippedSamples, seconds = recorder.SecondsRecorded, bytes = recorder.BytesWritten, minutesLeft = recorder.Recording ? recorder.MinutesLeftUnderLimit : -1, silentSeconds = recorder.SilentSeconds, silenceStopIn = App.SilenceStopIn() }));
+        App.CheckSilence();
     }
 
     // The name sources the Record view offers, with what each says now

@@ -83,6 +83,7 @@ public partial class SettingsWindow : Window
         splitOnGapsBox.Click += (sender, args) => { if (EditedRecording is { } profile) { profile.SplitOnGaps = splitOnGapsBox.IsChecked == true; Changed(); } };
         trimSilenceBox.Click += (sender, args) => { if (EditedRecording is { } profile) { profile.Gaps.TrimSilence = trimSilenceBox.IsChecked == true; Changed(); } };
         GapSettings Gaps() => EditedRecording?.Gaps ?? new GapSettings();
+        BindNumber(silenceStopBox, () => EditedRecording?.StopAfterSilenceMinutes ?? 5, value => { if (EditedRecording is { } profile) profile.StopAfterSilenceMinutes = value; }, 0, 240);
         BindNumber(latencyBox, () => EditedRecording?.LatencyMs ?? 0, value => { if (EditedRecording is { } profile) profile.LatencyMs = value; }, -10000, 10000);
         BindNumber(minGapBox, () => Gaps().MinGapMs, value => Gaps().MinGapMs = value, 50, 60000);
         BindNumber(attackBox, () => Gaps().AttackMs, value => Gaps().AttackMs = value, 1, 5000);
@@ -108,7 +109,7 @@ public partial class SettingsWindow : Window
         bitDepthCombo.SelectedItem = bitDepthCombo.Items.Cast<ComboBoxItem>().FirstOrDefault(item => (string)item.Tag == profile.BitDepth.ToString());
         sessionsFolderBox.Text = SessionStore.FolderFor(profile);
         useMediaInfoBox.IsChecked = profile.UseMediaInfo; useWindowTitlesBox.IsChecked = profile.UseWindowTitles; splitOnGapsBox.IsChecked = profile.SplitOnGaps; trimSilenceBox.IsChecked = profile.Gaps.TrimSilence;
-        latencyBox.Text = profile.LatencyMs.ToString(); minGapBox.Text = profile.Gaps.MinGapMs.ToString(); attackBox.Text = profile.Gaps.AttackMs.ToString(); releaseBox.Text = profile.Gaps.ReleaseMs.ToString();
+        silenceStopBox.Text = profile.StopAfterSilenceMinutes.ToString(); latencyBox.Text = profile.LatencyMs.ToString(); minGapBox.Text = profile.Gaps.MinGapMs.ToString(); attackBox.Text = profile.Gaps.AttackMs.ToString(); releaseBox.Text = profile.Gaps.ReleaseMs.ToString();
         preRollBox.Text = profile.Gaps.PreRollMs.ToString(); postRollBox.Text = profile.Gaps.PostRollMs.ToString(); snapBox.Text = profile.Gaps.SnapWindowMs.ToString(); minTrackBox.Text = profile.Gaps.MinTrackSeconds.ToString();
         thresholdSlider.Value = profile.Gaps.ThresholdDb; thresholdText.Text = $"{profile.Gaps.ThresholdDb:0} dBFS";
         removeRecordingButton.IsEnabled = Settings.RecordingProfiles.Count > 1;

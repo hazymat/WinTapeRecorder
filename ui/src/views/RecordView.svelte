@@ -115,7 +115,7 @@
     sendToShell({ type: 'editChange', index, frame: Math.round(seconds * rate) })
   }
   // Issues while recording (SPEC.md › Recording › Issues): each one names the track it hit and what to do about it
-  type Issue = { kind: 'dropout' | 'clipping' | 'noname' | 'retake'; frame: number; index: number; text: string; action: string }
+  type Issue = { kind: 'dropout' | 'clipping' | 'noname' | 'retake' | 'silence'; frame: number; index: number; text: string; action: string }
   const issues = $derived.by<Issue[]>(() => {
     const status = app.status; if (!status?.recording) return []
     const rate = status.sampleRate || 48000, recorded = app.levels.seconds * rate
@@ -128,7 +128,13 @@
       if (!change.title && recorded - change.frame > 10 * rate && !change.problem) list.push({ kind: 'noname', frame: change.frame, index, text: `Track ${index + 1} (from ${formatTime(change.frame, rate, false)}) has no name.`, action: 'Type its artist and title in the list below.' })
       if (change.problem === 'retake' && !list.some(issue => issue.index === index)) list.push({ kind: 'retake', frame: change.frame, index, text: `Track ${index + 1} ${name(index)} is marked for a retake.`, action: 'Play it again; the new take replaces this one.' })
     })
-    return list.sort((first, second) => second.frame - first.frame)
+    list.sort((first, second) => second.frame - first.frame)
+    // Silence: a countdown to the auto-stop once it has lasted 30 s (SPEC.md › Recording › Auto-stop)
+    if (app.levels.silentSeconds >= 30) {
+      const left = app.levels.silenceStopIn, clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
+      list.unshift({ kind: 'silence', frame: recorded, index: -1, text: `Nothing playing for ${clock(app.levels.silentSeconds)}.`, action: left >= 0 ? `Recording stops by itself in ${clock(left)}; the silence won't be part of any track.` : 'Recording carries on until you stop it.' })
+    }
+    return list
   })
   const sizeText = $derived(app.levels.bytes > 1e9 ? `${(app.levels.bytes / 1e9).toFixed(2)} GB` : `${(app.levels.bytes / 1e6).toFixed(0)} MB`)
   // What each output profile would make of the recording so far: FLAC from the encoder's running estimate, lossy from bitrate × time, WAV as is (SPEC.md › Recording)
@@ -175,9 +181,10 @@
     <h3>Issues</h3>
     <div class="issues">
       {#each issues as issue (issue.kind + issue.frame)}
-        <div class="issue" class:soft={issue.kind === 'noname' || issue.kind === 'retake'}>
+        <div class="issue" class:soft={issue.kind === 'noname' || issue.kind === 'retake' || issue.kind === 'silence'}>
           <span class="issue-text"><strong>{issue.text}</strong> {issue.action}</span>
-          {#if issue.kind !== 'noname' && issue.kind !== 'retake' && issue.index >= 0 && !app.status?.changes[issue.index]?.problem}<button class="ghost" onclick={() => sendToShell({ type: 'setProblem', index: issue.index, problem: issue.kind })}>Replace with a retake</button>{/if}
+          {#if issue.kind === 'silence' && app.levels.silenceStopIn >= 0}<button class="ghost" onclick={() => sendToShell({ type: 'keepThroughSilence' })} title="Don't stop by itself during this recording">Keep recording</button><button class="ghost" onclick={toggleRecording}>Stop now</button>{/if}
+          {#if issue.kind !== 'noname' && issue.kind !== 'retake' && issue.kind !== 'silence' && issue.index >= 0 && !app.status?.changes[issue.index]?.problem}<button class="ghost" onclick={() => sendToShell({ type: 'setProblem', index: issue.index, problem: issue.kind })}>Replace with a retake</button>{/if}
           {#if issue.index >= 0 && app.status?.changes[issue.index]?.problem}<span class="quiet">Will be replaced by a later take of the same track</span><button class="ghost" onclick={() => sendToShell({ type: 'setProblem', index: issue.index, problem: '' })}>Keep this take</button>{/if}
         </div>
       {/each}

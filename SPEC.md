@@ -20,6 +20,7 @@ A Windows tape recorder for listening sessions. Record one long session to a sin
 - Output devices are recorded through WASAPI loopback; the app plays silence to that device while recording so gaps in the audio keep their real length.
 - WAV size limit (4 GB): the app warns before it and stops cleanly at it.
 - Beside the WAV size while recording, the size each output profile would make of it so far: FLAC from the encoder's own cost model on the latest audio, lossy from bitrate × time; the active profile inline, the rest on hover.
+- Auto-stop: after the recording profile's minutes of silence (default 5; 0 = never) the recording finishes by itself. Silence means below -70 dBFS, nothing playing, not a quiet passage. After 30 s of it Issues shows a countdown with Keep recording (no auto-stop for the rest of this recording) and Stop now. On stopping, the last track ends a second after the sound did, and the session opens.
 
 ## Track detection
 

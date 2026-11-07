@@ -12,13 +12,14 @@
 
   // ---- From the shell ----
   onShellMessage('status', message => app.status = message as any)
-  onShellMessage('levels', message => app.levels = { peaks: message.peaks, clipped: message.clipped, seconds: message.seconds, bytes: message.bytes, minutesLeft: message.minutesLeft })
+  onShellMessage('levels', message => app.levels = { peaks: message.peaks, clipped: message.clipped, seconds: message.seconds, bytes: message.bytes, minutesLeft: message.minutesLeft, silentSeconds: message.silentSeconds ?? 0, silenceStopIn: message.silenceStopIn ?? -1 })
   onShellMessage('playhead', message => app.playhead = message.frame)
   onShellMessage('sources', message => app.sources = message.sources)
   onShellMessage('settings', message => { app.hints = message.hints; app.recordingProfiles = message.recordingProfiles; app.outputProfiles = message.outputProfiles; app.activeRecording = message.activeRecording; app.activeOutput = message.activeOutput; app.auditionSeconds = message.auditionSeconds })
   onShellMessage('sessionsChanged', () => loadSessions())
   // An export keeps running while the next session is recorded: its progress sits on the session in the sidebar, and the end is announced wherever you are
   onShellMessage('exportDone', message => { loadSessions(); toast(message.error ? `Export finished with problems: ${message.done} of ${message.total} written, ${message.verified} verified. ${String(message.error).split('\n')[0]}` : `Export finished: ${message.done} track${message.done === 1 ? '' : 's'} written and verified`, { ms: message.error ? 15000 : 6000 }) })
+  onShellMessage('recordingStopped', message => { loadSessions(); clearSelection(); nav.view = 'session'; nav.sessionId = message.sessionId; writeSetting('session', message.sessionId); toast(message.reason, { ms: 15000 }) })
   onShellMessage('tip', message => toast(`${message.title}: ${message.text}`, { ms: 10000 }))
   onShellMessage('window', message => app.window = { glass: !!message.glass, frameless: !!message.frameless, maximised: !!message.maximised })
   onShellMessage('skin', message => {

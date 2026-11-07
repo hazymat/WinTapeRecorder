@@ -11,7 +11,7 @@ export type NameSource = { key: string; kind: string; label: string; artist: str
 
 export const app = $state({
   status: null as null | { recording: boolean; capturing: boolean; sessionId: string; sessionName: string; device: string; deviceVolume: number; dropouts: number; cutoffHz: number | null; cutoffText: string; flacRatio: number; bitDepth: number; channels: number; sampleRate: number; changes: { frame: number; artist: string; title: string; album: string; manual: boolean; problem: string }[]; dropoutList: { frame: number; ms: number }[]; clips: { frame: number; samples: number }[]; current: null | { label: string; artist: string; title: string }; source: string; playing: boolean; playingSession: string; exporting: boolean; exportingSession: string; exportDone: number; exportTotal: number; version: string; updateReady: string },
-  levels: { peaks: [] as number[], clipped: 0, seconds: 0, bytes: 0, minutesLeft: -1 },
+  levels: { peaks: [] as number[], clipped: 0, seconds: 0, bytes: 0, minutesLeft: -1, silentSeconds: 0, silenceStopIn: -1 },
   hints: { hidden: false, dismissed: [] as string[] },
   recordingProfiles: [] as Profile[], outputProfiles: [] as Profile[], activeRecording: '', activeOutput: '', auditionSeconds: 5,
   sources: [] as NameSource[],

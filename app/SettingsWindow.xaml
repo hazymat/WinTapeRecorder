@@ -96,6 +96,13 @@
               <TextBox x:Name="latencyBox" Style="{StaticResource Small}" />
               <TextBlock Text="ms" VerticalAlignment="Center" Margin="6,0,0,0" />
             </StackPanel>
+            <TextBlock Style="{StaticResource Heading}" Text="Stopping" />
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+              <TextBlock Text="Stop recording after" VerticalAlignment="Center" Margin="0,0,8,0" />
+              <TextBox x:Name="silenceStopBox" Style="{StaticResource Small}" />
+              <TextBlock Text="minutes of silence (0 = never)" VerticalAlignment="Center" Margin="6,0,0,0" />
+            </StackPanel>
+            <TextBlock Foreground="#6A7280" TextWrapping="Wrap" Margin="0,4,0,0" Text="Silence means below -70 dBFS: nothing playing at all, not a quiet passage. A countdown shows in Issues after 30 seconds, with Keep recording to carry on." />
             <TextBlock Style="{StaticResource Heading}" Text="Gap detection" />
             <Border Style="{StaticResource Callout}" Margin="0,4,0,0"><TextBlock Style="{StaticResource CalloutText}" Text="Works like a noise gate: sound above the threshold for the attack time starts a track, silence for the release time ends it. Pre-roll and post-roll are kept either side. A name change looks for the nearest gap within its window. Changes apply to new recordings and to Redetect in a session." /></Border>
             <Grid Margin="0,6,0,0">

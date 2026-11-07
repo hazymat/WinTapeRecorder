@@ -73,7 +73,7 @@ public sealed class Recorder : IDisposable
         channels = captureFormat.Channels; captureBits = captureFormat.BitsPerSample; sampleRate = captureFormat.SampleRate;
         captureFloat = captureFormat.Encoding == WaveFormatEncoding.IeeeFloat || (captureFormat is WaveFormatExtensible extensible && extensible.SubFormat == NAudio.Dmo.AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT);
         bitDepth = profile.BitDepth is 16 or 24 or 32 ? profile.BitDepth : 24;
-        heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; Problem = ""; Dropouts.Clear(); shortfallFrames = 0; detecting = false;
+        heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; lastSoundFrame = 0; KeepThroughSilence = false; Problem = ""; Dropouts.Clear(); shortfallFrames = 0; detecting = false;
         Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null; Clips.Clear(); clipBurstFrame = -1; FlacRatio = 0; flacSamples = 0;
         DeviceName = device.FriendlyName;
         try { DeviceVolume = profile.Loopback ? device.AudioEndpointVolume.MasterVolumeLevelScalar : -1; } catch { DeviceVolume = -1; }
@@ -120,16 +120,18 @@ public sealed class Recorder : IDisposable
         if (floatBuffer.Length < sampleCount) floatBuffer = new float[sampleCount];
         var samples = floatBuffer.AsSpan(0, sampleCount);
         SampleConvert.ToFloat(args.Buffer.AsSpan(0, args.BytesRecorded), samples, captureBits, captureFloat);
-        var clippedNow = 0;
+        var clippedNow = 0; var loudest = 0f;
         lock (meterLock)
         {
             for (var index = 0; index < sampleCount; index++)
             {
                 var level = Math.Abs(samples[index]); var channel = index % channels;
                 if (level > heldPeaks[channel]) heldPeaks[channel] = level;
+                if (level > loudest) loudest = level;
                 if (level >= 0.9999f) { clippedSamples++; clippedNow++; }
             }
         }
+        if (loudest > SilenceLevel) lastSoundFrame = FramesWritten + frames;
         if (clippedNow > 0 && Session != null) NoteClipping(clippedNow);
         NoteTiming(frames);
         GatherQuality(samples, frames);
@@ -227,6 +229,13 @@ public sealed class Recorder : IDisposable
         output.Position = dataStart - 4; headerWriter.Write((uint)dataLength);
         headerWriter.Flush(); output.Position = end; output.Flush(true);
     }
+
+    // Silence (SPEC.md › Recording › Auto-stop): below -70 dBFS counts as nothing playing
+    const float SilenceLevel = 0.000316f;
+    long lastSoundFrame;
+    public long LastSoundFrame => Interlocked.Read(ref lastSoundFrame);
+    public double SilentSeconds => sampleRate == 0 || !Recording ? 0 : Math.Max(0, FramesWritten - LastSoundFrame) / (double)sampleRate;
+    public bool KeepThroughSilence { get; set; } // the user chose to keep recording through this silence
 
     // Peak per channel since the last call (0..1+), for the level check
     public float[] TakePeaks() { lock (meterLock) { var taken = heldPeaks.ToArray(); Array.Clear(heldPeaks); return taken; } }
