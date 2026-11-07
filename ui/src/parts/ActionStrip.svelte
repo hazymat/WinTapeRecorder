@@ -4,7 +4,10 @@
   // The multi-select bar (as WinSqueeze): one fixed place at the bottom for the selection's actions and for messages with Undo
   const count = $derived(selection.keys.length)
   const actions = $derived(selection.actions.filter(action => !(action.single && count > 1)))
-  const visible = $derived(count > 0 || !!ui.toast)
+  // Always there, always the same height (SPEC.md › Window and look): it never pushes the view up while you're clicking.
+  // When nothing is selected and no message is showing, it keeps the last message, dimmed
+  let lastText = $state('')
+  $effect(() => { if (ui.toast?.text) lastText = ui.toast.text })
   let menu = $state<null | { label: string; choices: MenuChoice[] | null }>(null)
   async function press(action: SelectionAction) {
     if (!action.menu) { menu = null; runAction(action); return }
@@ -25,7 +28,7 @@
     {#if !menu.choices}<div class="loading">Loading…</div>{:else}{#each menu.choices as choice (choice.label + (choice.detail ?? ''))}<button role="menuitem" onclick={() => choose(choice)}><span>{choice.label}</span>{#if choice.detail}<span class="detail">{choice.detail}</span>{/if}</button>{/each}{/if}
   </div>
 {/if}
-<div class="strip" class:visible role="status" aria-live="polite">
+<div class="strip" role="status" aria-live="polite">
   {#if count}
     <span class="count">{count} {selection.noun}{count === 1 ? '' : 's'} selected</span>
     {#if ui.toast}<span class="message inline">{ui.toast.text}</span>{#if ui.toast.undo}<button class="undo" onclick={undoToast}>Undo<kbd>Ctrl+Z</kbd></button>{/if}{/if}
@@ -41,14 +44,16 @@
       {#if ui.toast.undo}<button class="undo" onclick={undoToast}>Undo<kbd>Ctrl+Z</kbd></button>{/if}
       <button class="clear" onclick={() => ui.toast = null} aria-label="Dismiss">Close</button>
     </div>
+  {:else}
+    <span class="message idle">{lastText || 'Ready'}</span>
   {/if}
 </div>
 </div>
 
 <style>
   .wrap { position: relative; }
-  .strip { display: flex; align-items: center; gap: 12px; height: 0; overflow: hidden; padding: 0 16px; background: var(--glass); backdrop-filter: blur(var(--blur)) saturate(1.4); border-top: 1px solid transparent; font-size: 13px; transition: height 160ms ease, border-color 160ms; }
-  .strip.visible { height: 46px; border-top-color: var(--line); }
+  .strip { display: flex; align-items: center; gap: 12px; height: 46px; flex: none; overflow: hidden; padding: 0 16px; background: var(--glass); backdrop-filter: blur(var(--blur)) saturate(1.4); border-top: 1px solid var(--line); font-size: 13px; }
+  .message.idle { color: var(--fg-quiet); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .count { font-weight: 600; white-space: nowrap; }
   .actions { display: flex; gap: 6px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
   button { display: flex; align-items: center; gap: 6px; white-space: nowrap; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; font: inherit; cursor: pointer; min-height: 32px; }

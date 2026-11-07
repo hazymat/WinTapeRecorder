@@ -115,6 +115,7 @@ Same layout as WinSqueeze: native window, left sidebar of pages grouped under sm
 No start with Windows, no tray.
 
 ## Window and look
+- The bar at the bottom is a permanent status bar of fixed height: selections and their actions, messages with Undo, and otherwise the last message dimmed. It never appears or disappears, so nothing above it moves.
 
 - Normal Windows app. Close (X) quits, after warnings about an active recording or export in progress.
 - Frameless by default, glass (Windows 11 acrylic) with transparency and tint, skins (follow Windows, dark, light). Taken from WinSqueeze.
