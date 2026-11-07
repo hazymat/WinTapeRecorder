@@ -207,6 +207,14 @@ public partial class App : Application
         if (CurrentName is not { HasName: true } name || name.NameKey == lastNameKey) return;
         lastNameKey = name.NameKey;
         var frame = Math.Max(0, Recorder.FramesWritten - (long)profile.LatencyMs * session.SampleRate / 1000);
+        // Players can flicker between tracks (the same title with a placeholder artist, then the real one): the same title again
+        // within 30 s is the same track, so its marker is kept and only filled in, by the fuller of the two names
+        if (session.Changes.LastOrDefault() is { Manual: false } last && frame - last.Frame < 30L * session.SampleRate && string.Equals(last.Title.Trim(), name.Title.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            int Filled(string artist, string album, string albumArtist, int number) => (artist != "" ? 1 : 0) + (album != "" ? 1 : 0) + (albumArtist != "" ? 1 : 0) + (number > 0 ? 1 : 0);
+            if (Filled(name.Artist, name.Album, name.AlbumArtist, name.TrackNumber) > Filled(last.Artist, last.Album, last.AlbumArtist, last.TrackNumber)) { last.Artist = name.Artist; last.Album = name.Album; last.AlbumArtist = name.AlbumArtist; last.TrackNumber = name.TrackNumber; last.Source = name.Label; session.Save(); StatusChanged?.Invoke(); }
+            return;
+        }
         session.Changes.Add(new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, AlbumArtist = name.AlbumArtist, TrackNumber = name.TrackNumber, Source = name.Label });
         session.Save();
         StatusChanged?.Invoke();
