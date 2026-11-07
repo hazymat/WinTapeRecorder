@@ -127,6 +127,7 @@ Same layout as WinSqueeze: native window, left sidebar of pages grouped under sm
 No start with Windows, no tray.
 
 ## Window and look
+- The window can't be made smaller than 1100 × 680 (or the screen, if that's smaller), so the layout never breaks. A compact mode for smaller windows is planned.
 - The interface uses plain hyphens, never long dashes.
 - A session's name (editable) and its details sit in the title-bar row beside the window buttons. The open session in the list on the left shows two small buttons, Files and Close…; every session there also has a ⋯ (on hover) with the same menu as right-click.
 - The bar at the bottom is a permanent status bar of fixed height: selections and their actions, messages with Undo, and otherwise the last message dimmed, with the running version at the right. It never appears or disappears, so nothing above it moves.

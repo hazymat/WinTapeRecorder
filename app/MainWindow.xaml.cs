@@ -31,6 +31,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // Smallest size where the layout still works (SPEC.md › Window and look), but never bigger than the screen allows
+        MinWidth = Math.Min(1100, SystemParameters.WorkArea.Width); MinHeight = Math.Min(680, SystemParameters.WorkArea.Height);
         Loaded += async (sender, args) => await InitWebViewAsync();
         SourceInitialized += (sender, args) => ApplyWindowStyle();
         Activated += (sender, args) => OnFirstActivation();
