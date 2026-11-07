@@ -97,7 +97,8 @@
     for (const values of data.channels) for (const value of values) { const level = Math.abs(value); if (level > loudest) loudest = level }
     verticalScale = loudest > 0 ? Math.max(minVerticalScale, Math.min(maxVerticalScale, 0.92 / loudest)) : 1
   }
-  $effect(() => { autoHeight; manualHeight = false; if (detailData) fitHeight(detailData) })
+  // Re-fit when the view or data changes; Ctrl+wheel (manualHeight) is left alone (it used to be reset here, so it never stuck)
+  $effect(() => { const data = detailData; view.framesPerPixel; autoHeight; untrack(() => { if (data) fitHeight(data) }) })
 
   // ---- Drawing ----
   function prepare(canvas: HTMLCanvasElement, height: number) {
@@ -152,6 +153,8 @@
     const context = prepare(detailCanvas, detailHeight)
     const waveTop = flagHeight, waveHeight = detailHeight - flagHeight - rulerHeight
     const laneCount = Math.max(1, channels), laneHeight = waveHeight / laneCount
+    // The spectrogram goes underneath, so the start and end lines stay on top of it
+    if (mode === 'spectrogram') drawSpectrogram(context, waveTop, waveHeight)
     // Tracks: shaded regions, numbered flags, start and end lines
     tracks.forEach((track, index) => {
       const left = frameToX(track.start), right = frameToX(track.end)
@@ -187,7 +190,7 @@
     // Lane dividers and the audio
     context.fillStyle = css.line
     for (let lane = 1; lane < laneCount; lane++) context.fillRect(0, waveTop + lane * laneHeight, width, 1)
-    if (mode === 'spectrogram') drawSpectrogram(context, waveTop, waveHeight)
+    if (mode === 'spectrogram') { }
     else if (detailData?.mode === 'samples' && view.framesPerPixel < 1.5) drawSamples(context, detailData, waveTop, laneHeight)
     else if (detailData) drawPeaks(context, detailData.mode === 'samples' ? toPeaks(detailData) : detailData, waveTop, laneHeight, frameToX, css.wave, verticalScale)
     if (verticalScale > 1) { context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'; context.fillStyle = css.quiet; context.fillText(`Height ×${verticalScale < 10 ? verticalScale.toFixed(1) : Math.round(verticalScale)}${manualHeight ? ' (Ctrl+wheel; Auto height resets)' : ' auto'}`, width - 130, waveTop + 4) }

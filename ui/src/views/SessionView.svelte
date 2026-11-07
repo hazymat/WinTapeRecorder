@@ -36,23 +36,29 @@
     const track = tracks.find(candidate => candidate.id === target.trackId); if (!track || !waveform) return
     focused = target; currentId = track.id; grab = { trackId: track.id, edge: target.edge }
     const frame = track[target.edge]; cursor = frame
-    const seconds = target.edge === 'start' ? 6 : 16, span = seconds * rate // ends get more room: fades are long
-    view = waveform.clampView({ start: frame - span * (target.edge === 'start' ? 0.3 : 0.7), framesPerPixel: span / waveWidth() })
+    // Zoomed to what you'll hear (SPEC.md › Editing): a start shows half the Listen length before it and the full length after;
+    // an end the full length before and half after. Zoom freely from there
+    const listen = app.auditionSeconds * rate, span = listen * 1.5
+    view = waveform.clampView({ start: target.edge === 'start' ? frame - listen / 2 : frame - listen, framesPerPixel: span / waveWidth() })
     scrollRowIntoView(track.id)
     if (play) hearEdge(target.edge, track.id)
   }
+  // Next to confirm (C): the next start or end without a ✓, counting from where you are: just after the edge last jumped to if
+  // it's on the current track, else from the current track's own start (SPEC.md › Editing)
   function checkNext() {
-    const queue = doubtful.length ? doubtful : unchecked
-    const after = focused ? queue.findIndex(edge => edge.trackId === focused!.trackId && edge.edge === focused!.edge) : -1
-    const next = queue[(after + 1) % Math.max(1, queue.length)]
-    if (next) focusEdge(next); else { grab = null; focused = null; toast('Every start and end is checked', { ms: 2500 }) }
+    if (!unchecked.length) { grab = null; focused = null; toast('Every start and end is confirmed', { ms: 2500 }); return }
+    const position = (edge: Edge) => edges.findIndex(candidate => candidate.trackId === edge.trackId && candidate.edge === edge.edge)
+    const from = focused && focused.trackId === current?.id ? position(focused) + 1 : current ? position({ trackId: current.id, edge: 'start' }) : 0
+    const next = unchecked.find(edge => position(edge) >= from) ?? unchecked[0]
+    focusEdge(next)
   }
   function markChecked(target: Edge) {
     const next = copy(); const track = next.find(candidate => candidate.id === target.trackId); if (!track) return
     if (target.edge === 'start') track.startChecked = true; else track.endChecked = true
     tracks = next; save()
   }
-  function confirmFocused() { const target = focused ?? (grab ? { trackId: grab.trackId, edge: grab.edge } : null); if (!target) { checkNext(); return } markChecked(target); checkNext() }
+  // Y: confirm (or undo) the start or end you're on, without moving anywhere
+  function confirmFocused() { const target = grab ? { trackId: grab.trackId, edge: grab.edge } : focused; const track = target ? tracks.find(candidate => candidate.id === target.trackId) : null; if (!track || !target) { toast('Pick a start or end first: click Start or End on a track'); return } toggleChecked(track, target.edge) }
   // Between tracks (SPEC.md › Export): trimmed to a short roll (the default), or kept as recorded
   const trimSilence = $derived(app.recordingProfiles.find(profile => profile.id === session?.recordingProfileId)?.trimSilence ?? true)
   function setTrim(trim: boolean) {
@@ -64,6 +70,9 @@
   let snapToZero = $state(readFlag('snapZero'))
   let waveMode = $state<'wave' | 'spectrogram'>(readSetting('waveMode', 'wave') === 'spectrogram' ? 'spectrogram' : 'wave')
   function setWaveMode(mode: 'wave' | 'spectrogram') { waveMode = mode; writeSetting('waveMode', mode) }
+  // How much of each start or end you hear; L steps through the lengths
+  function setListen(seconds: number) { app.auditionSeconds = seconds; sendToShell({ type: 'setAuditionSeconds', seconds }) }
+  function nextListen() { const choices = auditionChoices.map(([value]) => Number(value)); const at = choices.indexOf(app.auditionSeconds); setListen(choices[(at + 1) % choices.length]); toast(`Listening to ${app.auditionSeconds} s of each start or end`, { ms: 1500 }) }
   const sessionCutoff = $derived(session ? medianCutoff(session.quality ?? [], 0, session.totalFrames) : null)
   let exportStatus = $state('')
   let waveform = $state<ReturnType<typeof Waveform>>()
@@ -333,7 +342,7 @@
   $effect(() => {
     const frame = app.playhead
     if (!playing || frame < 0 || !session) return
-    untrack(() => { const span = waveWidth() * view.framesPerPixel; if (frame < view.start || frame > view.start + span * 0.95) view = waveform?.clampView({ start: frame - span * 0.1, framesPerPixel: view.framesPerPixel }) ?? view })
+    untrack(() => { const span = waveWidth() * view.framesPerPixel; if (frame < view.start || frame > view.start + span * 1.01) view = waveform?.clampView({ start: frame - span * 0.1, framesPerPixel: view.framesPerPixel }) ?? view })
   })
 
   // ---- Export (SPEC.md › Export) ----
@@ -341,7 +350,15 @@
   // Tags worth having on every file before it goes out (SPEC.md › Export): the dialog offers to fill them in first
   const wanted: [keyof Track, string][] = [['artist', 'artist'], ['album', 'album'], ['albumArtist', 'album artist'], ['genre', 'genre']]
   let exportCheck = $state<null | { keys: string[]; missing: string; unconfirmed: number }>(null)
-  // A start or end confirmed by hand (✓ beside Hear in the list): green once the user is happy with it
+  // Hold a row's Start or End to confirm it (it fills, then turns green); hold again to undo. A plain click hears it
+  let holding = $state<{ trackId: string; edge: 'start' | 'end' } | null>(null), holdTimer = 0, held = false
+  function holdDown(track: Track, edge: 'start' | 'end', event: PointerEvent) {
+    if (event.button !== 0) return
+    held = false; holding = { trackId: track.id, edge }; clearTimeout(holdTimer)
+    holdTimer = window.setTimeout(() => { held = true; holding = null; toggleChecked(track, edge) }, 550)
+  }
+  function holdUp() { clearTimeout(holdTimer); holding = null }
+  // A start or end confirmed by hand: green once the user is happy with it
   function toggleChecked(track: Track, edge: 'start' | 'end') {
     const next = copy(), edited = next.find(candidate => candidate.id === track.id)!
     const on = !(edge === 'start' ? edited.startChecked : edited.endChecked)
@@ -414,8 +431,11 @@
     else if (lower === 'x') splitAtCursor()
     else if (lower === 'n') addTrackAtCursor()
     else if (lower === 'y') confirmFocused()
-    else if (key === ',') hearEdge('start')
-    else if (key === '.') hearEdge('end')
+    else if (lower === 'c') checkNext()
+    else if (lower === 'w') setWaveMode(waveMode === 'wave' ? 'spectrogram' : 'wave')
+    else if (lower === 'l') nextListen()
+    else if (key === ',') { if (current) focusEdge({ trackId: current.id, edge: 'start' }) }
+    else if (key === '.') { if (current) focusEdge({ trackId: current.id, edge: 'end' }) }
     else if (key === 'Enter' && grab) hearEdge(grab.edge)
     else if (lower === 'z') { if (current) zoomToTrack(current.id) }
     else if (key === '+' || key === '=') zoomAtCursor(0.5)
@@ -475,13 +495,13 @@
   </header>
 
   <nav class="steps" aria-label="Steps">
-    <button class="step" class:active={step === 'cuts'} class:done={unchecked.length === 0} onclick={() => step = 'cuts'}><span class="step-number">1</span><span class="step-text"><strong>Check the cuts</strong><span>{unchecked.length === 0 ? 'all checked' : `${unchecked.length} to go${doubtful.length ? `, ${doubtful.length} doubtful` : ''}`}</span></span></button>
+    <button class="step" class:active={step === 'cuts'} class:done={unchecked.length === 0} onclick={() => step = 'cuts'}><span class="step-number">1</span><span class="step-text"><strong>Check the cuts</strong><span>{unchecked.length === 0 ? 'all confirmed' : `${unchecked.length} to confirm${doubtful.length ? `, ${doubtful.length} doubtful` : ''}`}</span></span></button>
     <button class="step" class:active={step === 'tags'} class:done={untagged.length === 0} onclick={() => step = 'tags'}><span class="step-number">2</span><span class="step-text"><strong>Tags</strong><span>{untagged.length === 0 ? 'complete' : `${untagged.length} track${untagged.length === 1 ? '' : 's'} missing details`}</span></span></button>
     <button class="step" class:active={step === 'export'} class:done={unexported.length === 0 && exportable.length > 0} onclick={() => step = 'export'}><span class="step-number">3</span><span class="step-text"><strong>Export</strong><span>{exportable.length === 0 ? 'nothing to export' : unexported.length === 0 ? `${exportable.length} exported${unverified.length ? `, ${unverified.length} failed the check` : ', all verified'}` : `${unexported.length} of ${exportable.length} to go`}</span></span></button>
     <div class="step-actions">
       {#if step === 'cuts'}
-        <button class="primary" onclick={checkNext} title="Jump to the next start or end, zoomed in, and play it (doubtful ones first)">{unchecked.length ? 'Check next' : 'Check again'}</button>
-        <button class="ghost" onclick={confirmFocused} disabled={!focused && !grab} title="This edge is right: mark it checked and go to the next (Y)">Looks right<kbd>Y</kbd></button>
+        <button class="primary" onclick={checkNext} title="Jump to the next start or end without a ✓, from the track you're on, zoomed in, and play it (C)">Next to confirm<kbd>C</kbd></button>
+        
         <Dropdown label="Between tracks" value={trimSilence ? 'trim' : 'keep'} options={[['trim', 'Trim silence'], ['keep', 'Keep as recorded']]} onchange={(value) => setTrim(value === 'trim')} />
       {:else if step === 'tags'}
         <button class="primary" onclick={() => tagging = (selectedIds.length ? selectedIds : untagged.length ? untagged.map(track => track.id) : exportable.map(track => track.id))}>{selectedIds.length ? `Edit ${selectedIds.length} selected…` : untagged.length ? `Fill in ${untagged.length}…` : 'Edit tags…'}</button>
@@ -494,25 +514,21 @@
     </div>
   </nav>
   <div class="toolbar">
-    <button class="ghost" class:on={playing} onclick={() => playing ? stop() : playFrom(cursor)} title="Play from the playhead (Space)"><Icon name={playing ? 'stop' : 'play'} size={16} />{playing ? 'Stop' : 'Play'}</button>
+    <button class="ghost" class:on={playing} onclick={() => playing ? stop() : playFrom(cursor)} title="Play from the playhead: click in the wave or on a track to move it (Space)"><Icon name={playing ? 'stop' : 'play'} size={16} />{playing ? 'Stop' : 'Play'}<kbd>Space</kbd></button>
     {#if step === 'cuts'}
-    <div class="group" title="This track">
-      <span class="group-label">This track</span>
-      <button class="ghost" onclick={() => hearEdge('start')} title="Hear this track's start (,)"><Icon name="starts" size={16} />Start<kbd>,</kbd></button>
-      <button class="ghost" onclick={() => hearEdge('end')} title="Hear this track's end (.)"><Icon name="ends" size={16} />End<kbd>.</kbd></button>
-    </div>
     <div class="group">
+      <Dropdown label="Listen" value={String(app.auditionSeconds)} options={auditionChoices} align="left" onchange={(value) => setListen(Number(value))} />
+      <kbd class="loose" title="L changes how much of each start or end you hear">L</kbd>
       <span class="group-label">{selectedIds.length ? 'Selected' : 'All tracks'}</span>
       <button class="ghost" onclick={() => audition('starts')} title="Run through the start of every track (selected, or all)">Starts</button>
       <button class="ghost" onclick={() => audition('ends')} title="Run through the end of every track">Ends</button>
-      <Dropdown label="Each" value={String(app.auditionSeconds)} options={auditionChoices} align="left" onchange={(value) => { app.auditionSeconds = Number(value); sendToShell({ type: 'setAuditionSeconds', seconds: Number(value) }) }} />
     </div>
     <div class="group">
-      <button class="ghost icon" onclick={() => zoomAtCursor(0.5)} title="Zoom in (+, or the wheel)"><Icon name="zoom-in" size={16} /></button>
-      <button class="ghost icon" onclick={() => zoomAtCursor(2)} title="Zoom out (-)"><Icon name="zoom-out" size={16} /></button>
-      <button class="ghost icon" onclick={fit} title="Whole session (Ctrl+0)"><Icon name="fit" size={16} /></button>
+      <button class="ghost icon" onclick={() => zoomAtCursor(0.5)} title="Zoom in (+, or the wheel)"><Icon name="zoom-in" size={16} /><kbd>+</kbd></button>
+      <button class="ghost icon" onclick={() => zoomAtCursor(2)} title="Zoom out (-)"><Icon name="zoom-out" size={16} /><kbd>-</kbd></button>
+      <button class="ghost icon" onclick={fit} title="Whole session (Ctrl+0)"><Icon name="fit" size={16} /><kbd>Ctrl+0</kbd></button>
       <button class="ghost" class:on={snapToZero} onclick={() => { snapToZero = !snapToZero; writeSetting('snapZero', snapToZero ? '1' : '') }} title="Edges land on the nearest zero crossing">Snap to zero</button>
-      <button class="ghost" class:on={autoHeight} onclick={() => { autoHeight = !autoHeight; writeSetting('autoHeight', autoHeight ? '1' : '0') }} title="Zoomed in, the wave grows to fill the height, so quiet starts and fades show clearly (Ctrl+wheel overrides)">Auto height</button>
+      <button class="ghost" class:on={autoHeight} onclick={() => { autoHeight = !autoHeight; writeSetting('autoHeight', autoHeight ? '1' : '0') }} title="Zoomed in, the wave grows to fill the height, so quiet starts and fades show clearly. Ctrl+wheel sets the height by hand; clicking this goes back to automatic">Auto height</button>
     </div>
     {:else}
     <div class="group">
@@ -522,17 +538,13 @@
     </div>
     {/if}
     <div class="group">
-      <button class="ghost icon" onclick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={16} /></button>
-      <button class="ghost icon" onclick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"><Icon name="redo" size={16} /></button>
+      <button class="ghost icon" onclick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={16} /><kbd>Ctrl+Z</kbd></button>
+      <button class="ghost icon" onclick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"><Icon name="redo" size={16} /><kbd>Ctrl+Y</kbd></button>
       <button class="ghost" onclick={openHistory} title="Every earlier state of this track list, to go back to">History…</button>
-    </div>
-    <div class="group">
-      <button class="ghost" class:on={waveMode === 'wave'} onclick={() => setWaveMode('wave')} title="Waveform: levels, starts and ends">Wave</button>
-      <button class="ghost" class:on={waveMode === 'spectrogram'} onclick={() => setWaveMode('spectrogram')} title="Spectrogram: frequency over time. A flat top edge means a lossy source; a vertical gap is a dropout">Spectrogram</button>
     </div>
     {#if step === 'cuts'}
     <div class="group">
-      <button class="ghost icon" onclick={splitAtCursor} title="Split at the playhead (X)"><Icon name="split" size={16} /></button>
+      <button class="ghost icon" onclick={splitAtCursor} title="Split at the playhead (X)"><Icon name="split" size={16} /><kbd>X</kbd></button>
       <button class="ghost icon" onclick={() => dialog = { kind: 'redetect' }} title="Find the tracks again with the recording profile's gap settings"><Icon name="redetect" size={16} /></button>
     </div>
     {/if}
@@ -540,12 +552,15 @@
     {#if exportStatus && step !== 'export'}<span class="export-status">{exportStatus}</span>{/if}
   </div>
 
-  <Hint id="waveform-basics" text="Check next jumps to each start and end, zoomed in both ways, and plays it: press Y if it sounds right, or drag the line, nudge it with ← →, or press S / E to set it at the playhead. Wheel zooms, Shift+wheel scrolls." />
+  <Hint id="waveform-cuts" text="Next to confirm (C) jumps to the next start or end without a ✓, from the track you're on, and plays it. Drag the line, nudge it with ← →, or press S / E to set it at the playhead; then tick ✓ beside it in the list. Wheel zooms, Shift+wheel scrolls, Ctrl+wheel sets the height, W switches wave and spectrogram." />
   <div class="wave-host" bind:this={waveHost}>
+
     <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {autoHeight} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
       onCursor={(frame) => { cursor = frame; grab = null; if (playing) playFrom(frame) }} {onEdge} {onEdgeDone} onRelease={() => grab = null} onPickTrack={(trackId, additive) => { currentId = trackId; if (additive) selectKeys(scope, Array.from(new Set(selectedIds.concat([trackId]))), actions, 'track'); scrollRowIntoView(trackId) }} onZoomTrack={zoomToTrack} />
   </div>
-  <div class="readout"><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
+  <div class="readout"><div class="wave-mode" role="group" aria-label="Wave or spectrogram">
+      <button class:on={waveMode === 'wave'} onclick={() => setWaveMode('wave')} title="Waveform: levels, starts and ends (W switches)">Wave</button><button class:on={waveMode === 'spectrogram'} onclick={() => setWaveMode('spectrogram')} title="Spectrogram: frequency over time. A flat top edge means a lossy source; a vertical gap is a dropout (W switches)">Spectrogram</button><kbd>W</kbd>
+    </div><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
 
   {#if step === 'tags'}
     <div class="tags-step">
@@ -628,12 +643,12 @@
     </div>
   {/if}
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }}>
-    <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span>✓ Hear ✓</span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Album</span><span>Year</span><span>Title</span><span>Genre</span><span>Source</span><span>Fades</span><span></span></div>
+    <div class="row head"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /></span><span>Hear (hold: ✓)</span><span>Start</span><span>Length</span><span></span><span>Artist</span><span>Album</span><span>Year</span><span>Title</span><span>Genre</span><span>Source</span><span>Fades</span><span></span></div>
     {#each tracks as track, index (track.id)}
       {@const cutoff = medianCutoff(session.quality ?? [], track.start, track.end)}
       <div class="row" class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
-        <span class="hear no-hold"><button class="ok" class:on={track.startChecked} onclick={(event) => { event.stopPropagation(); toggleChecked(track, 'start') }} title={track.startChecked ? 'Start confirmed. Click to undo' : 'Happy with the start? Click to confirm it'} aria-label="Confirm start">✓</button><button class="hear-start" class:checked={track.startChecked} onclick={(event) => { event.stopPropagation(); hearEdge('start', track.id) }} title="Hear this track's start" aria-label="Hear start"><Icon name="play" size={11} /><span>Start</span></button><button class="hear-end" class:checked={track.endChecked} onclick={(event) => { event.stopPropagation(); hearEdge('end', track.id) }} title="Hear this track's end" aria-label="Hear end"><span>End</span><Icon name="play" size={11} /></button><button class="ok" class:on={track.endChecked} onclick={(event) => { event.stopPropagation(); toggleChecked(track, 'end') }} title={track.endChecked ? 'End confirmed. Click to undo' : 'Happy with the end? Click to confirm it'} aria-label="Confirm end">✓</button></span>
+        <span class="hear no-hold"><button class="hear-start" class:checked={track.startChecked} class:holding={holding?.trackId === track.id && holding.edge === 'start'} onpointerdown={(event) => holdDown(track, 'start', event)} onpointerup={holdUp} onpointerleave={holdUp} onclick={(event) => { event.stopPropagation(); if (held) { held = false; return } focusEdge({ trackId: track.id, edge: 'start' }) }} title={`Click: hear this track's start, zoomed in. Hold: ${track.startChecked ? 'undo the ✓' : 'confirm it (✓, green)'}`} aria-label="Hear start"><Icon name="play" size={11} /><span>{track.startChecked ? '✓ ' : ''}Start</span></button><button class="hear-end" class:checked={track.endChecked} class:holding={holding?.trackId === track.id && holding.edge === 'end'} onpointerdown={(event) => holdDown(track, 'end', event)} onpointerup={holdUp} onpointerleave={holdUp} onclick={(event) => { event.stopPropagation(); if (held) { held = false; return } focusEdge({ trackId: track.id, edge: 'end' }) }} title={`Click: hear this track's end, zoomed in. Hold: ${track.endChecked ? 'undo the ✓' : 'confirm it (✓, green)'}`} aria-label="Hear end"><span>End{track.endChecked ? ' ✓' : ''}</span><Icon name="play" size={11} /></button></span>
         <button class="time edge no-hold" class:doubt={!track.startSure && !track.startChecked} class:checked={track.startChecked} title={`${track.startNote || 'Start'}${track.startChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }}>{track.startChecked ? '✓ ' : !track.startSure ? '? ' : ''}{formatTime(track.start, rate, false)}</button>
         <button class="time edge no-hold" class:doubt={!track.endSure && !track.endChecked} class:checked={track.endChecked} title={`${track.endNote || 'End'}${track.endChecked ? ' · checked' : ''}. Click to zoom in and hear it.`} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }}>{track.endChecked ? '✓ ' : !track.endSure ? '? ' : ''}{formatDuration((track.end - track.start) / rate)}</button>
         <button class="art-cell no-hold" onclick={(event) => { event.stopPropagation(); tagging = selectedIds.includes(track.id) ? selectedIds.slice() : [track.id] }} title="Edit tags and picture">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="" />{:else}<span>♪</span>{/if}</button>
@@ -701,7 +716,13 @@
   .spacer { flex: 1; }
   .export { display: inline-flex; align-items: center; gap: 6px; }
   .export-status { color: var(--fg-quiet); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wave-host { flex: 1 1 52%; min-height: 220px; }
+  .wave-host { flex: 1 1 52%; min-height: 220px; position: relative; }
+  .wave-mode { display: flex; align-items: center; gap: 0; }
+  .wave-mode button { height: 22px; padding: 0 9px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; background: var(--panel-solid); color: var(--fg-quiet); border: 1px solid var(--line); }
+  .wave-mode button:first-child { border-radius: 6px 0 0 6px; } .wave-mode button:nth-child(2) { border-radius: 0 6px 6px 0; border-left: 0; }
+  .wave-mode button.on { background: var(--accent-soft); color: var(--accent); }
+  .wave-mode kbd { margin-left: 5px; }
+  kbd.loose { margin: 0 6px 0 -2px; }
   .readout { display: flex; gap: 18px; font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
   .grabbed { color: var(--accent); font-family: var(--font-ui); }
   .key { margin-left: auto; display: flex; align-items: center; gap: 6px; font-family: var(--font-ui); font-size: 11.5px; white-space: nowrap; }
@@ -710,7 +731,7 @@
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
   .list { flex: 1 1 38%; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: 52px 196px 70px 64px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
+  .row { display: grid; grid-template-columns: 52px 150px 70px 64px 30px minmax(80px, 1fr) minmax(80px, 1fr) 56px minmax(120px, 1.5fr) minmax(60px, 0.6fr) 52px 70px 72px; gap: 8px; align-items: center; padding: 3px 8px; border-radius: 6px; cursor: default; }
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
@@ -742,6 +763,10 @@
   .hear .hear-start { border-radius: 7px 0 0 7px; } .hear .hear-end { border-radius: 0 7px 7px 0; border-left: 0; }
   .hear button:hover { background: var(--accent); color: var(--on-accent); }
   .hear button.checked { background: rgba(62, 207, 110, 0.18); color: #2e9e57; border-color: rgba(62, 207, 110, 0.5); }
+  .hear button.holding { animation: hold-fill 550ms linear forwards; }
+  @keyframes hold-fill { from { box-shadow: inset 0 0 0 0 rgba(62, 207, 110, 0.85); } to { box-shadow: inset 90px 0 0 0 rgba(62, 207, 110, 0.85); } }
+  .hear .hear-end.holding { animation-name: hold-fill-end; }
+  @keyframes hold-fill-end { from { box-shadow: inset 0 0 0 0 rgba(62, 207, 110, 0.85); } to { box-shadow: inset -90px 0 0 0 rgba(62, 207, 110, 0.85); } }
   .hear .ok { width: 24px; padding: 0; margin: 0 4px; border-radius: 7px; background: var(--panel); color: var(--fg-quiet); border: 1px solid var(--line); font-weight: 700; }
   .hear .ok.on { background: #3ecf6e; color: #fff; border-color: transparent; }
   .hear .ok:hover { background: color-mix(in srgb, #3ecf6e 40%, var(--panel)); color: var(--fg); }

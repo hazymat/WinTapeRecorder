@@ -46,6 +46,7 @@ h3 { font-size: 13px; margin: 16px 0 6px; color: var(--fg-quiet); font-weight: 6
 .ghost.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 .ghost.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
 kbd { font-family: var(--font-ui); font-size: 10px; color: var(--fg-quiet); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.primary kbd { color: inherit; border-color: color-mix(in srgb, currentColor 55%, transparent); margin-left: 6px; }
 input[type="text"], input:not([type]) { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; outline: none; }
 input[type="text"]:focus, input:not([type]):focus { border-color: var(--accent); }
 select option { background: var(--panel-solid); color: var(--fg); }
