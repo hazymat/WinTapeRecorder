@@ -64,6 +64,17 @@ public partial class App : Application
         Updater.Start();
         versionBeforeThisRun = Settings.General.LastRunVersion;
         if (Settings.General.LastRunVersion != Updater.CurrentVersion) { Settings.General.LastRunVersion = Updater.CurrentVersion; Settings.Save(); }
+        // A recording cut off by a crash or power cut: say so; its audio up to the last two seconds is on disk and opens as usual
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var cut = SessionStore.List(Settings).Where(session => session.Recording).ToList();
+                await Task.Delay(4000); // say so once the window is up
+                if (cut.Count > 0) Dispatcher.BeginInvoke(() => ShowTip("A recording was cut off", $"“{cut[0].Name}” stopped with a crash or power cut. Everything up to the last couple of seconds is kept: open it from the list to check and export it."));
+            }
+            catch { }
+        });
         if (CrashReporter.TakeUnseenReport()) ShowTip("WinTapeRecorder had a problem last time", "It crashed or stopped responding. Details are in Settings › About › Open logs (crash.log).");
     }
 
@@ -112,8 +123,10 @@ public partial class App : Application
         var minutes = Settings.RecordingProfileOrActive(Recorder.Session?.RecordingProfileId ?? "").StopAfterSilenceMinutes;
         return minutes <= 0 ? -1 : Math.Max(0, minutes * 60 - Recorder.SilentSeconds);
     }
+    DateTime lastCheckpoint = DateTime.UtcNow;
     public void CheckSilence()
     {
+        if (Recorder.Recording && DateTime.UtcNow - lastCheckpoint > TimeSpan.FromSeconds(30)) { lastCheckpoint = DateTime.UtcNow; try { Recorder.Checkpoint(); } catch { } }
         if (SilenceStopIn() != 0) return;
         var minutes = Settings.RecordingProfileOrActive(Recorder.Session?.RecordingProfileId ?? "").StopAfterSilenceMinutes;
         var soundEnd = Recorder.LastSoundFrame; var rate = Recorder.Session?.SampleRate ?? 48000;
@@ -246,7 +259,7 @@ public partial class App : Application
         var session = Session.Load(sessionId) ?? throw new FileNotFoundException("The session's files are missing.");
         var opened = await Task.Run(() =>
         {
-            if (session.Recording) { SessionAudio.RepairHeader(session.AudioPath); session.Recording = false; } // left by a crash mid-recording
+            if (session.Recording) { SessionAudio.RepairHeader(session.AudioPath); session.Recording = false; session.CutOff = true; } // left by a crash mid-recording
             var audio = SessionAudio.Open(session.AudioPath);
             if (session.TotalFrames != audio.TotalFrames || session.SampleRate == 0) { session.TotalFrames = audio.TotalFrames; session.SampleRate = audio.SampleRate; session.Channels = audio.Channels; session.BitDepth = audio.BitsPerSample; }
             var peaks = Peaks.Load(session.PeaksPath, audio.TotalFrames);

@@ -136,6 +136,7 @@ public class Session
     public string RecordingProfileId { get; set; } = "";
     public string OutputProfileId { get; set; } = "";
     public bool Recording { get; set; } // still true after a crash mid-recording: the WAV header is repaired on open
+    public bool CutOff { get; set; } // the recording ended with a crash or power cut, not Stop
     public int ClippedSamples { get; set; }
     public List<NameChange> Changes { get; set; } = new();
     public List<Dropout> Dropouts { get; set; } = new();

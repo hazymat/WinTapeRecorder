@@ -272,5 +272,16 @@ public sealed class Recorder : IDisposable
         return session;
     }
 
+    // Crash safety (SPEC.md › Recording › Crash recovery): the audio reaches the disk every 2 s; this keeps the session's notes as current
+    public void Checkpoint()
+    {
+        if (Session is not { } session) return;
+        session.TotalFrames = FramesWritten; session.ClippedSamples = (int)Math.Min(int.MaxValue, ClippedSamples);
+        lock (Dropouts) session.Dropouts = Dropouts.ToList();
+        lock (Quality) session.Quality = Quality.ToList();
+        lock (Clips) session.Clips = Clips.ToList();
+        session.Save();
+    }
+
     public void Dispose() => Stop();
 }
