@@ -48,7 +48,7 @@ public sealed class Recorder : IDisposable
     public List<ClipEvent> Clips { get; } = new();
     long clipBurstFrame = -1; int clipBurstSamples;
     DateTime lastHeaderUpdate;
-    const long SizeLimit = uint.MaxValue - (64L << 20); // stop with room to spare under the WAV format's 4 GB
+    const long SizeLimit = 256L << 30; // past 4 GB the file becomes RF64; 256 GB is days of audio, a guard against a runaway disk
 
     // Dropout detection (SPEC.md › Recording): the audio clock is compared with the wall clock callback by callback; a sudden shortfall is samples the engine threw away
     readonly Stopwatch wallClock = new();
@@ -73,7 +73,7 @@ public sealed class Recorder : IDisposable
         channels = captureFormat.Channels; captureBits = captureFormat.BitsPerSample; sampleRate = captureFormat.SampleRate;
         captureFloat = captureFormat.Encoding == WaveFormatEncoding.IeeeFloat || (captureFormat is WaveFormatExtensible extensible && extensible.SubFormat == NAudio.Dmo.AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT);
         bitDepth = profile.BitDepth is 16 or 24 or 32 ? profile.BitDepth : 24;
-        heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; lastSoundFrame = 0; KeepThroughSilence = false; Problem = ""; Dropouts.Clear(); shortfallFrames = 0; detecting = false;
+        heldPeaks = new float[channels]; clippedSamples = 0; framesWritten = 0; lastSoundFrame = 0; KeepThroughSilence = false; HitSizeLimit = false; Problem = ""; Dropouts.Clear(); shortfallFrames = 0; detecting = false;
         Quality.Clear(); qualityFill = 0; nextQualityFrame = sampleRate * 2; CurrentCutoffHz = null; Clips.Clear(); clipBurstFrame = -1; FlacRatio = 0; flacSamples = 0;
         DeviceName = device.FriendlyName;
         try { DeviceVolume = profile.Loopback ? device.AudioEndpointVolume.MasterVolumeLevelScalar : -1; } catch { DeviceVolume = -1; }
@@ -101,10 +101,11 @@ public sealed class Recorder : IDisposable
 
     void OpenWav(string path, int rate)
     {
-        output = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 18);
+        output = new FileStream(path, FileMode.Create, FileAccess.ReadWrite, FileShare.Read, 1 << 18);
         headerWriter = new BinaryWriter(output, System.Text.Encoding.ASCII, true);
         var bytesPerSample = bitDepth / 8; var formatTag = (ushort)(bitDepth == 32 ? 3 : 1);
         headerWriter.Write("RIFF"u8); headerWriter.Write(0u); headerWriter.Write("WAVE"u8);
+        headerWriter.Write("JUNK"u8); headerWriter.Write(28u); headerWriter.Write(new byte[28]); // room for RF64's ds64 if the file passes 4 GB
         headerWriter.Write("fmt "u8); headerWriter.Write(16u); headerWriter.Write(formatTag); headerWriter.Write((ushort)channels); headerWriter.Write((uint)rate);
         headerWriter.Write((uint)(rate * bytesPerSample * channels)); headerWriter.Write((ushort)(bytesPerSample * channels)); headerWriter.Write((ushort)bitDepth);
         headerWriter.Write("data"u8); headerWriter.Write(0u);
@@ -214,7 +215,7 @@ public sealed class Recorder : IDisposable
             {
                 try { output!.Write(bytes, 0, count); } finally { ArrayPool<byte>.Shared.Return(bytes); }
                 if (DateTime.UtcNow - lastHeaderUpdate > TimeSpan.FromSeconds(2)) { WriteLengths(); lastHeaderUpdate = DateTime.UtcNow; }
-                if (output!.Position > SizeLimit) { Problem = "The recording reached the WAV size limit (4 GB) and was stopped."; queue.CompleteAdding(); _ = Task.Run(() => { Stop(); Stopped?.Invoke(); }); return; }
+                if (output!.Position > SizeLimit) { Problem = "The recording reached the WAV size limit (4 GB) and was stopped."; HitSizeLimit = true; queue.CompleteAdding(); _ = Task.Run(() => { Stop(); Stopped?.Invoke(); }); return; }
             }
         }
         catch (IOException writeError) { Problem = writeError.Message; queue.CompleteAdding(); _ = Task.Run(() => { Stop(); Stopped?.Invoke(); }); }
@@ -224,10 +225,10 @@ public sealed class Recorder : IDisposable
     void WriteLengths()
     {
         if (output == null || headerWriter == null) return;
-        var end = output.Position; var dataLength = end - dataStart;
-        output.Position = 4; headerWriter.Write((uint)(end - 8));
-        output.Position = dataStart - 4; headerWriter.Write((uint)dataLength);
-        headerWriter.Flush(); output.Position = end; output.Flush(true);
+        var end = output.Position;
+        headerWriter.Flush();
+        SessionAudio.WriteSizes(output, dataStart, end - dataStart, channels * (bitDepth / 8));
+        output.Position = end; output.Flush(true);
     }
 
     // Silence (SPEC.md › Recording › Auto-stop): below -70 dBFS counts as nothing playing
@@ -269,6 +270,7 @@ public sealed class Recorder : IDisposable
         lock (Clips) session.Clips = Clips.ToList();
         try { peaks?.Save(session.PeaksPath); } catch { }
         session.Save();
+        lastStopped = session;
         return session;
     }
 
@@ -283,5 +285,9 @@ public sealed class Recorder : IDisposable
         session.Save();
     }
 
+    Session? lastStopped;
+    // The session a stop from the audio side finished (size guard, device gone), taken once by whoever finishes up
+    public Session? TakeLastStopped() { var taken = lastStopped; lastStopped = null; return taken; }
+    public bool HitSizeLimit { get; private set; } // set when the WAV filled up; cleared by the next start
     public void Dispose() => Stop();
 }

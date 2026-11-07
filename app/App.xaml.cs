@@ -54,7 +54,23 @@ public partial class App : Application
         Recorder.QualityMeasured += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
         Recorder.DropoutFound += () => Dispatcher.BeginInvoke(() => { NoteProblem("dropout"); StatusChanged?.Invoke(); });
         Recorder.ClipFound += () => Dispatcher.BeginInvoke(() => { NoteProblem("clipping"); StatusChanged?.Invoke(); });
-        Recorder.Stopped += () => Dispatcher.BeginInvoke(() => { var problem = Recorder.Problem; FinishRecording(); if (problem != "") ShowTip("Recording stopped", problem); });
+        Recorder.Stopped += () => Dispatcher.BeginInvoke(() =>
+        {
+            // A full WAV (4 GB, about 4 h at 24-bit) carries straight on into the next part, so long overnight sessions keep going (SPEC.md › Recording)
+            if (Recorder.HitSizeLimit)
+            {
+                var keep = Recorder.KeepThroughSilence; var source = RecordingSource;
+                var full = FinishRecording(); if (full == null) return;
+                var (profileId, name) = (full.RecordingProfileId, full.Name);
+                var part = System.Text.RegularExpressions.Regex.Match(name, @"^(.*) \(part (\d+)\)$");
+                var next = part.Success ? $"{part.Groups[1].Value} (part {int.Parse(part.Groups[2].Value) + 1})" : $"{name} (part 2)";
+                StartRecording(profileId, source, next);
+                Recorder.KeepThroughSilence = keep;
+                ShowTip("Recording continues", $"The recording reached the 256 GB guard, so it carries on in “{next}”.");
+                return;
+            }
+            var problem = Recorder.Problem; FinishRecording(); if (problem != "") ShowTip("Recording stopped", problem);
+        });
         Player.Finished += () => Dispatcher.BeginInvoke(() => StatusChanged?.Invoke());
         mainWindow = new MainWindow();
         mainWindow.RestoreBoundsForDisplays();
@@ -148,7 +164,8 @@ public partial class App : Application
     Session? FinishRecording()
     {
         var peaks = Recorder.Peaks;
-        var session = Recorder.Stop();
+        var stopped = Recorder.Stop(); var fromAudioSide = Recorder.TakeLastStopped();
+        var session = stopped ?? fromAudioSide; // stopped from the audio side already: finish that one
         if (session != null && peaks != null)
         {
             try { session.Tracks = TrackBuilder.Build(session, peaks, Settings.RecordingProfileOrActive(session.RecordingProfileId)); session.Save(); }

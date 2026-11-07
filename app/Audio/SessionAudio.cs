@@ -30,20 +30,22 @@ public sealed class SessionAudio : IDisposable
     {
         var reader = new BinaryReader(stream, Encoding.ASCII, true);
         stream.Position = 0;
-        if (new string(reader.ReadChars(4)) != "RIFF") throw new InvalidDataException("Not a WAV file.");
+        var riff = new string(reader.ReadChars(4));
+        if (riff != "RIFF" && riff != "RF64") throw new InvalidDataException("Not a WAV file.");
         reader.ReadUInt32();
         if (new string(reader.ReadChars(4)) != "WAVE") throw new InvalidDataException("Not a WAV file.");
-        long dataLength = -1;
+        long dataLength = -1, data64 = -1;
         while (stream.Position + 8 <= stream.Length)
         {
             var chunkId = new string(reader.ReadChars(4)); var chunkLength = reader.ReadUInt32(); var chunkStart = stream.Position;
-            if (chunkId == "fmt ")
+            if (chunkId == "ds64" && chunkLength >= 16) { reader.ReadUInt64(); data64 = (long)reader.ReadUInt64(); }
+            else if (chunkId == "fmt ")
             {
                 var formatTag = reader.ReadUInt16(); Channels = reader.ReadUInt16(); SampleRate = (int)reader.ReadUInt32(); reader.ReadUInt32(); reader.ReadUInt16(); BitsPerSample = reader.ReadUInt16();
                 IsFloat = formatTag == 3;
                 if (formatTag == 0xFFFE && chunkLength >= 40) { reader.ReadUInt16(); reader.ReadUInt16(); reader.ReadUInt32(); IsFloat = reader.ReadUInt16() == 3; } // extensible: subformat GUID starts with the format tag
             }
-            else if (chunkId == "data") { dataOffset = chunkStart; dataLength = chunkLength; break; }
+            else if (chunkId == "data") { dataOffset = chunkStart; dataLength = chunkLength == uint.MaxValue && data64 >= 0 ? data64 : chunkLength; break; }
             stream.Position = chunkStart + chunkLength + (chunkLength & 1);
         }
         if (dataOffset == 0 || Channels == 0) throw new InvalidDataException("The WAV file has no audio.");
@@ -72,7 +74,7 @@ public sealed class SessionAudio : IDisposable
         return frameCount;
     }
 
-    // Rewrites the RIFF and data lengths from the file size (after a crash mid-recording)
+    // Rewrites the lengths from the file size (after a crash mid-recording)
     public static void RepairHeader(string path)
     {
         using var file = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
@@ -88,15 +90,37 @@ public sealed class SessionAudio : IDisposable
             {
                 var actual = file.Length - chunkStart;
                 if (blockAlign > 0) actual -= actual % blockAlign;
-                if (actual > uint.MaxValue - 64) actual = uint.MaxValue - 64;
-                if (chunkLength == actual) return;
-                var lengthBytes = new byte[4];
-                BinaryPrimitives.WriteUInt32LittleEndian(lengthBytes, (uint)actual); file.Position = chunkStart - 4; file.Write(lengthBytes);
-                BinaryPrimitives.WriteUInt32LittleEndian(lengthBytes, (uint)(chunkStart + actual - 8)); file.Position = 4; file.Write(lengthBytes);
+                WriteSizes(file, chunkStart, actual, blockAlign);
                 return;
             }
             file.Position = chunkStart + chunkLength + (chunkLength & 1);
         }
+    }
+
+    // The header's lengths for dataLength bytes of audio starting at dataStart. Up to 4 GB a plain RIFF WAV; past it RF64 (EBU Tech 3306):
+    // the 28-byte JUNK chunk the recorder reserves after "WAVE" becomes ds64 with 64-bit lengths, so one file holds a whole night
+    public static void WriteSizes(Stream file, long dataStart, long dataLength, int blockAlign)
+    {
+        var end = file.Position; var bytes = new byte[8];
+        void At(long position, ReadOnlySpan<byte> data) { file.Position = position; file.Write(data); }
+        void U32(long position, uint value) { BinaryPrimitives.WriteUInt32LittleEndian(bytes, value); At(position, bytes.AsSpan(0, 4)); }
+        void U64(long position, long value) { BinaryPrimitives.WriteUInt64LittleEndian(bytes, (ulong)value); At(position, bytes.AsSpan(0, 8)); }
+        var head = new byte[4]; file.Position = 12; file.ReadExactly(head);
+        var hasSlot = Encoding.ASCII.GetString(head) is "JUNK" or "ds64";
+        var riffLength = dataStart + dataLength - 8;
+        if (riffLength <= uint.MaxValue || !hasSlot)
+        {
+            if (!hasSlot) { dataLength = Math.Min(dataLength, uint.MaxValue - dataStart - 64); riffLength = dataStart + dataLength - 8; }
+            At(0, "RIFF"u8); U32(4, (uint)riffLength); U32(dataStart - 4, (uint)dataLength);
+            if (hasSlot) At(12, "JUNK"u8);
+        }
+        else
+        {
+            At(0, "RF64"u8); U32(4, uint.MaxValue); At(12, "ds64"u8); U32(16, 28);
+            U64(20, riffLength); U64(28, dataLength); U64(36, blockAlign > 0 ? dataLength / blockAlign : 0); U32(44, 0);
+            U32(dataStart - 4, uint.MaxValue);
+        }
+        file.Position = end;
     }
 
     public void Dispose() => stream.Dispose();
