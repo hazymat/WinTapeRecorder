@@ -369,15 +369,22 @@
     if (match.artUrl && !failedCovers[match.artUrl] && !commonOf(list, 'artPath')) useCoverUrl(group, match.artUrl)
   }
   function useAllTitles(list: Track[], match: AlbumMatch) { const next = copy(); for (const track of next) { const original = list.find(candidate => candidate.id === track.id); if (!original) continue; const theirs = theirTitle(original, match); if (theirs) { track.title = theirs; track.exported = false } } commit(next, `Titles from ${match.source}`) }
+  // Where each album's cover came from, so exactly one source shows as in use
+  let coverSources = $state<Record<string, 'database' | 'player' | 'own'>>({})
+  function coverInUse(group: ListAlbum, ownCover: string | null, playerCover: string): '' | 'database' | 'player' | 'own' {
+    if (!ownCover) return ''
+    const known = coverSources[group.first]; if (known) return known
+    return playerCover && ownCover === playerCover ? 'player' : 'own'
+  }
   async function useCoverUrl(group: ListAlbum, url: string) {
-    try { const saved = await request<{ path: string; thumb: string }>({ type: 'fetchArt', id: sessionId, url }); thumbs = Object.assign({}, thumbs, { [saved.path]: saved.thumb }); applyTags(group.ids, { artPath: saved.path }, false) }
+    try { const saved = await request<{ path: string; thumb: string }>({ type: 'fetchArt', id: sessionId, url }); thumbs = Object.assign({}, thumbs, { [saved.path]: saved.thumb }); coverSources = Object.assign({}, coverSources, { [group.first]: 'database' }); applyTags(group.ids, { artPath: saved.path }, false) }
     catch (error) { toast('No picture for that album: ' + (error as Error).message) }
   }
   async function chooseCoverFor(group: ListAlbum, paste: boolean) {
     try {
       const result = await request<{ path: string; thumb: string; error?: string }>({ type: paste ? 'pasteArt' : 'chooseArt', id: sessionId })
       if (!result.path) { if (result.error) toast(result.error); return }
-      thumbs = Object.assign({}, thumbs, { [result.path]: result.thumb }); applyTags(group.ids, { artPath: result.path }, false)
+      thumbs = Object.assign({}, thumbs, { [result.path]: result.thumb }); coverSources = Object.assign({}, coverSources, { [group.first]: 'own' }); applyTags(group.ids, { artPath: result.path }, false)
     } catch (error) { toast('Could not use that picture: ' + (error as Error).message) }
   }
 
@@ -552,6 +559,12 @@
       const missing = wanted.filter(([field]) => chosen.some(track => !(track[field] as string | undefined))).map(([, label]) => label)
       const unconfirmed = chosen.reduce((count, track) => count + (track.startChecked ? 0 : 1) + (track.endChecked ? 0 : 1), 0)
       if (missing.length || unconfirmed) { exportCheck = { keys: chosen.map(track => track.id), missing: missing.join(', '), unconfirmed }; return }
+    }
+    // Tracks without a number get their place in their album (SPEC.md › Export)
+    if (tracks.some(track => !track.skip && !track.trackNumber)) {
+      const next = copy()
+      for (const group of listAlbums) { let number = 0; for (const track of next) if (group.ids.includes(track.id) && !track.skip) { number++; if (!track.trackNumber) track.trackNumber = number } }
+      commit(next, 'Track numbers filled in by album')
     }
     clearTimeout(saveTimer); sendToShell({ type: 'saveSession', id: sessionId, tracks: $state.snapshot(tracks) })
     exportStatus = `Exporting ${chosen.length} track${chosen.length === 1 ? '' : 's'}…`
@@ -754,6 +767,7 @@
         {@const rows = fieldRows(list, match)}
         {@const ownCover = commonOf(list, 'artPath')}
         {@const playerCover = list.map(track => track.playerArtPath ?? '').find(path => path && thumbs[path]) ?? ''}
+        {@const inUse = coverInUse(group, ownCover, playerCover)}
         {@const found = match ? match.trackTitles.filter(title => list.some(track => sameTitle(track.title, title))).length : 0}
         <section class="tag-card">
           <header class="tag-head">
@@ -770,13 +784,13 @@
             <div class="cover-pick">
               <span class="pick-label">Cover</span>
               <div class="cover-options">
-                <button class="cover-option" class:chosen={!!ownCover} title="Yours. Right-click or Ctrl+V pastes a picture; click to choose a file" onclick={() => chooseCoverFor(group, false)} oncontextmenu={(event) => { event.preventDefault(); chooseCoverFor(group, true) }}>
-                  {#if ownCover && thumbs[ownCover]}<img src={thumbs[ownCover]} alt="Your cover" />{:else}<span class="no-cover">{ownCover === null ? 'Mixed' : 'None'}</span>{/if}<span class="cover-caption">Yours</span>
+                {#if match?.artUrl && !failedCovers[match.artUrl]}<button class="cover-option" class:chosen={inUse === 'database'} title={`Use ${match.source}'s cover for this album`} onclick={() => useCoverUrl(group, match.artUrl)}><img src={match.artUrl} alt="Cover from {match.source}" onerror={() => failedCovers = Object.assign({}, failedCovers, { [match.artUrl]: true })} /><span class="cover-caption">{match.source}{inUse === 'database' ? ' · in use' : ''}</span></button>{/if}
+                {#if playerCover}<button class="cover-option" class:chosen={inUse === 'player'} title="Use the picture the player sent" onclick={() => { coverSources = Object.assign({}, coverSources, { [group.first]: 'player' }); applyTags(group.ids, { artPath: playerCover }, false) }}><img src={thumbs[playerCover]} alt="The player's picture" /><span class="cover-caption">Player{inUse === 'player' ? ' · in use' : ''}</span></button>{/if}
+                <button class="cover-option" class:chosen={inUse === 'own'} title="Your own picture: click to choose a file, right-click (or Ctrl+V) to paste one" onclick={() => chooseCoverFor(group, false)} oncontextmenu={(event) => { event.preventDefault(); chooseCoverFor(group, true) }}>
+                  {#if inUse === 'own' && ownCover && thumbs[ownCover]}<img src={thumbs[ownCover]} alt="Your own cover" />{:else}<span class="no-cover">{ownCover === null ? 'Mixed' : 'Choose or paste'}</span>{/if}<span class="cover-caption">Your own{inUse === 'own' ? ' · in use' : ''}</span>
                 </button>
-                {#if match?.artUrl && !failedCovers[match.artUrl]}<button class="cover-option" title={`Use ${match.source}'s cover for this album`} onclick={() => useCoverUrl(group, match.artUrl)}><img src={match.artUrl} alt="Cover from {match.source}" onerror={() => failedCovers = Object.assign({}, failedCovers, { [match.artUrl]: true })} /><span class="cover-caption">{match.source}</span></button>{/if}
-                {#if playerCover}<button class="cover-option" class:chosen={playerCover === ownCover} title="Use the picture the player sent" onclick={() => applyTags(group.ids, { artPath: playerCover }, false)}><img src={thumbs[playerCover]} alt="The player's picture" /><span class="cover-caption">Player</span></button>{/if}
               </div>
-              <span class="quiet cover-help">Click one to use it · right-click Yours or Ctrl+V to paste</span>
+              <span class="quiet cover-help">Click one to use it · right-click "Your own" or Ctrl+V to paste</span>
             </div>
             <table class="tag-table">
               <thead><tr><th></th><th>Yours</th><th>{match ? match.source : 'Online'}</th></tr></thead>
@@ -802,7 +816,7 @@
                 {#each list as track (track.id)}
                   {@const theirs = match ? theirTitle(track, match) : ''}
                   <tr>
-                    <td class="number-cell">{track.trackNumber || '–'}</td>
+                    <td class="number-cell">{track.trackNumber || list.indexOf(track) + 1}</td>
                     <td class="mine"><input value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} /></td>
                     <td class="mine"><input value={track.title} placeholder="Title" onchange={(event) => editField(track, 'title', (event.target as HTMLInputElement).value.trim())} /></td>
                     <td class="theirs">{#if theirs}<button class:same={theirs === track.title} onclick={() => editField(track, 'title', theirs)} title={theirs === track.title ? 'Yours already matches' : `Use “${theirs}”`}>{theirs === track.title ? '✓ ' : '← '}{theirs}</button>{:else if match}<span class="quiet">not on this release</span>{/if}</td>
@@ -1000,6 +1014,9 @@
   .cover-caption { font-size: 11px; color: var(--fg-quiet); }
   .cover-help { font-size: 11px; max-width: 290px; }
   .tag-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  .tag-table input:not([type=checkbox]), .tag-table td.theirs button { box-sizing: border-box; max-width: 100%; }
+  .tag-table.tracks td.mine input { width: 100%; padding: 3px 8px; }
+  .tag-table.tracks td { padding-right: 8px; }
   .tag-table:not(.tracks) th:first-child { width: 100px; }
   .tag-table.tracks th:first-child { width: 44px; }
   .tag-table th { text-align: left; font-weight: 500; color: var(--fg-quiet); padding: 3px 8px 3px 0; white-space: nowrap; font-size: 12px; }
