@@ -103,6 +103,7 @@ public static class TrackBuilder
             // A problem noted while recording (SPEC.md › Recording › Problems): "note" is only a note; "skip" leaves the take out;
             // the others (dropout, clipping, retake) leave it out when the same track was recorded again later
             track.Note = name?.Note ?? "";
+            if (name != null) { if (name.Genre != "") track.Genre = name.Genre; if (name.Composer != "") track.Composer = name.Composer; if (name.Confirmed) track.StartChecked = true; }
             var problem = name?.Problem ?? "";
             if (problem == "skip") { track.Skip = true; track.SkipReason = "Left out while recording"; }
             else track.SkipReason = problem == "note" ? "" : problem;
@@ -118,6 +119,8 @@ public static class TrackBuilder
                 track.End = next.Start; track.EndNote = "Right up to where the next track starts"; track.EndSure = next.StartSure;
             }
         foreach (var track in tracks) { track.DetectedStart = track.Start; track.DetectedEnd = track.End; }
+        // A cut confirmed while recording confirms the start there and the end of the track before it, when they meet
+        for (var index = 1; index < tracks.Count; index++) if (tracks[index].StartChecked && tracks[index - 1].End == tracks[index].Start) tracks[index - 1].EndChecked = true;
         // A note made on a marker that didn't become a track's own start (two markers at one spot) still reaches the track it falls in
         foreach (var track in tracks) if (track.Note == "") track.Note = session.Changes.Where(change => change.Note != "" && change.Frame >= track.Start - rate / 2 && change.Frame < track.End).Select(change => change.Note).FirstOrDefault() ?? "";
         // Retakes (SPEC.md › Recording › Issues): a take with a problem is left out when the same title and artist were recorded again later

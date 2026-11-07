@@ -121,7 +121,10 @@
         const isSelected = index === selected, isHovered = index === hovered && !isSelected
         context.fillStyle = isSelected ? colour('--accent', '#5ccfff') : colour('--warn', '#ffb74d')
         if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.12 + 0.3 * pulse() : 0.12; context.fillRect(x - 8, 0, 16, height); context.globalAlpha = 1 }
-        context.fillRect(x - 1, 0, isSelected || isHovered ? 3 : 2, height); context.fillRect(x, 0, 11, 13) // the flag: drag it to move the marker
+        context.fillRect(x - 1, 0, isSelected || isHovered ? 3 : 2, height)
+        context.fillStyle = change.confirmed ? '#3ecf6e' : context.fillStyle; context.fillRect(x, 0, 11, 13) // the flag: drag it to move the marker, double-click it to confirm the cut
+        if (change.confirmed) { context.fillStyle = '#fff'; context.fillText('✓', x + 1, 1) }
+        context.fillStyle = isSelected ? colour('--accent', '#5ccfff') : colour('--warn', '#ffb74d')
         context.fillText(`${index + 1} ${change.title || ''}`.trim(), x + 15, 3)
       })
       if (liveScale > 1.05) { context.fillStyle = colour('--fg-quiet', '#888'); context.textBaseline = 'top'; context.fillText(`Height ×${liveScale < 10 ? liveScale.toFixed(1) : Math.round(liveScale)} (Ctrl+wheel)`, liveWidth - 120, 3) }
@@ -135,6 +138,7 @@
   // A marker's flag (the top of the wave) drags the marker itself; anywhere else drags the view (SPEC.md › Recording › Live editing)
   const flagZone = 16
   let flagDrag: null | { index: number; frame: number } = null
+  let lastFlagClick: null | { index: number; at: number } = null
   function onLiveDown(event: PointerEvent) {
     if (event.button !== 0 || !app.status) return
     const onMarker = markerAt(event.offsetX)
@@ -149,7 +153,7 @@
       const index = markerAt(event.offsetX)
       if (index !== hovered) { hovered = index; drawLive() }
       if (liveCanvas) liveCanvas.style.cursor = index >= 0 ? (event.offsetY < flagZone ? 'ew-resize' : 'pointer') : 'grab'
-      if (index >= 0 && event.offsetY < flagZone) { liveCanvas?.setAttribute('title', `Drag the flag to move marker ${index + 1}`); return }
+      if (index >= 0 && event.offsetY < flagZone) { liveCanvas?.setAttribute('title', `Drag the flag to move marker ${index + 1}; double-click it to ${app.status?.changes[index]?.confirmed ? 'undo the confirmation' : 'confirm this cut'}`); return }
       liveCanvas?.setAttribute('title', index >= 0 ? (index === selected ? `Marker ${index + 1} is selected: drag the audio under it, click it to let go` : `Click to select marker ${index + 1}, then drag the audio under it`) : following ? 'Drag to stop following and look around; the wheel zooms, Ctrl+wheel sets the wave height' : 'Drag to pan, wheel to zoom, Ctrl+wheel for height')
       return
     }
@@ -161,7 +165,15 @@
     drawLive()
   }
   function onLiveUp() {
-    if (flagDrag) { const done = flagDrag; flagDrag = null; sendToShell({ type: 'editChange', index: done.index, frame: Math.round(done.frame) }); drawLive(); return }
+    if (flagDrag) {
+      const done = flagDrag; flagDrag = null
+      const moved = Math.abs(done.frame - (app.status?.changes[done.index]?.frame ?? done.frame)) > 1
+      if (moved) { sendToShell({ type: 'editChange', index: done.index, frame: Math.round(done.frame) }); lastFlagClick = null }
+      // Two clicks on the same flag within 400 ms (without moving it) confirm the cut, or undo that
+      else if (lastFlagClick && lastFlagClick.index === done.index && performance.now() - lastFlagClick.at < 400) { sendToShell({ type: 'editChanges', indexes: [done.index], confirmed: !app.status?.changes[done.index]?.confirmed }); lastFlagClick = null }
+      else lastFlagClick = { index: done.index, at: performance.now() }
+      drawLive(); return
+    }
     const drag = dragging; if (!drag) return
     if (drag.moved && selected >= 0) {
       const frame = Math.round(markerFrame(selected)); const index = selected
@@ -253,15 +265,15 @@
   // Albums so far (SPEC.md › Recording › Live editing): runs of markers sharing artist and album, in order. Track numbers count up
   // within each (a marker set for a retake doesn't count); the list below and the strip above both use these
   type Change = NonNullable<typeof app.status>['changes'][number]
-  type Album = { key: string; artist: string; album: string; year: string; indexes: number[] }
+  type Album = { key: string; artist: string; album: string; year: string; genre: string; composer: string; indexes: number[] }
   const loose = (text: string) => (text ?? '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
   const changes = $derived<Change[]>(app.status?.changes ?? [])
   const albums = $derived.by(() => {
     const list: Album[] = []
     changes.forEach((change, index) => {
       const key = change.album ? 'album:' + loose(change.album) : 'artist:' + loose(change.artist), last = list[list.length - 1] // by album, so a featured artist doesn't split it
-      if (last && last.key === key) { last.indexes.push(index); if (!last.year && change.year) last.year = change.year }
-      else list.push({ key, artist: change.artist, album: change.album, year: change.year ?? '', indexes: [index] })
+      if (last && last.key === key) { last.indexes.push(index); if (!last.year && change.year) last.year = change.year; if (!last.genre && change.genre) last.genre = change.genre; if (!last.composer && change.composer) last.composer = change.composer }
+      else list.push({ key, artist: change.artist, album: change.album, year: change.year ?? '', genre: change.genre ?? '', composer: change.composer ?? '', indexes: [index] })
     })
     return list
   })
@@ -271,7 +283,7 @@
   function initials(group: Album) { return ((group.album || group.artist || '?').match(/\p{L}|\p{N}/gu) ?? ['?']).slice(0, 2).join('').toUpperCase() }
   function showAlbum(group: Album) { openAlbum = openAlbum === group.key + group.indexes[0] ? '' : group.key + group.indexes[0]; document.getElementById('album-' + group.indexes[0])?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }
   // An album's artist, name or year, for all its tracks at once
-  function editAlbum(group: Album, field: 'artist' | 'album' | 'year', value: string) { sendToShell({ type: 'editChanges', indexes: group.indexes, [field]: value.trim() }) }
+  function editAlbum(group: Album, field: 'artist' | 'album' | 'year' | 'genre' | 'composer', value: string) { sendToShell({ type: 'editChanges', indexes: group.indexes, [field]: value.trim() }) }
   // A track joining the album above or below: take that album's names, or give that album this track's names
   let joining = $state<null | { index: number; target: Album }>(null)
   let dragIndex = -1
@@ -424,7 +436,7 @@
     </div>
     <Hint id="live-wave" text="Drag or zoom (wheel) the wave to stop following and look around; Ctrl+wheel sets its height. Click a marker to select it, then drag the audio under it and let go to place it; click it again or press Esc to let go. Catch up goes back to the last minute. The strip above is the whole recording: click it to look there." />
     <canvas class="live-strip" bind:this={stripCanvas} title="The whole recording so far: click or drag to look there" onpointerdown={onStrip} onpointermove={onStrip}></canvas>
-    <canvas class="live-wave" bind:this={liveCanvas} bind:clientWidth={liveWidth} tabindex="-1" onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp} onpointercancel={onLiveUp} onpointerleave={() => { if (!dragging && hovered >= 0) { hovered = -1; drawLive() } }}></canvas>
+    <canvas class="live-wave" onclick={(event) => { if (event.detail === 2 && event.offsetY < flagZone) { const index = markerAt(event.offsetX); if (index >= 0) { sendToShell({ type: 'editChanges', indexes: [index], confirmed: !app.status?.changes[index]?.confirmed }); lastFlagClick = null } } }} bind:this={liveCanvas} bind:clientWidth={liveWidth} tabindex="-1" onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp} onpointercancel={onLiveUp} onpointerleave={() => { if (!dragging && hovered >= 0) { hovered = -1; drawLive() } }}></canvas>
 
     <div class="tracks-head">
       <h3>Tracks marked so far</h3>
@@ -439,9 +451,11 @@
           ondragover={(event) => { if (dragIndex >= 0 && !group.indexes.includes(dragIndex)) event.preventDefault() }}
           ondrop={(event) => { event.preventDefault(); if (dragIndex >= 0 && !group.indexes.includes(dragIndex)) joining = { index: dragIndex, target: group }; dragIndex = -1 }}>
           <span class="head-name"><span class="disc small" style:--hue={hue(group.key)}>{initials(group)}</span><span class="quiet small">{group.indexes.length}</span></span>
-          <input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks" onchange={(event) => editAlbum(group, 'artist', (event.target as HTMLInputElement).value)} />
-          <input value={group.album} placeholder="Album" title="This album's name, for all its tracks" onchange={(event) => editAlbum(group, 'album', (event.target as HTMLInputElement).value)} />
-          <input class="year" value={group.year} placeholder="Year" title="This album's year, for all its tracks" onchange={(event) => editAlbum(group, 'year', (event.target as HTMLInputElement).value)} />
+          <span class="head-field c-artist"><input value={group.artist} placeholder="Artist" title="This album's artist, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'artist', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'artist', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'artist', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this artist on every track in the album">↓</button></span>
+          <span class="head-field c-album"><input value={group.album} placeholder="Album" title="This album's album, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'album', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'album', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'album', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this album on every track in the album">↓</button></span>
+          <span class="head-field c-year"><input value={group.year} placeholder="Year" title="This album's year, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'year', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'year', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'year', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this year on every track in the album">↓</button></span>
+          <span class="head-field c-genre"><input value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'genre', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'genre', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'genre', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this genre on every track in the album">↓</button></span>
+          <span class="head-field c-composer"><input value={group.composer} placeholder="Composer" title="This album's composer, for all its tracks (Enter or ↓ fills them)" onchange={(event) => editAlbum(group, 'composer', (event.target as HTMLInputElement).value)} onkeydown={(event) => { if (event.key === 'Enter') { const input = event.target as HTMLInputElement; input.blur(); editAlbum(group, 'composer', input.value) } }} /><button class="fill-down" onclick={(event) => editAlbum(group, 'composer', ((event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement).value)} title="Put this composer on every track in the album">↓</button></span>
         </div>
         {#each group.indexes as index, position (index + ':' + changes[index].frame)}
           {@const change = changes[index]}
@@ -455,6 +469,8 @@
             <input class="year" value={change.year ?? ''} placeholder={group.year || 'Year'} title={group.year && !change.year ? `The album's year (${group.year}) goes on this track too` : 'Year'} onchange={(event) => sendToShell({ type: 'editChange', index, year: (event.target as HTMLInputElement).value.trim() })} />
             <span class="track-no" title="Track number: counts up within the album">{trackNumber(group, index) || '–'}</span>
             <input value={change.title} placeholder={change.manual ? 'Title (marked by hand)' : 'Title'} onchange={(event) => sendToShell({ type: 'editChange', index, title: (event.target as HTMLInputElement).value.trim() })} />
+            <input value={change.genre ?? ''} placeholder={group.genre || 'Genre'} onchange={(event) => sendToShell({ type: 'editChanges', indexes: [index], genre: (event.target as HTMLInputElement).value.trim() })} />
+            <span></span>
             <span class="joins">
               {#if position === 0 && above}<button onclick={() => joining = { index, target: above }} title={`Move into the album above: ${albumLine(above)}`}>⤒</button>{/if}
               {#if position === group.indexes.length - 1 && below}<button onclick={() => joining = { index, target: below }} title={`Move into the album below: ${albumLine(below)}`}>⤓</button>{/if}
@@ -517,16 +533,21 @@
   .now, .source { margin: 0; }
   .estimate { border-bottom: 1px dotted var(--fg-quiet); cursor: help; }
   .live-wave { display: block; width: 100%; height: 110px; border-radius: 8px; background: var(--panel); outline: none; cursor: grab; touch-action: none; }
-  .catch-up { flex: none; }
+  .catch-up { flex: none; padding-top: 2px; padding-bottom: 2px; } /* the head keeps its height, so the wave never jumps when Catch up appears */
   .live-strip { display: block; width: 100%; height: 26px; border-radius: 6px; background: var(--panel); margin-bottom: 4px; cursor: pointer; touch-action: none; }
   .now-table { border-collapse: collapse; font-size: 13px; margin: 2px 0 6px; }
   .now-table th { text-align: left; font-weight: 500; color: var(--fg-quiet); padding: 2px 16px 2px 0; white-space: nowrap; vertical-align: top; }
   .now-table td { padding: 2px 0; }
   .now-table td.none { color: var(--fg-quiet); font-style: italic; }
-  .live-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 4px; font-size: 12px; }
+  .live-head { height: 32px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 4px; font-size: 12px; }
   .changes { display: flex; flex-direction: column; gap: 3px; }
   /* Rows and album headers share these columns, so an album's artist, album and year sit right above its tracks' */
-  .change, .album-head { display: grid; grid-template-columns: 14px 30px 64px minmax(80px, 1fr) minmax(80px, 1fr) 56px 24px minmax(110px, 1.5fr) 30px 64px 26px; gap: 5px; align-items: center; }
+  .change, .album-head { display: grid; grid-template-columns: 14px 30px 64px minmax(80px, 1fr) minmax(80px, 1fr) 60px 24px minmax(110px, 1.4fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) 30px 70px 26px; gap: 5px; align-items: center; }
+  .album-head .c-artist { grid-column: 4; } .album-head .c-album { grid-column: 5; } .album-head .c-year { grid-column: 6; } .album-head .c-genre { grid-column: 9; } .album-head .c-composer { grid-column: 10; }
+  .head-field { position: relative; display: flex; align-items: center; min-width: 0; }
+  .head-field input { flex: 1; min-width: 0; padding-right: 22px !important; font-weight: 600; }
+  .fill-down { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--fg-quiet); cursor: pointer; font-size: 11px; opacity: 0.6; }
+  .fill-down:hover { opacity: 1; background: var(--accent); color: var(--on-accent); }
   .change { min-height: 26px; padding: 0 1px; }
   .head-name { grid-column: 1 / 4; display: flex; align-items: center; gap: 6px; }
   .album-head { align-items: center; margin-top: 8px; padding: 3px 0; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }

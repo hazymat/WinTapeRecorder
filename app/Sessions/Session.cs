@@ -18,6 +18,9 @@ public class NameChange
     public string Source { get; set; } = "";
     public bool Manual { get; set; } // M pressed while recording
     public string Note { get; set; } = ""; // the user's own note about this take, shown in the app only
+    public string Genre { get; set; } = "";
+    public string Composer { get; set; } = "";
+    public bool Confirmed { get; set; } // the cut was confirmed while recording (double-click on its flag)
     public string Problem { get; set; } = ""; // "dropout", "clipping" or "retake": this take is damaged or unwanted; a later take with the same name replaces it
 }
 

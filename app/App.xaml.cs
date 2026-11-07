@@ -246,13 +246,14 @@ public partial class App : Application
     }
 
     // Several markers at once (SPEC.md › Recording › Live editing): an album's artist, name or year, or a track joining an album
-    public void EditChanges(List<int> indexes, string? artist, string? album, string? year)
+    public void EditChanges(List<int> indexes, string? artist, string? album, string? year, string? genre = null, string? composer = null, bool? confirmed = null)
     {
         if (Recorder.Session is not { } session) return;
         foreach (var index in indexes.Where(index => index >= 0 && index < session.Changes.Count))
         {
             var change = session.Changes[index];
             if (artist != null) change.Artist = artist; if (album != null) change.Album = album; if (year != null) change.Year = year;
+            if (genre != null) change.Genre = genre; if (composer != null) change.Composer = composer; if (confirmed != null) change.Confirmed = confirmed.Value;
         }
         session.Save(); StatusChanged?.Invoke();
     }
@@ -489,7 +490,7 @@ public partial class App : Application
         channels = Recorder.Session?.Channels ?? 0,
         cutoffText = SpectralCutoff.Describe(Recorder.CurrentCutoffHz),
         sampleRate = Recorder.Session?.SampleRate ?? 0,
-        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Year, change.Manual, change.Problem, change.Note }) ?? Enumerable.Empty<object>(),
+        changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Year, change.Genre, change.Composer, change.Confirmed, change.Manual, change.Problem, change.Note }) ?? Enumerable.Empty<object>(),
         dropoutList = Recorder.Dropouts.Select(dropout => new { dropout.Frame, dropout.Ms }),
         otherSounds = Recorder.OtherSoundsSoFar,
         clips = Recorder.Clips.Select(clip => new { clip.Frame, clip.Samples }),
