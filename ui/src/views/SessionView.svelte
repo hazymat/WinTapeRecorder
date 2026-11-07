@@ -21,20 +21,21 @@
   let cursor = $state(0), currentId = $state(''), grab = $state<Grab>(null)
   let autoHeight = $state(readSetting('autoHeight', '1') !== '0')
   // Track list columns (SPEC.md › Editing): drag a header's right edge to resize; remembered. Title (index 8) takes the space left
-  const columnNames = ['select', 'hear', 'start', 'length', 'art', 'artist', 'album', 'year', 'title', 'genre', 'source', 'fades', 'status']
-  const defaultWidths = [48, 132, 66, 56, 30, 150, 160, 50, 0, 110, 44, 34, 72]
+  const columnNames = ['select', 'hear', 'start', 'length', 'art', 'artist', 'album', 'year', 'number', 'title', 'genre', 'source', 'fades', 'status']
+  const titleColumn = 9
+  const defaultWidths = [48, 132, 66, 56, 30, 150, 160, 50, 36, 0, 110, 44, 34, 72]
   let columnWidths = $state<number[]>((() => { try { const saved = JSON.parse(readSetting('columnWidths', '[]')); return Array.isArray(saved) && saved.length === defaultWidths.length ? saved : defaultWidths.slice() } catch { return defaultWidths.slice() } })())
-  const gridColumns = $derived(columnWidths.map((width, index) => index === 8 ? 'minmax(120px, 1fr)' : `${width}px`).join(' '))
+  const gridColumns = $derived(columnWidths.map((width, index) => index === titleColumn ? 'minmax(120px, 1fr)' : `${width}px`).join(' '))
   let resizing: null | { index: number; x: number; width: number } = null
   function resizeDown(index: number, event: PointerEvent) { event.preventDefault(); event.stopPropagation(); resizing = { index, x: event.clientX, width: columnWidths[index] }; (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId) }
   function resizeMove(event: PointerEvent) { if (!resizing) return; const next = columnWidths.slice(); next[resizing.index] = Math.round(Math.max(24, Math.min(600, resizing.width + event.clientX - resizing.x))); columnWidths = next }
   function resizeUp() { if (!resizing) return; resizing = null; writeSetting('columnWidths', JSON.stringify(columnWidths)) }
   function resetColumns() { columnWidths = defaultWidths.slice(); writeSetting('columnWidths', JSON.stringify(columnWidths)) }
   // The splitter between the wave and the track list (SPEC.md › Editing): drag it; the height is remembered
-  let waveHeight = $state(Math.max(140, Number(readSetting('waveHeight', '240')) || 240))
+  let waveHeight = $state(Math.max(200, Number(readSetting('waveHeight', '240')) || 240))
   let splitting: null | { y: number; height: number } = null
   function splitDown(event: PointerEvent) { splitting = { y: event.clientY, height: waveHeight }; (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId) }
-  function splitMove(event: PointerEvent) { if (!splitting) return; waveHeight = Math.round(Math.max(140, Math.min(window.innerHeight - 260, splitting.height + event.clientY - splitting.y))) }
+  function splitMove(event: PointerEvent) { if (!splitting) return; waveHeight = Math.round(Math.max(200, Math.min(window.innerHeight - 260, splitting.height + event.clientY - splitting.y))) }
   function splitUp() { if (!splitting) return; splitting = null; writeSetting('waveHeight', String(waveHeight)) }
   // ---- The steps (SPEC.md › Workflow): what's left to do, and the next thing to do about it ----
   type Edge = { trackId: string; edge: 'start' | 'end' }
@@ -222,6 +223,29 @@
     clearSelection(); currentId = first.id
   }
   function setSkip(track: Track, skip: boolean) { const next = copy(); const edited = next.find(candidate => candidate.id === track.id)!; edited.skip = skip; commit(next, skip ? `Track ${tracks.indexOf(track) + 1} left out of the export` : `Track ${tracks.indexOf(track) + 1} back in`) }
+  // Captured names (SPEC.md › Tags › Revert): what the player said when the track started, kept with the session
+  function capturedFor(track: Track) {
+    const changes = session?.changes ?? [], from = (track.detectedStart != null && track.detectedStart >= 0 ? track.detectedStart : track.start)
+    let best: (typeof changes)[number] | null = null, bestDistance = Infinity
+    for (const change of changes) { if (change.frame > track.end) continue; const distance = Math.abs(change.frame - from); if (distance < bestDistance) { bestDistance = distance; best = change } }
+    return best && bestDistance < rate * 30 ? best : null
+  }
+  let reverting = $state<null | { keys: string[]; artist: boolean; title: boolean; album: boolean }>(null)
+  function revertCaptured() {
+    const job = reverting; reverting = null; if (!job) return
+    const next = copy(); let count = 0
+    for (const track of next) if (job.keys.includes(track.id)) {
+      const captured = capturedFor(track); if (!captured) continue
+      if (job.artist) track.artist = captured.artist; if (job.title) track.title = captured.title; if (job.album) track.album = captured.album ?? ''
+      track.exported = false; count++
+    }
+    commit(next, `${count} track${count === 1 ? '' : 's'} back to the captured names`)
+  }
+  function setTrackNumber(track: Track, text: string) {
+    const number = Math.max(0, Math.round(Number(text.trim()) || 0)), next = copy(), edited = next.find(candidate => candidate.id === track.id)!
+    edited.trackNumber = number; edited.exported = false
+    commit(next, `Track ${tracks.indexOf(track) + 1} is number ${number || 'by position'}`)
+  }
   function editField(track: Track, field: 'artist' | 'title' | 'album' | 'year' | 'genre', value: string) {
     if ((track[field] ?? '') === value) return
     const next = copy(); const edited = next.find(candidate => candidate.id === track.id)!; edited[field] = value; edited.exported = edited.exported && false
@@ -582,6 +606,17 @@
       if (missing.length || unconfirmed) { exportCheck = { keys: chosen.map(track => track.id), missing: missing.join(', '), unconfirmed }; return }
     }
     // Tracks without a number get their place in their album (SPEC.md › Export)
+    // A blank album artist becomes the album's main artist: the one most of its tracks have (SPEC.md › Export)
+    if (tracks.some(track => !track.skip && !track.albumArtist)) {
+      const next = copy()
+      for (const group of listAlbums) {
+        const members = next.filter(track => group.ids.includes(track.id) && !track.skip); if (!members.some(track => !track.albumArtist)) continue
+        const counts = new Map<string, number>(); for (const track of members) if (track.artist) counts.set(track.artist, (counts.get(track.artist) ?? 0) + 1)
+        const main = Array.from(counts.entries()).sort((first, second) => second[1] - first[1] || first[0].length - second[0].length)[0]?.[0] ?? ''
+        if (main) for (const track of members) if (!track.albumArtist) track.albumArtist = main
+      }
+      commit(next, 'Album artists filled in from each album\u2019s main artist')
+    }
     // An album whose numbers are missing or repeat is numbered by position; one with a full, unique set keeps it
     const renumber = listAlbums.filter(group => { const numbers = tracks.filter(track => group.ids.includes(track.id) && !track.skip).map(track => track.trackNumber || 0); return numbers.some(number => !number) || new Set(numbers).size !== numbers.length })
     if (renumber.length) {
@@ -674,6 +709,7 @@
     { label: 'Look up…', key: 'L', run: keys => openLookup(keys) },
     { label: 'Fades…', key: 'F', run: keys => { const first = tracks.find(track => keys.includes(track.id)); dialog = { kind: 'fades', keys, fadeIn: String(first?.fadeInMs ?? 0), fadeOut: String(first?.fadeOutMs ?? 0) } } },
     { label: 'Merge', run: keys => mergeTracks(keys) },
+    { label: 'Captured names…', run: keys => reverting = { keys, artist: true, title: true, album: true } },
     { label: 'Remove', key: 'Delete', danger: true, run: keys => deleteTracks(keys) },
   ]
   const exportedCount = $derived(tracks.filter(track => track.exported).length)
@@ -895,7 +931,7 @@
     </div>
   {/if}
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }} style:--columns={gridColumns}>
-    <div class="row head" ondblclick={resetColumns} title="Drag a column's right edge to resize it; double-click here to reset"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /><i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(0, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Hear · ✓<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(1, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Start<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(2, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Length<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(3, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell"><i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(4, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Artist<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(5, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Album<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(6, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Year<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(7, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Title</span><span class="head-cell">Genre<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(9, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Source<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(10, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Fades<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(11, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell"></span></div>
+    <div class="row head" ondblclick={resetColumns} title="Drag a column's right edge to resize it; double-click here to reset"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /><i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(0, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Hear · ✓<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(1, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Start<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(2, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Length<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(3, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell"><i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(4, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Artist<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(5, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Album<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(6, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Year<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(7, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">No.<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(8, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Title</span><span class="head-cell">Genre<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(10, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Source<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(11, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Fades<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(12, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell"></span></div>
     {#each tracks as track, index (track.id)}
       {@const cutoff = medianCutoff(session.quality ?? [], track.start, track.end)}
       {@const group = albumOf(track.id)}
@@ -906,7 +942,7 @@
         {#if lifted && groupIndex > 0 && !isOpen && listAlbums[groupIndex - 1] === openGroup}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
         {#if isOpen}
           <div class="album-row open row-grid" class:lifted={liftedAlbum === group.first} role="group" aria-label={albumName(group)} data-drop={'album:' + group.first} class:over={dropOn === 'album:' + group.first} onpointerdown={(event) => liftAlbumDown(group, event)} title="Press and hold here to pick up the whole album, then drop it on the album above or below to merge them">
-            <span class="album-label">⋮⋮ Album {groupIndex + 1}<span class="quiet album-count">{group.ids.length} track{group.ids.length === 1 ? '' : 's'} · {confirmed} confirmed</span></span>
+            <span class="album-label" title={`Album ${groupIndex + 1}: press and hold here to pick up the whole album`}>⋮⋮ <span class="album-name">{group.album || 'No album'}</span><span class="quiet album-count">{group.ids.length} · {confirmed} ✓</span><button class="ghost small-button" onclick={(event) => { event.stopPropagation(); selectKeys(scope, group.ids.slice(), actions, 'track') }} title="Tick every track in this album">Select all</button></span>
             <input class="cell-artist" value={group.artist} placeholder="Artist" title="Artist and album artist for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'artist', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'artist', value) } }} />
             <input class="cell-album" value={group.album} placeholder="Album" title="This album's name, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'album', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'album', value) } }} />
             <input class="cell-year album-year" value={group.year} placeholder="Year" title="This album's year, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'year', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'year', value) } }} />
@@ -932,6 +968,7 @@
         <input class="no-hold" value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.album} placeholder="Album" onchange={(event) => editField(track, 'album', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.year ?? ''} placeholder="Year" onchange={(event) => editField(track, 'year', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
+        <input class="no-hold track-number" value={track.trackNumber || (group ? group.ids.indexOf(track.id) + 1 : '')} title="Track number: its place in the album unless you type another" onchange={(event) => setTrackNumber(track, (event.target as HTMLInputElement).value)} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.title} placeholder="Title" onchange={(event) => editField(track, 'title', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <input class="no-hold" value={track.genre ?? ''} placeholder="Genre" onchange={(event) => editField(track, 'genre', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
         <span class="source-cell" title={cutoff ? `Spectrum stops at ${(cutoff / 1000).toFixed(1)} kHz: ${describeCutoff(cutoff)}` : 'Too little sound to tell'}>{shortCutoff(cutoff)}</span>
@@ -976,6 +1013,16 @@
     <label>Album<input value={split.name} oninput={(event) => { if (splitting2) splitting2.name = (event.target as HTMLInputElement).value }} /></label>
   </Dialog>
 {/if}
+{#if reverting}
+  {@const job = reverting}
+  {@const preview = tracks.filter(track => job.keys.includes(track.id)).slice(0, 4).map(track => { const captured = capturedFor(track); return captured ? `${captured.artist || '?'} — ${captured.album || 'no album'} — ${captured.title || '?'}` : `${track.title || 'Track'}: nothing captured` })}
+  <Dialog title="Back to the captured names" wide text={`Put ${job.keys.length === 1 ? 'this track' : `these ${job.keys.length} tracks`} back to what the player said while recording. Choose which tags:`} confirmLabel="Revert" onconfirm={revertCaptured} oncancel={() => reverting = null}>
+    <label class="check"><input type="checkbox" checked={job.artist} onchange={(event) => { if (reverting) reverting.artist = (event.target as HTMLInputElement).checked }} /> Artist</label>
+    <label class="check"><input type="checkbox" checked={job.album} onchange={(event) => { if (reverting) reverting.album = (event.target as HTMLInputElement).checked }} /> Album</label>
+    <label class="check"><input type="checkbox" checked={job.title} onchange={(event) => { if (reverting) reverting.title = (event.target as HTMLInputElement).checked }} /> Title</label>
+    <p class="quiet captured-preview">{preview.join(' · ')}{job.keys.length > 4 ? ' …' : ''}</p>
+  </Dialog>
+{/if}
 {#if exportCheck}
   {@const check = exportCheck}
   <Dialog title={check.missing ? 'Some tags are empty' : 'Some cuts aren’t confirmed'} text={[check.missing ? `${check.keys.length === 1 ? 'This track has' : 'Some of these tracks have'} no ${check.missing}. Players and libraries sort by these, so it's worth filling them in first.` : '', check.unconfirmed ? `${check.unconfirmed} start${check.unconfirmed === 1 ? '' : 's'} or end${check.unconfirmed === 1 ? '' : 's'} haven't been confirmed with ✓ yet. That may be fine.` : ''].filter(Boolean).join(' ')}
@@ -1008,7 +1055,7 @@
   .spacer { flex: 1; }
   .export { display: inline-flex; align-items: center; gap: 6px; }
   .export-status { color: var(--fg-quiet); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wave-host { flex: none; min-height: 140px; position: relative; }
+  .wave-host { flex: none; min-height: 200px; position: relative; overflow: hidden; }
   .splitter { flex: none; height: 9px; margin: -4px 0; cursor: row-resize; display: grid; place-items: center; touch-action: none; }
   .splitter span { width: 48px; height: 4px; border-radius: 2px; background: var(--line); }
   .splitter:hover span { background: var(--accent); }
@@ -1118,8 +1165,10 @@
   /* The open album's header uses the track rows' columns, so its fields sit right above the tracks' own */
   .album-row.row-grid { display: grid; grid-template-columns: var(--columns); gap: 8px; padding: 3px 8px; }
   .row-grid .album-label .album-count { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .row-grid .album-name { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .row-grid .album-label { grid-column: 1 / 6; display: flex; gap: 10px; align-items: baseline; white-space: nowrap; overflow: hidden; }
-  .row-grid .cell-artist { grid-column: 6; } .row-grid .cell-album { grid-column: 7; } .row-grid .cell-year { grid-column: 8; } .row-grid .cell-genre { grid-column: 10; } .row-grid .cell-fill { grid-column: 9; justify-self: start; margin-left: 0; }
+  .row-grid .cell-artist { grid-column: 6; } .row-grid .cell-album { grid-column: 7; } .row-grid .cell-year { grid-column: 8; } .row-grid .cell-genre { grid-column: 11; } .row-grid .cell-fill { grid-column: 10; justify-self: start; margin-left: 0; }
+  .track-number { text-align: center; padding-left: 2px !important; padding-right: 2px !important; }
   .album-row.lifted { opacity: 0.85; box-shadow: 0 8px 22px var(--shadow); cursor: grabbing; }
   .split-zone { margin: 6px 0; padding: 10px; border: 2px dashed var(--line); border-radius: 8px; text-align: center; font-size: 12.5px; color: var(--fg-quiet); }
   .split-zone.over { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
@@ -1135,6 +1184,8 @@
   .plan-size { font-family: var(--font-display); font-size: 12.5px; text-align: right; }
   .plan-total td { border-top: 1px solid var(--line); padding-top: 4px; }
   .export-size { font-family: var(--font-display); font-size: 13px; color: var(--fg-quiet); white-space: nowrap; }
+  .check { flex-direction: row !important; align-items: center; gap: 8px; font-size: 13px; color: var(--fg) !important; }
+  .captured-preview { font-size: 12px; margin: 0; }
   .album-row { display: grid; grid-template-columns: 70px minmax(100px, 1fr) minmax(100px, 1fr) 64px minmax(80px, 0.7fr) minmax(220px, auto); gap: 8px; align-items: center; margin-top: 6px; padding: 2px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
   .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .album-year { text-align: center; }
