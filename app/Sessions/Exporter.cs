@@ -241,6 +241,8 @@ public static class Exporter
         var genre = track.Genre != "" ? track.Genre : Expand(profile.Genre); if (genre != "") tag.Genres = new[] { genre };
         var comment = track.Comment != "" ? track.Comment : Expand(profile.Comment); if (comment != "") tag.Comment = comment;
         if (track.Composer != "") tag.Composers = new[] { track.Composer };
+        // Disc number, with the album's disc count worked out from its tracks (SPEC.md › Export)
+        if (track.DiscNumber > 0) { tag.Disc = (uint)track.DiscNumber; var discs = session.Tracks.Where(other => !other.Skip && other.Album == track.Album && other.AlbumArtist == track.AlbumArtist).Select(other => other.DiscNumber).DefaultIfEmpty(0).Max(); if (discs > 0) tag.DiscCount = (uint)discs; }
         tag.Track = (uint)(track.TrackNumber > 0 ? track.TrackNumber : number); tag.TrackCount = (uint)(track.TrackCount > 0 ? track.TrackCount : count);
         if (uint.TryParse(track.Year, out var year) && year > 0) tag.Year = year; // a blank year stays blank (the recording date isn't the album's year)
         if (profile.EmbedCover && track.ArtPath != "" && File.Exists(track.ArtPath)) tag.Pictures = new TagLib.IPicture[] { new TagLib.Picture(track.ArtPath) { Type = TagLib.PictureType.FrontCover, Description = "Cover" } };

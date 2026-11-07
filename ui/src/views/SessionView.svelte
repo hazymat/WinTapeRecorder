@@ -243,13 +243,18 @@
     }
     commit(next, `${count} track${count === 1 ? '' : 's'} back to the captured names`)
   }
+  function editNumberField(track: Track, field: 'discNumber', text: string) { const next = copy(), edited = next.find(candidate => candidate.id === track.id)! as any; edited[field] = Math.max(0, Math.round(Number(text.trim()) || 0)); edited.exported = false; commit(next, `Track ${tracks.indexOf(track) + 1}: disc ${edited[field] || 'cleared'}`) }
+  // While exporting, the file being written is highlighted in the report and kept in view
+  let exportingFile = $state('')
+  onShellMessage('exportProgress', message => { if (message.id !== sessionId) return; exportingFile = message.current ?? ''; if (step === 'export') { const id = Object.keys(exportPaths).find(key => fileOf(exportPaths[key]?.path) === exportingFile); if (id) document.querySelector(`[data-report-row="${id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }) } })
+  onShellMessage('exportDone', message => { if (message.id === sessionId) exportingFile = '' })
   function editComment(track: Track, value: string) { const next = copy(), edited = next.find(candidate => candidate.id === track.id)!; edited.comment = value; edited.exported = false; commit(next, `Track ${tracks.indexOf(track) + 1}: comment changed`) }
   function setTrackNumber(track: Track, text: string) {
     const number = Math.max(0, Math.round(Number(text.trim()) || 0)), next = copy(), edited = next.find(candidate => candidate.id === track.id)!
     edited.trackNumber = number; edited.exported = false
     commit(next, `Track ${tracks.indexOf(track) + 1} is number ${number || 'by position'}`)
   }
-  function editField(track: Track, field: 'artist' | 'title' | 'album' | 'year' | 'genre' | 'albumArtist', value: string) {
+  function editField(track: Track, field: 'artist' | 'title' | 'album' | 'year' | 'genre' | 'albumArtist' | 'composer', value: string) {
     if ((track[field] ?? '') === value) return
     const next = copy(); const edited = next.find(candidate => candidate.id === track.id)!; edited[field] = value; edited.exported = edited.exported && false
     commit(next, `Track ${tracks.indexOf(track) + 1}: ${field} changed`)
@@ -363,7 +368,7 @@
     else for (const track of next) if (join.target.ids.includes(track.id)) { track.albumArtist = mover.albumArtist; track.album = mover.album; track.year = mover.year || track.year; track.genre = mover.genre || track.genre; track.exported = false }
     commit(next, movers.length > 1 ? 'Albums merged' : 'Track moved into the album')
   }
-  const albumName = (group: { artist: string; album: string; year?: string }) => `${group.artist || 'Unknown artist'} — ${group.album || 'no album'}${group.year ? ` (${group.year})` : ''}`
+  const albumName = (group: { artist: string; album: string; year?: string }) => `${group.artist || 'Unknown artist'} - ${group.album || 'no album'}${group.year ? ` (${group.year})` : ''}`
 
   // ---- Tags cards ----
   const plainTitle = (title: string) => squash((title ?? '').replace(/\s*[\(\[][^\)\]]*[\)\]]/g, ''))
@@ -860,7 +865,7 @@
         <section class="tag-card">
           <header class="tag-head">
             <div class="tag-title">
-              <h4>{group.album || 'No album'}<span class="quiet">{' — '}{group.artist || 'unknown artist'}</span></h4>
+              <h4>{group.album || 'No album'}<span class="quiet">{' - '}{group.artist || 'unknown artist'}</span></h4>
               <p class="quiet">Album {groupIndex + 1} · your tracks {tracks.indexOf(list[0]) + 1}–{tracks.indexOf(list[list.length - 1]) + 1} ({list.length}){#if match}{' · '}matched on {match.source}{match.trackTitles.length ? `: ${found} of its ${match.trackTitles.length} tracks are here` : ''}{:else if session.albumLooked}{' · '}not found online{/if}</p>
             </div>
             <div class="tag-actions">
@@ -890,7 +895,7 @@
                       <div class="with-same"><input value={row.mine ?? ''} placeholder={row.mine === null ? 'differs between tracks' : row.label} onchange={(event) => setGroupField(group, row.field, (event.target as HTMLInputElement).value.trim())} />
                       {#if row.field === 'albumArtist'}<label class="same"><input type="checkbox" checked={list.every(track => (track.albumArtist || '') === (track.artist || ''))} onchange={(event) => { if ((event.target as HTMLInputElement).checked) sameAlbumArtist(group) }} />same as artist</label>{/if}</div>
                     </td>
-                    <td class="theirs">{#if row.theirs}<button class:same={row.same} onclick={() => setGroupField(group, row.field, row.theirs)} title={row.same ? 'Yours already matches' : `Use “${row.theirs}”`}>{row.same ? '✓ ' : '← '}{row.theirs}</button>{:else}<span class="quiet">—</span>{/if}</td>
+                    <td class="theirs">{#if row.theirs}<button class:same={row.same} onclick={() => setGroupField(group, row.field, row.theirs)} title={row.same ? 'Yours already matches' : `Use “${row.theirs}”`}>{row.same ? '✓ ' : '← '}{row.theirs}</button>{:else}<span class="quiet">-</span>{/if}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -930,7 +935,7 @@
         <section class="report-card">
           <header class="report-head">
             <input type="checkbox" class="tick" checked={allTicked} indeterminate={!allTicked && group.ids.some(id => selectedIds.includes(id))} onchange={() => { const next = allTicked ? selectedIds.filter(id => !group.ids.includes(id)) : Array.from(new Set(selectedIds.concat(group.ids))); if (next.length) selectKeys(scope, tracks.filter(track => next.includes(track.id)).map(track => track.id), actions, 'track'); else clearSelection() }} title="Tick every track in this album" aria-label="Select this album's tracks" />
-            <span class="report-title"><strong>{group.album || 'No album'}</strong><span class="quiet">{' — '}{group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}{group.genre ? ` · ${group.genre}` : ''}</span></span>
+            <span class="report-title"><strong>{group.album || 'No album'}</strong><span class="quiet">{' - '}{group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}{group.genre ? ` · ${group.genre}` : ''}</span></span>
             <select class="report-profile" value={own ? own : '__session'} onchange={(event) => setAlbumProfile(group, (event.target as HTMLSelectElement).value)} title="This album's output profile">
               <option value="__session">{app.outputProfiles.find(profile => profile.id === outputProfileId)?.name ?? 'Default'} (session)</option>
               {#each app.outputProfiles as profile (profile.id)}<option value={profile.id}>{profile.name}</option>{/each}
@@ -941,18 +946,20 @@
           </header>
           <p class="report-folder quiet" title="The folder inside the output profile's folder">📁 {folders.length ? folders.join('  ·  ') || '(the output folder itself)' : '…'}</p>
           <table class="tag-table report">
-            <thead><tr><th class="c-tick"></th><th class="c-no" title="Track number / tracks in the album, as written">No.</th><th>Artist</th><th>Title</th><th>Album artist</th><th>Album</th><th class="c-year">Year</th><th>Genre</th><th>Comment</th><th class="c-art">Cover</th><th class="c-file">File</th><th class="c-status"></th></tr></thead>
+            <thead><tr><th class="c-tick"></th><th class="c-no" title="Track number / tracks in the album, as written">No.</th><th>Album artist</th><th>Artist (per track)</th><th>Title</th><th>Album</th><th class="c-year">Year</th><th>Genre</th><th class="c-disc" title="Disc number (blank: not written)">Disc</th><th>Composer</th><th>Comment</th><th class="c-art">Cover</th><th class="c-file">File</th><th class="c-status"></th></tr></thead>
             <tbody>
               {#each list as track, position (track.id)}
-                <tr class:skipped-row={track.skip}>
+                <tr class:skipped-row={track.skip} class:exporting-now={exportingFile !== '' && fileOf(exportPaths[track.id]?.path) === exportingFile} data-report-row={track.id}>
                   <td class="c-tick"><input type="checkbox" class="tick" checked={selectedIds.includes(track.id)} onchange={() => toggleOne(track.id)} aria-label="Select track" /></td>
                   <td class="c-no"><span class="no-pair"><input class="track-number" value={exportPaths[track.id]?.number || track.trackNumber || position + 1} onchange={(event) => setTrackNumber(track, (event.target as HTMLInputElement).value)} title="Track number written to the file: its place in the album unless you type another" /><span class="quiet">/{exportPaths[track.id]?.count || list.length}</span></span></td>
+                  <td><input value={track.albumArtist ?? ''} placeholder={`(${list.map(member => member.artist).filter(Boolean)[0] ?? 'artist'})`} title="Blank: the album's main artist is written" onchange={(event) => editField(track, 'albumArtist', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td><input value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td><input value={track.title} placeholder="Title" onchange={(event) => editField(track, 'title', (event.target as HTMLInputElement).value.trim())} /></td>
-                  <td><input value={track.albumArtist ?? ''} placeholder={`(${list.map(member => member.artist).filter(Boolean)[0] ?? 'artist'})`} title="Blank: the album's main artist is written" onchange={(event) => editField(track, 'albumArtist', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td><input value={track.album} placeholder="Album" onchange={(event) => editField(track, 'album', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td class="c-year"><input value={track.year ?? ''} placeholder="Year" onchange={(event) => editField(track, 'year', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td><input value={track.genre ?? ''} placeholder="Genre" onchange={(event) => editField(track, 'genre', (event.target as HTMLInputElement).value.trim())} /></td>
+                  <td class="c-disc"><input value={track.discNumber || ''} placeholder="-" onchange={(event) => editNumberField(track, 'discNumber', (event.target as HTMLInputElement).value)} /></td>
+                  <td><input value={track.composer ?? ''} placeholder="Composer" onchange={(event) => editField(track, 'composer', (event.target as HTMLInputElement).value.trim())} /></td>
                   <td><input value={track.comment ?? ''} placeholder={exportPaths[track.id]?.comment || 'Comment'} title={exportPaths[track.id]?.comment && !track.comment ? `Blank: the output profile's comment (“${exportPaths[track.id]?.comment}”) is written` : 'Comment'} onchange={(event) => editComment(track, (event.target as HTMLInputElement).value.trim())} /></td>
                   <td class="c-art">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="Cover" />{:else}<span class="quiet">none</span>{/if}</td>
                   <td class="c-file quiet" title={exportPaths[track.id]?.path}>{fileOf(exportPaths[track.id]?.path)}</td>
@@ -972,27 +979,21 @@
       {@const group = albumOf(track.id)}
       {#if group && group.first === track.id}
         {@const groupIndex = listAlbums.indexOf(group)}
-        {@const isOpen = openGroup === group}
+        {@const isOpen = true}
+        {@const allTicked = group.ids.every(id => selectedIds.includes(id))}
         {@const confirmed = group.ids.filter(id => { const member = tracks.find(candidate => candidate.id === id); return member?.startChecked && member?.endChecked }).length}
-        {#if lifted && groupIndex > 0 && !isOpen && listAlbums[groupIndex - 1] === openGroup}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
         {#if isOpen}
           <div class="album-row open row-grid" class:lifted={liftedAlbum === group.first} role="group" aria-label={albumName(group)} data-drop={'album:' + group.first} class:over={dropOn === 'album:' + group.first} onpointerdown={(event) => liftAlbumDown(group, event)} title="Press and hold here to pick up the whole album, then drop it on the album above or below to merge them">
-            <span class="album-label" title={`Album ${groupIndex + 1}: press and hold here to pick up the whole album`}>⋮⋮ <span class="album-name">{group.album || 'No album'}</span><span class="quiet album-count">{group.ids.length} · {confirmed} ✓</span><button class="ghost small-button" onclick={(event) => { event.stopPropagation(); selectKeys(scope, group.ids.slice(), actions, 'track') }} title="Tick every track in this album">Select all</button></span>
+            <span class="album-label" title="Press and hold here to pick up the whole album, then drop it on the album above or below to merge them"><input type="checkbox" class="tick no-hold" checked={allTicked} indeterminate={!allTicked && group.ids.some(id => selectedIds.includes(id))} onchange={() => { const next = allTicked ? selectedIds.filter(id => !group.ids.includes(id)) : Array.from(new Set(selectedIds.concat(group.ids))); if (next.length) selectKeys(scope, tracks.filter(track => next.includes(track.id)).map(track => track.id), actions, 'track'); else clearSelection() }} aria-label="Select this album's tracks" /><span class="album-name"><strong>{group.album || 'No album'}</strong> - {group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}</span><span class="quiet album-count">{group.ids.length} · {confirmed} ✓</span></span>
             <span class="head-field cell-artist"><input class="field" value={group.artist} placeholder="Artist" title="Artist and album artist for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'artist', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'artist', value) } }} /><button class="fill-down" onclick={(event) => { const input = (event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement; setAlbumField(group, 'artist', input.value.trim()) }} title="Put this artist (and album artist) on every track in the album (Enter does the same)">↓</button></span>
             <span class="head-field cell-album"><input class="field" value={group.album} placeholder="Album" title="This album's name, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'album', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'album', value) } }} /><button class="fill-down" onclick={(event) => { const input = (event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement; setAlbumField(group, 'album', input.value.trim()) }} title="Put this album on every track in the album (Enter does the same)">↓</button></span>
             <span class="head-field cell-year"><input class="album-year" value={group.year} placeholder="Year" title="This album's year, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'year', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'year', value) } }} /><button class="fill-down" onclick={(event) => { const input = (event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement; setAlbumField(group, 'year', input.value.trim()) }} title="Put this year on every track in the album (Enter does the same)">↓</button></span>
             <span class="head-field cell-genre"><input class="field" value={group.genre} placeholder="Genre" title="This album's genre, for all its tracks (Enter applies)" onchange={(event) => setAlbumField(group, 'genre', (event.target as HTMLInputElement).value.trim())} onkeydown={(event) => { if (event.key === 'Enter') { const value = (event.target as HTMLInputElement).value.trim(); (event.target as HTMLInputElement).blur(); setAlbumField(group, 'genre', value) } }} /><button class="fill-down" onclick={(event) => { const input = (event.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement; setAlbumField(group, 'genre', input.value.trim()) }} title="Put this genre on every track in the album (Enter does the same)">↓</button></span>
           </div>
-        {:else}
-          <button class="album-tile" data-drop={'album:' + group.first} class:over={dropOn === 'album:' + group.first} class:target={(!!lifted || !!liftedAlbum) && (listAlbums[groupIndex + 1] === openGroup || listAlbums[groupIndex - 1] === openGroup)} onclick={() => openTile(group)} title="Open this album">
-            <span class="tile-name"><strong>{group.album || 'No album'}</strong><span class="quiet">{' — '}{group.artist || 'unknown artist'}{group.year ? ` (${group.year})` : ''}</span></span>
-            <span class="tile-facts">{group.ids.length} track{group.ids.length === 1 ? '' : 's'}<span class:all={confirmed === group.ids.length}>{' · '}{confirmed === group.ids.length ? '✓ all confirmed' : `${confirmed} confirmed`}</span></span>
-            {#if (lifted || liftedAlbum) && (listAlbums[groupIndex + 1] === openGroup || listAlbums[groupIndex - 1] === openGroup)}<span class="tile-drop">{liftedAlbum ? 'Drop to merge' : 'Drop to join'}</span>{/if}
-            <span class="chevron">›</span>
-          </button>
+
         {/if}
       {/if}
-      {#if group && group === openGroup}
+      {#if group}
       <div class="row" class:lifting={lifting === track.id} class:lifted={lifted === track.id} onpointerdown={(event) => liftDown(track, event)} class:current={track.id === current?.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); toggleOne(track.id) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
         <span class="hear no-hold">
@@ -1009,7 +1010,7 @@
         <span class="fades" title={track.fadeInMs || track.fadeOutMs ? `Fade in ${track.fadeInMs} ms, fade out ${track.fadeOutMs} ms` : 'No fades'}><span class="fade-mark">{track.fadeInMs ? '◢' : ''}{track.fadeOutMs ? '◣' : ''}</span></span>
         <span class="status">{#if track.verifyError}<button class="failed no-hold" title={`${track.verifyError}. Export it again.`} onclick={(event) => { event.stopPropagation(); exportTracks([track.id], true) }}>Failed check</button>{:else if track.skip}<button class="skipped no-hold" title={`${track.skipReason}. Click to use this take after all.`} onclick={(event) => { event.stopPropagation(); setSkip(track, false) }}>Skipped</button>{:else if track.skipReason}<button class="damaged no-hold" title={`${track.skipReason}. Click to leave it out of the export.`} onclick={(event) => { event.stopPropagation(); setSkip(track, true) }}>Damaged?</button>{:else if track.exported}<button class="exported no-hold" title={`${track.exportedPath}${track.verified ? ' · read back and checked' : ''}`} onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: track.exportedPath }) }}>Exported</button>{/if}</span>
       </div>
-      {#if lifted && group.ids[group.ids.length - 1] === track.id}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
+      {#if lifted && group.ids.includes(lifted) && group.ids[group.ids.length - 1] === track.id}<div class="split-zone" data-drop="split" class:over={dropOn === 'split'}>Drop here to give it an album of its own</div>{/if}
       {/if}
     {:else}
       <div class="none quiet">No tracks found. Place the playhead and press N to add one, or use Redetect.</div>
@@ -1049,7 +1050,7 @@
 {/if}
 {#if reverting}
   {@const job = reverting}
-  {@const preview = tracks.filter(track => job.keys.includes(track.id)).slice(0, 4).map(track => { const captured = capturedFor(track); return captured ? `${captured.artist || '?'} — ${captured.album || 'no album'} — ${captured.title || '?'}` : `${track.title || 'Track'}: nothing captured` })}
+  {@const preview = tracks.filter(track => job.keys.includes(track.id)).slice(0, 4).map(track => { const captured = capturedFor(track); return captured ? `${captured.artist || '?'} - ${captured.album || 'no album'} - ${captured.title || '?'}` : `${track.title || 'Track'}: nothing captured` })}
   <Dialog title="Revert to captured tags" wide text={`Put ${job.keys.length === 1 ? 'this track' : `these ${job.keys.length} tracks`} back to what the player said while recording. Choose which tags:`} confirmLabel="Revert" onconfirm={revertCaptured} oncancel={() => reverting = null}>
     <label class="check"><input type="checkbox" checked={job.artist} onchange={(event) => { if (reverting) reverting.artist = (event.target as HTMLInputElement).checked }} /> Artist</label>
     <label class="check"><input type="checkbox" checked={job.album} onchange={(event) => { if (reverting) reverting.album = (event.target as HTMLInputElement).checked }} /> Album</label>
@@ -1110,7 +1111,7 @@
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
   .list { flex: 1 1 auto; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: var(--columns); gap: 8px; align-items: center; padding: 1px 8px; border-radius: 6px; cursor: default; font-size: 12.5px; }
+  .row { display: grid; grid-template-columns: var(--columns); gap: 8px; align-items: center; padding: 0 8px; border-radius: 4px; cursor: default; font-size: 12.5px; min-height: 26px; }
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
@@ -1148,7 +1149,7 @@
   .col-resize::after { content: ''; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 1px; background: var(--line); }
   .col-resize:hover::after { background: var(--accent); width: 2px; }
   .fade-mark { color: var(--accent); font-size: 13px; letter-spacing: 1px; }
-  .hear button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 21px; padding: 0 9px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  .hear button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 20px; padding: 0 9px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
   .hear .hear-start { border-radius: 7px 0 0 7px; } .hear .hear-end { border-radius: 0 7px 7px 0; border-left: 0; }
   .hear button:hover { background: var(--accent); color: var(--on-accent); }
   .hear button.checked { background: rgba(62, 207, 110, 0.18); color: #2e9e57; border-color: rgba(62, 207, 110, 0.5); }
@@ -1205,8 +1206,9 @@
   .chevron { color: var(--fg-quiet); font-size: 16px; }
   .album-row.open { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); cursor: grab; }
   /* The open album's header uses the track rows' columns, so its fields sit right above the tracks' own */
-  .album-row.row-grid { display: grid; grid-template-columns: var(--columns); gap: 8px; padding: 3px 8px; }
+  .album-row.row-grid { margin-top: 10px; display: grid; grid-template-columns: var(--columns); gap: 8px; padding: 3px 8px; }
   .row-grid .album-label .album-count { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .row-grid .album-label > .tick { margin: 0 4px 0 0; }
   .row-grid .album-name { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .row-grid .album-label { grid-column: 1 / 4; display: flex; gap: 10px; align-items: baseline; white-space: nowrap; overflow: hidden; }
   .row-grid .cell-artist { grid-column: 4; } .row-grid .cell-album { grid-column: 5; } .row-grid .cell-year { grid-column: 6; } .row-grid .cell-genre { grid-column: 9; }
@@ -1225,20 +1227,22 @@
   .export-page { gap: 10px; }
   .export-total { margin: 0; font-size: 13px; color: var(--fg-quiet); }
   .export-total strong { color: var(--fg); }
-  .report-card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 6px 10px 8px; }
-  .report-head { display: flex; align-items: center; gap: 10px; padding: 2px 0 6px; }
+  .report-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 4px 8px 6px; }
+  .report-head { display: flex; align-items: center; gap: 10px; padding: 0 0 2px; font-size: 12.5px; }
   .report-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
   .report-profile { width: auto; max-width: 200px; padding: 2px 6px; font-size: 12.5px; }
-  .tag-table.report { font-size: 12.5px; }
-  .tag-table.report th { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; padding: 2px 6px 2px 0; }
-  .tag-table.report td { padding: 1px 6px 1px 0; }
-  .tag-table.report td input:not(.tick) { width: 100%; box-sizing: border-box; padding: 1px 6px; background: transparent; border-color: transparent; font-size: 12.5px; }
+  .tag-table.report { font-size: 11.5px; }
+  .tag-table.report th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; padding: 1px 4px 1px 0; }
+  .tag-table.report td { padding: 0 4px 0 0; line-height: 1.2; }
+  .tag-table.report td input:not(.tick) { width: 100%; box-sizing: border-box; padding: 0 4px; height: 19px; background: transparent; border-color: transparent; font-size: 11.5px; }
+  .tag-table.report tr.exporting-now td { background: var(--accent-soft); }
+  .report .c-disc { width: 40px; }
   .tag-table.report td input:not(.tick):hover { border-color: var(--line); } .tag-table.report td input:not(.tick):focus { background: var(--panel-solid); }
   .report-folder { margin: -4px 0 4px 30px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .no-pair { display: flex; align-items: baseline; gap: 1px; } .no-pair input { width: 30px !important; text-align: right; }
-  .report .c-file { width: 22%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+  .report .c-file { width: 17%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
   .report .c-tick { width: 24px; } .report .c-no { width: 58px; } .report .c-year { width: 54px; } .report .c-art { width: 44px; } .report .c-status { width: 92px; }
-  .report .c-art img { width: 26px; height: 26px; object-fit: cover; border-radius: 3px; display: block; }
+  .report .c-art img { width: 18px; height: 18px; object-fit: cover; border-radius: 3px; display: block; }
   .skipped-row { opacity: 0.5; }
   .export-plan { flex: none; max-height: 36%; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 6px 12px; }
   .export-table th:first-child { width: auto; }

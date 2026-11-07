@@ -256,7 +256,7 @@
     if (mode === 'theirs') sendToShell({ type: 'editChanges', indexes: [join.index], artist: join.target.artist, album: join.target.album, year: join.target.year })
     else sendToShell({ type: 'editChanges', indexes: join.target.indexes, artist: change.artist, album: change.album, year: change.year ?? '' })
   }
-  const albumLine = (group: { artist: string; album: string; year?: string }) => [group.artist || 'Unknown artist', group.album ? group.album + (group.year ? ` (${group.year})` : '') : 'no album'].join(' — ')
+  const albumLine = (group: { artist: string; album: string; year?: string }) => [group.artist || 'Unknown artist', group.album ? group.album + (group.year ? ` (${group.year})` : '') : 'no album'].join(' - ')
   // Every field the chosen source gives, so it's clear what is picked up (SPEC.md › Recording › Now playing)
   const currentSource = $derived(current?.title ? (app.sources.find(candidate => candidate.key === current.key) ?? { key: '', kind: '', label: current.label, artist: current.artist, title: current.title, album: current.album ?? '', playing: true, rule: '' }) : null)
 </script>

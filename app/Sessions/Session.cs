@@ -132,6 +132,7 @@ public class Track
     public bool SuggestionLooked { get; set; } // looked up and nothing found, or found
     public bool OffAlbum { get; set; } // named, but not on the matched release
     public string OutputProfileId { get; set; } = ""; // this track's (album's) own output profile; empty = the session's
+    public int DiscNumber { get; set; } // 0 = not written
     public string PlayerArtPath { get; set; } = ""; // the picture the player sent while it played (a fallback cover)
 }
 
