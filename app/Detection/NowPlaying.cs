@@ -23,6 +23,25 @@ public sealed class NowPlayingWatcher
     GlobalSystemMediaTransportControlsSessionManager? mediaManager;
     readonly Dictionary<string, GlobalSystemMediaTransportControlsSession> mediaSessions = new(); // kept so their events stay alive
     readonly Dictionary<string, NameSource> mediaSources = new();
+    readonly Dictionary<string, Windows.Storage.Streams.IRandomAccessStreamReference> thumbnails = new();
+
+    // The picture a player sends with its media info (a candidate cover, SPEC.md › Tags › Cover), as bytes; null when there is none
+    public async Task<byte[]?> ThumbnailAsync(string key)
+    {
+        Windows.Storage.Streams.IRandomAccessStreamReference? reference;
+        lock (sourcesLock) thumbnails.TryGetValue(key, out reference);
+        if (reference == null) return null;
+        try
+        {
+            using var stream = await reference.OpenReadAsync();
+            if (stream.Size == 0 || stream.Size > 20_000_000) return null;
+            using var reader = new Windows.Storage.Streams.DataReader(stream.GetInputStreamAt(0));
+            await reader.LoadAsync((uint)stream.Size);
+            var bytes = new byte[stream.Size]; reader.ReadBytes(bytes);
+            return bytes;
+        }
+        catch { return null; }
+    }
     readonly Dictionary<string, DateTime> startedPlayingAt = new();
     readonly Dictionary<string, DateTime> lastPlayingAt = new(); // players flicker through "changing" or "paused" between tracks
     string currentMediaKey = "";
@@ -109,6 +128,7 @@ public sealed class NowPlayingWatcher
                 // Players blank the title for a moment between tracks: keep the last name until the next one arrives, so nothing else is picked meanwhile
                 var blank = properties == null || source.Title == "";
                 mediaSources[key] = blank && previous != null && playing ? previous with { Playing = playing } : source;
+                if (!blank) { if (properties?.Thumbnail is { } picture) thumbnails[key] = picture; else thumbnails.Remove(key); }
             }
             if (announce) { NoteCurrentSession(); Updated?.Invoke(); }
         }

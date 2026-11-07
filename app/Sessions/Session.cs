@@ -13,6 +13,7 @@ public class NameChange
     public string Album { get; set; } = "";
     public string AlbumArtist { get; set; } = "";
     public int TrackNumber { get; set; }
+    public string ArtPath { get; set; } = ""; // the picture the player sent, saved in the session folder
     public string Source { get; set; } = "";
     public bool Manual { get; set; } // M pressed while recording
     public string Problem { get; set; } = ""; // "dropout", "clipping" or "retake": this take is damaged or unwanted; a later take with the same name replaces it
@@ -118,6 +119,7 @@ public class Track
     public bool SuggestionDismissed { get; set; }
     public bool SuggestionLooked { get; set; } // looked up and nothing found, or found
     public bool OffAlbum { get; set; } // named, but not on the matched release
+    public string PlayerArtPath { get; set; } = ""; // the picture the player sent while it played (a fallback cover)
 }
 
 // One recording: audio.wav, peaks.bin and session.json in its own folder (SPEC.md › Sessions)

@@ -198,7 +198,7 @@
   let lookingUp = $state<null | { keys: string[]; artist: string; title: string; album: string }>(null)
   let thumbs = $state<Record<string, string>>({})
   $effect(() => {
-    const missing = Array.from(new Set(tracks.map(track => track.artPath ?? '').filter(path => path && !(path in thumbs))))
+    const missing = Array.from(new Set(tracks.flatMap(track => [track.artPath ?? '', track.playerArtPath ?? '']).filter(path => path && !(path in thumbs))))
     if (missing.length) untrack(() => request<Record<string, string>>({ type: 'thumbs', paths: missing }).then(found => { thumbs = Object.assign({}, thumbs, found) }).catch(() => { }))
   })
   function applyTags(keys: string[], fields: Partial<TagFields>, single: boolean) {
@@ -550,14 +550,17 @@
           {@const ownCover = commonValue(list, 'artPath')}
           {@const missing = missingFrom(match)}
           {@const coverShown = !!match.artUrl && !failedCovers[match.artUrl]}
+          {@const playerCover = list.map(track => track.playerArtPath ?? '').find(path => path && thumbs[path]) ?? ''}
           <div class="album-card">
             <div class="cover-col">
               <div class="covers">
                 <figure><span class="cover-label">Yours</span>{#if ownCover && thumbs[ownCover]}<img src={thumbs[ownCover]} alt="Your cover" />{:else}<div class="no-cover">{ownCover === null ? 'Mixed' : 'None'}</div>{/if}</figure>
                 {#if coverShown}<figure><span class="cover-label">{match.source}</span><img src={match.artUrl} alt="Cover from {match.source}" onerror={() => failedCovers = Object.assign({}, failedCovers, { [match.artUrl]: true })} /></figure>{/if}
+                {#if playerCover && playerCover !== ownCover}<figure><span class="cover-label">Player</span><img src={thumbs[playerCover]} alt="The picture the player sent" /></figure>{/if}
               </div>
               <div class="cover-buttons">
-                {#if coverShown}<button class="ghost" onclick={() => useMatchCover(match)} title="Download this cover and put it on this album's tracks">Use this cover</button>{/if}
+                {#if coverShown}<button class="ghost" onclick={() => useMatchCover(match)} title="Download this cover and put it on this album's tracks">Use {match.source}'s</button>{/if}
+                {#if playerCover && playerCover !== ownCover}<button class="ghost" onclick={() => applyTags(list.map(track => track.id), { artPath: playerCover }, false)} title="The picture the player sent while it played (often smaller than a database cover)">Use the player's</button>{/if}
                 <button class="ghost" onclick={() => chooseCover(false, match)} title="A JPEG or PNG of your own, on this album's tracks (or the selected ones)">Choose…</button>
                 <button class="ghost" onclick={() => chooseCover(true, match)} title="The picture on the clipboard, on this album's tracks (or the selected ones)">Paste{#if albums.length === 1}<kbd>Ctrl+V</kbd>{/if}</button>
               </div>

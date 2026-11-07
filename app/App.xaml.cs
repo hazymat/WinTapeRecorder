@@ -199,6 +199,20 @@ public partial class App : Application
 
     static RecordingProfileSnapshot Snapshot(RecordingProfile profile) => new(profile.UseMediaInfo, profile.UseWindowTitles);
 
+    // The player's picture for a name change, kept in the session folder (once per picture)
+    async Task SavePlayerArtAsync(Session session, NameChange change, string sourceKey)
+    {
+        try
+        {
+            await Task.Delay(1500); // players send the picture a moment after the name
+            var bytes = await Watcher.ThumbnailAsync(sourceKey);
+            if (bytes == null || bytes.Length < 500) return;
+            var path = TagLookup.SaveArtBytes(bytes, session.Folder);
+            await Dispatcher.InvokeAsync(() => { change.ArtPath = path; if (Recorder.Session == session) session.Save(); });
+        }
+        catch { }
+    }
+
     void NoteName()
     {
         if (Recorder.Session is not { } session) return;
@@ -213,9 +227,12 @@ public partial class App : Application
         {
             int Filled(string artist, string album, string albumArtist, int number) => (artist != "" ? 1 : 0) + (album != "" ? 1 : 0) + (albumArtist != "" ? 1 : 0) + (number > 0 ? 1 : 0);
             if (Filled(name.Artist, name.Album, name.AlbumArtist, name.TrackNumber) > Filled(last.Artist, last.Album, last.AlbumArtist, last.TrackNumber)) { last.Artist = name.Artist; last.Album = name.Album; last.AlbumArtist = name.AlbumArtist; last.TrackNumber = name.TrackNumber; last.Source = name.Label; session.Save(); StatusChanged?.Invoke(); }
+            if (last.ArtPath == "" && name.Picture) _ = SavePlayerArtAsync(session, last, name.Key);
             return;
         }
-        session.Changes.Add(new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, AlbumArtist = name.AlbumArtist, TrackNumber = name.TrackNumber, Source = name.Label });
+        var change = new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, AlbumArtist = name.AlbumArtist, TrackNumber = name.TrackNumber, Source = name.Label };
+        session.Changes.Add(change);
+        if (name.Picture) _ = SavePlayerArtAsync(session, change, name.Key);
         session.Save();
         StatusChanged?.Invoke();
     }
@@ -286,7 +303,10 @@ public partial class App : Application
                         foreach (var (index, entry) in found)
                         {
                             var track = named[index]; match.TrackIds.Add(track.Id);
-                            if (entry.number > 0) track.Suggestion = new TagSuggestion { Source = match.Source, Title = entry.title, TrackNumber = entry.number, TrackCount = entry.count, ReleaseId = match.ReleaseId };
+                            // The release's spelling, without asides like "(take 2)" or "(Remastered)" unless the track's own title has them
+                            var offered = track.Title.IndexOfAny(new[] { '(', '[' }) >= 0 ? entry.title : System.Text.RegularExpressions.Regex.Replace(entry.title, @"\s*[\(\[][^\)\]]*[\)\]]", "").Trim();
+                            if (offered == "") offered = entry.title;
+                            if (entry.number > 0) track.Suggestion = new TagSuggestion { Source = match.Source, Title = offered, TrackNumber = entry.number, TrackCount = entry.count, ReleaseId = match.ReleaseId };
                             else track.OffAlbum = match.TrackTitles.Count > 0;
                         }
                         session.Albums.Add(match);
