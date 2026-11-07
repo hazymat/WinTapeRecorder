@@ -246,7 +246,26 @@ public partial class MainWindow : Window
                     exportCancel = new CancellationTokenSource();
                     var errors = "";
                     var exportSessionId = exporting.session.Id;
-                    var exportedCount = await Task.Run(() => { var thread = Thread.CurrentThread; var before = thread.Priority; thread.Priority = ThreadPriority.BelowNormal; try { return Exporter.Export(exporting.session, exporting.audio, exportTracks, outputProfile, progress => { if (progress.Error != "") errors = progress.Error; App.ExportDone = progress.Done; Push(JsonSerializer.Serialize(new { type = "exportProgress", id = exportSessionId, done = progress.Done, total = progress.Total, current = progress.Current })); }, exportCancel.Token); } finally { thread.Priority = before; } });
+                    // Albums can have their own output profile (SPEC.md › Export): each profile's tracks are exported in turn
+                    var byProfile = exportTracks.GroupBy(track => track.OutputProfileId != "" && App.Settings.OutputProfiles.Any(profile => profile.Id == track.OutputProfileId) ? track.OutputProfileId : outputProfile.Id).ToList();
+                    var exportedCount = await Task.Run(() =>
+                    {
+                        var thread = Thread.CurrentThread; var before = thread.Priority; thread.Priority = ThreadPriority.BelowNormal;
+                        try
+                        {
+                            int doneBefore = 0, total = exportTracks.Count, written = 0;
+                            foreach (var batch in byProfile)
+                            {
+                                var profile = App.Settings.OutputProfiles.First(candidate => candidate.Id == batch.Key);
+                                var offset = doneBefore;
+                                written += Exporter.Export(exporting.session, exporting.audio, batch.ToList(), profile, progress => { if (progress.Error != "") errors = progress.Error; App.ExportDone = offset + progress.Done; Push(JsonSerializer.Serialize(new { type = "exportProgress", id = exportSessionId, done = offset + progress.Done, total, current = progress.Current })); }, exportCancel.Token);
+                                doneBefore += batch.Count();
+                                if (exportCancel.IsCancellationRequested) break;
+                            }
+                            return written;
+                        }
+                        finally { thread.Priority = before; }
+                    });
                     exporting.session.OutputProfileId = outputProfile.Id;
                     exporting.session.Save();
                     App.Exporting = false; App.ExportingSessionId = ""; Push(App.StatusJson());

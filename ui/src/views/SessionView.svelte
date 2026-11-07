@@ -582,10 +582,12 @@
       if (missing.length || unconfirmed) { exportCheck = { keys: chosen.map(track => track.id), missing: missing.join(', '), unconfirmed }; return }
     }
     // Tracks without a number get their place in their album (SPEC.md › Export)
-    if (tracks.some(track => !track.skip && !track.trackNumber)) {
+    // An album whose numbers are missing or repeat is numbered by position; one with a full, unique set keeps it
+    const renumber = listAlbums.filter(group => { const numbers = tracks.filter(track => group.ids.includes(track.id) && !track.skip).map(track => track.trackNumber || 0); return numbers.some(number => !number) || new Set(numbers).size !== numbers.length })
+    if (renumber.length) {
       const next = copy()
-      for (const group of listAlbums) { let number = 0; for (const track of next) if (group.ids.includes(track.id) && !track.skip) { number++; if (!track.trackNumber) track.trackNumber = number } }
-      commit(next, 'Track numbers filled in by album')
+      for (const group of renumber) { let number = 0; for (const track of next) if (group.ids.includes(track.id) && !track.skip) track.trackNumber = ++number }
+      commit(next, 'Track numbers set by position in the album')
     }
     clearTimeout(saveTimer); sendToShell({ type: 'saveSession', id: sessionId, tracks: $state.snapshot(tracks) })
     exportStatus = `Exporting ${chosen.length} track${chosen.length === 1 ? '' : 's'}…`
@@ -682,7 +684,22 @@
   }
   function toggleAll() { if (selectedIds.length === tracks.length) clearSelection(); else selectKeys(scope, tracks.map(track => track.id), actions, 'track') }
   const auditionChoices: [string, string][] = [['2', '2 s'], ['5', '5 s'], ['10', '10 s'], ['20', '20 s']]
-  const outputChoices = $derived(app.outputProfiles.map(profile => [profile.id, profile.name] as [string, string]))
+  const outputChoices = $derived(app.outputProfiles.map(profile => [profile.id, profile.name] as [string, string]).concat([['__manage', 'Manage output profiles…']]))
+  // Export sizes (SPEC.md › Export): an estimate per album and for the whole session, for the profile each album will use
+  const profileFor = (track: Track) => app.outputProfiles.find(profile => profile.id === track.outputProfileId) ?? app.outputProfiles.find(profile => profile.id === outputProfileId) ?? app.outputProfiles[0]
+  function estimateBytes(list: Track[]) {
+    const channels = session?.channels || 2, bits = session?.bitDepth === 32 ? 24 : session?.bitDepth || 24
+    return list.filter(track => !track.skip).reduce((total, track) => {
+      const seconds = (track.end - track.start) / rate, profile = profileFor(track), pcm = seconds * rate * channels * bits / 8
+      return total + (profile?.format === 'wav' ? pcm : profile?.format === 'flac' || !profile?.format ? pcm * 0.6 : seconds * (profile?.bitrateKbps || 320) * 125)
+    }, 0)
+  }
+  const sizeText = (bytes: number) => bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`
+  function setAlbumProfile(group: ListAlbum, profileId: string) {
+    if (profileId === '__manage') { sendToShell({ type: 'openSettings', tab: 'Output profiles' }); return }
+    const next = copy(); for (const track of next) if (group.ids.includes(track.id)) { track.outputProfileId = profileId === '__session' ? '' : profileId; track.exported = false }
+    commit(next, profileId === '__session' ? 'Album uses the session\u2019s output profile' : `Album exports as ${app.outputProfiles.find(profile => profile.id === profileId)?.name}`)
+  }
 </script>
 
 <!-- Space is the app's play/stop: it must never also press the button last clicked (that replayed an old audition) -->
@@ -721,7 +738,8 @@
         {#if selectedIds.length}<button class="ghost" onclick={() => tagging = selectedIds.slice()}>Edit {selectedIds.length} selected…</button>{/if}
       {:else}
         {#if exportStatus}<span class="export-status">{exportStatus}</span>{/if}
-        {#if outputChoices.length}<Dropdown label="Output profile" value={outputProfileId} options={outputChoices} onchange={(value) => { if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
+        {#if outputChoices.length}<Dropdown label="Output profile" value={outputProfileId} options={outputChoices} onchange={(value) => { if (value === '__manage') { sendToShell({ type: 'openSettings', tab: 'Output profiles' }); return } if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
+        <span class="export-size" title="Estimated size of everything this session exports, with each album's profile (FLAC from the usual ratio, MP3 and AAC from the bitrate)">≈ {sizeText(estimateBytes(exportable))}</span>
         <button class="primary" disabled={!!app.status?.exporting || !exportable.length} onclick={() => exportTracks(selectedIds.length ? selectedIds : unexported.length ? unexported.map(track => track.id) : undefined)} title="Ctrl+E"><Icon name="export" size={16} />{selectedIds.length ? `Export ${selectedIds.length} selected` : unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>
       {/if}
     </div>
@@ -851,6 +869,31 @@
       {#if session.albumLooked}<p class="tags-foot"><button class="link" onclick={() => { if (session) session.albumLooked = false; sendToShell({ type: 'suggestAgain', id: sessionId }) }}>Look all albums up again</button></p>{/if}
     </div>
   {:else}
+  {#if step === 'export'}
+    <!-- Export plan: each album, its profile (the session's unless set) and its size -->
+    <div class="export-plan">
+      <table class="tag-table export-table">
+        <thead><tr><th>Album</th><th>Tracks</th><th>Output profile</th><th>Size</th></tr></thead>
+        <tbody>
+          {#each listAlbums as group (group.key + group.first)}
+            {@const list = tracks.filter(track => group.ids.includes(track.id))}
+            {@const own = commonOf(list, 'outputProfileId')}
+            <tr>
+              <td class="plan-album"><strong>{group.album || 'No album'}</strong><span class="quiet">{' — '}{group.artist || 'unknown artist'}</span></td>
+              <td class="quiet">{list.filter(track => !track.skip).length}</td>
+              <td><select value={own ? own : '__session'} onchange={(event) => setAlbumProfile(group, (event.target as HTMLSelectElement).value)}>
+                <option value="__session">Session's ({app.outputProfiles.find(profile => profile.id === outputProfileId)?.name ?? 'default'})</option>
+                {#each app.outputProfiles as profile (profile.id)}<option value={profile.id}>{profile.name}</option>{/each}
+                <option value="__manage">Manage output profiles…</option>
+              </select></td>
+              <td class="plan-size">≈ {sizeText(estimateBytes(list))}</td>
+            </tr>
+          {/each}
+          <tr class="plan-total"><td><strong>Whole session</strong></td><td class="quiet">{exportable.length}</td><td></td><td class="plan-size"><strong>≈ {sizeText(estimateBytes(exportable))}</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  {/if}
   <div class="list" data-row-list use:selectable={{ scope, noun: 'track', actions }} style:--columns={gridColumns}>
     <div class="row head" ondblclick={resetColumns} title="Drag a column's right edge to resize it; double-click here to reset"><span><input type="checkbox" class="tick" checked={tracks.length > 0 && selectedIds.length === tracks.length} indeterminate={selectedIds.length > 0 && selectedIds.length < tracks.length} onchange={toggleAll} title="Select all tracks" aria-label="Select all tracks" /><i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(0, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Hear · ✓<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(1, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Start<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(2, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Length<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(3, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell"><i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(4, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Artist<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(5, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Album<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(6, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Year<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(7, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Title</span><span class="head-cell">Genre<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(9, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Source<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(10, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell">Fades<i class="col-resize" role="separator" aria-label="Resize column" onpointerdown={(event) => resizeDown(11, event)} onpointermove={resizeMove} onpointerup={resizeUp} onpointercancel={resizeUp}></i></span><span class="head-cell"></span></div>
     {#each tracks as track, index (track.id)}
@@ -1084,6 +1127,14 @@
   @keyframes wiggle { 0%, 100% { transform: none; } 25% { transform: rotate(-0.4deg); } 75% { transform: rotate(0.4deg); } }
   .row.lifted :global(*) { user-select: none; }
   .row.lifted { opacity: 0.85; box-shadow: 0 8px 22px var(--shadow); transform: scale(1.01); background: var(--panel-solid); cursor: grabbing; position: relative; z-index: 2; }
+  .export-plan { flex: none; max-height: 36%; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 6px 12px; }
+  .export-table th:first-child { width: auto; }
+  .export-table th:nth-child(2) { width: 60px; } .export-table th:nth-child(3) { width: 230px; } .export-table th:nth-child(4) { width: 90px; }
+  .export-table select { width: 100%; }
+  .plan-album { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .plan-size { font-family: var(--font-display); font-size: 12.5px; text-align: right; }
+  .plan-total td { border-top: 1px solid var(--line); padding-top: 4px; }
+  .export-size { font-family: var(--font-display); font-size: 13px; color: var(--fg-quiet); white-space: nowrap; }
   .album-row { display: grid; grid-template-columns: 70px minmax(100px, 1fr) minmax(100px, 1fr) 64px minmax(80px, 0.7fr) minmax(220px, auto); gap: 8px; align-items: center; margin-top: 6px; padding: 2px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
   .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .album-year { text-align: center; }
