@@ -50,7 +50,7 @@
     scrollRowIntoView(track.id)
     if (play) hearEdge(target.edge, track.id)
   }
-  // Next to confirm (C): the next start or end without a ✓, counting from where you are: just after the edge last jumped to if
+  // Find next to confirm (C): the next start or end without a ✓, counting from where you are: just after the edge last jumped to if
   // it's on the current track, else from the current track's own start (SPEC.md › Editing)
   function checkNext() {
     if (!unchecked.length) { grab = null; focused = null; toast('Every start and end is confirmed', { ms: 2500 }); return }
@@ -704,7 +704,7 @@
     <button class="step" class:active={step === 'export'} class:done={unexported.length === 0 && exportable.length > 0} onclick={() => step = 'export'}><span class="step-number">3</span><span class="step-text"><strong>Export</strong><span>{exportable.length === 0 ? 'nothing to export' : unexported.length === 0 ? `${exportable.length} exported${unverified.length ? `, ${unverified.length} failed the check` : ', all verified'}` : `${unexported.length} of ${exportable.length} to go`}</span></span></button>
     <div class="step-actions">
       {#if step === 'cuts'}
-        <button class="primary" onclick={checkNext} title="Jump to the next start or end without a ✓, from the track you're on, zoomed in, and play it (C)">Next to confirm<kbd>C</kbd></button>
+        <button class="primary" onclick={checkNext} title="Jump to the next start or end without a ✓, from the track you're on, zoomed in, and play it (C)">Find next to confirm<kbd>C</kbd></button>
         
         <Dropdown label="Track ends" value={betweenTracks} options={[['meet', 'Meet the next start'], ['trim', 'Trim silence'], ['keep', 'Keep as recorded']]} onchange={setBetween} />
       {:else if step === 'tags'}
@@ -755,7 +755,7 @@
   </div>
 
   {#if step !== 'tags'}
-  <Hint id="waveform-cuts" text="Next to confirm (C) jumps to the next start or end without a ✓, from the track you're on, and plays it. Drag the line, nudge it with ← →, or press S / E to set it at the playhead; then tick ✓ beside it in the list. Wheel zooms, Shift+wheel scrolls, Ctrl+wheel sets the height, W switches wave and spectrogram." />
+  <Hint id="waveform-cuts" text="Find next to confirm (C) jumps to the next start or end without a ✓, from the track you're on, and plays it. Drag the line, nudge it with ← →, or press S / E to set it at the playhead; then tick ✓ beside it in the list. Wheel zooms, Shift+wheel scrolls, Ctrl+wheel sets the height, W switches wave and spectrogram." />
   <div class="wave-host" bind:this={waveHost} style:height="{waveHeight}px">
 
     <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {autoHeight} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
