@@ -178,6 +178,19 @@ public partial class MainWindow : Window
                 case "monitor": if (message.GetProperty("on").GetBoolean()) App.StartMonitoring(Text(message, "profileId")); else App.StopMonitoring(); break;
                 case "record": App.StartRecording(Text(message, "profileId"), Text(message, "source") is { Length: > 0 } source ? source : "auto", Text(message, "name"), message.TryGetProperty("armed", out var armed) && armed.GetBoolean()); break;
                 case "pauseRecording": if (App.Recorder.Recording) { App.Recorder.Paused = message.TryGetProperty("paused", out var pausedFlag) && pausedFlag.GetBoolean(); Push(App.StatusJson()); } break;
+                // Quiet PC check (SPEC.md › Recording › Other sounds): Windows' sound scheme and notification banners, read from the user's
+                // settings; Windows has no supported way for an app to switch Do not disturb, so the buttons open the right Settings page
+                case "quietCheck":
+                    {
+                        string scheme = ""; int? toasts = null;
+                        try { using var schemes = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"AppEvents\Schemes"); scheme = schemes?.GetValue("") as string ?? ""; } catch { }
+                        try { using var notifications = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings"); if (notifications?.GetValue("NOC_GLOBAL_SETTING_TOASTS_ENABLED") is int value) toasts = value; } catch { }
+                        Reply(message, new { soundsOff = scheme == ".None", notificationsOff = toasts == 0 });
+                    }
+                    break;
+                case "openQuietSettings":
+                    try { if (Text(message, "which") == "sounds") Process.Start(new ProcessStartInfo("rundll32.exe", "shell32.dll,Control_RunDLL mmsys.cpl,,2") { UseShellExecute = true }); else Process.Start(new ProcessStartInfo("ms-settings:notifications") { UseShellExecute = true }); } catch { }
+                    break;
                 case "keepThroughSilence": App.Recorder.KeepThroughSilence = true; break;
                 // Start over (SPEC.md › Recording): the recording so far is thrown away, and optionally a new one starts straight away
                 case "discardRecording":

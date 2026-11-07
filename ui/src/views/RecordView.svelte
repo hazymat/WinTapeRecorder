@@ -252,6 +252,10 @@
   const firstEstimate = $derived(estimates.find(estimate => app.outputProfiles.find(profile => profile.name === estimate.name)?.id === app.activeOutput) ?? estimates[0])
   const current = $derived(app.status?.current)
   let startingOver = $state(false)
+  // Quiet PC check: read when the page opens and whenever the window comes back to the front (after changing Settings)
+  let quiet = $state<null | { soundsOff: boolean; notificationsOff: boolean }>(null)
+  function checkQuiet() { request<{ soundsOff: boolean; notificationsOff: boolean }>({ type: 'quietCheck' }).then(found => quiet = found).catch(() => { }) }
+  $effect(() => { checkQuiet(); const again = () => checkQuiet(); window.addEventListener('focus', again); return () => window.removeEventListener('focus', again) })
   // The track list: the same columns as Albums & cuts, minus artwork, source and fades
   const recColumns = '48px 150px minmax(80px, 1fr) minmax(80px, 1fr) 60px 36px minmax(110px, 1.4fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) 72px 26px'
   // Ticked tracks (by marker index) act together through the bar at the bottom
@@ -353,7 +357,14 @@
     <h2>Record</h2>
     <Hint id="record-intro" text="Record a whole listening session into one file. Each time the playing track's name changes, a new track is marked; with no names, gaps split them. You fine-tune and export afterwards." />
   {/if}
-  <Hint id="other-sounds" text="Recording what the PC plays records everything it plays: turn on Do not disturb (Windows notifications) and close apps that ding. Any other app's sound during a recording is flagged in Issues." />
+  {#if !recording && quiet}
+    <!-- Is the PC quiet? Recording what it plays records every ding too (SPEC.md › Recording › Other sounds) -->
+    <div class="quiet-check">
+      <span class="quiet-item" class:ok={quiet.soundsOff}>{quiet.soundsOff ? '✓ Windows sounds are off' : '⚠ Windows sounds are on'}{#if !quiet.soundsOff}<button class="ghost small-button" onclick={() => sendToShell({ type: 'openQuietSettings', which: 'sounds' })} title="Opens Sound settings: set Sound Scheme to No Sounds">Turn off…</button>{/if}</span>
+      <span class="quiet-item" class:ok={quiet.notificationsOff}>{quiet.notificationsOff ? '✓ Notification banners are off' : '⚠ Notifications can pop up and ding'}{#if !quiet.notificationsOff}<button class="ghost small-button" onclick={() => sendToShell({ type: 'openQuietSettings', which: 'notifications' })} title="Opens Notifications settings: switch on Do not disturb at the top">Do not disturb…</button>{/if}</span>
+      <span class="quiet small">Other apps' sounds are still flagged in Issues while recording.</span>
+    </div>
+  {/if}
   {#if !recording}
     <div class="settings-row">
       <Dropdown label="Recording profile" value={profileId} options={profileChoices} align="left" onchange={(value) => sendToShell({ type: 'setActiveProfile', kind: 'recording', profileId: value })} />
@@ -595,6 +606,10 @@
   .album-row.row-grid { border-radius: 8px; background: var(--panel); border: 1px solid var(--line); align-items: center; }
   .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .track-no { font-family: var(--font-display); font-size: 12px; text-align: center; color: var(--fg-quiet); }
+  .quiet-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 6px 12px; margin-bottom: 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12.5px; }
+  .quiet-item { display: inline-flex; align-items: center; gap: 8px; color: var(--warn); font-weight: 600; }
+  .quiet-item.ok { color: #2e9e57; }
+  .small-button { padding: 1px 8px; font-size: 11.5px; height: 22px; }
   .start-mode { display: flex; margin: 2px 0; }
   .start-mode button { padding: 3px 12px; font: inherit; font-size: 12px; background: var(--panel); color: var(--fg-quiet); border: 1px solid var(--line); cursor: pointer; }
   .start-mode button:first-child { border-radius: 7px 0 0 7px; } .start-mode button:last-child { border-radius: 0 7px 7px 0; border-left: 0; }
