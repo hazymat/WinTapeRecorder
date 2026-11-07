@@ -224,6 +224,18 @@ public static class TagLookup
         return results;
     }
 
+    // The year an album first came out (MusicBrainz release group), for Now playing while recording; "" when not found
+    public static async Task<string> AlbumYearAsync(string artist, string album)
+    {
+        if (album == "") return "";
+        var query = "releasegroup:" + Quote(album) + (artist != "" ? " AND artist:" + Quote(artist) : "");
+        using var document = JsonDocument.Parse(await client.GetStringAsync("https://musicbrainz.org/ws/2/release-group/?fmt=json&limit=5&query=" + Uri.EscapeDataString(query)));
+        if (!document.RootElement.TryGetProperty("release-groups", out var groups)) return "";
+        foreach (var group in groups.EnumerateArray())
+            if (Loose(Read(group, "title")) == Loose(album) && Year(Read(group, "first-release-date")) is { Length: 4 } year) return year;
+        return "";
+    }
+
     // A title's place in a release's track list: the same loosely, or one containing the other (for "(Remastered)" and such)
     public static int FindTitle(List<string> titles, string title)
     {

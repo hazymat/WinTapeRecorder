@@ -38,6 +38,33 @@ public partial class App : Application
     string lastNameKey = "";
     public NameSource? CurrentName { get; private set; }
 
+    // The playing album's year (SPEC.md › Recording › Now playing): Windows media info has none, so it's looked up once per album
+    readonly Dictionary<string, string> albumYears = new();
+    readonly HashSet<string> yearsAsked = new();
+    public string YearFor(NameSource? name) { if (name == null || name.Album == "") return ""; lock (albumYears) return albumYears.TryGetValue(name.Artist + "|" + name.Album, out var year) ? year : ""; }
+    void LookUpYear(NameSource? name)
+    {
+        if (name == null || name.Album == "") return;
+        var key = name.Artist + "|" + name.Album;
+        lock (albumYears) if (!yearsAsked.Add(key)) return;
+        _ = Task.Run(async () =>
+        {
+            string year = "";
+            try { year = await TagLookup.AlbumYearAsync(name.AlbumArtist != "" ? name.AlbumArtist : name.Artist, name.Album); } catch { lock (albumYears) yearsAsked.Remove(key); return; }
+            lock (albumYears) albumYears[key] = year;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (year != "" && Recorder.Session is { } session)
+                {
+                    var changed = false;
+                    foreach (var change in session.Changes) if (change.Year == "" && change.Artist == name.Artist && change.Album == name.Album) { change.Year = year; changed = true; }
+                    if (changed) session.Save();
+                }
+                StatusChanged?.Invoke();
+            });
+        });
+    }
+
     protected override void OnStartup(StartupEventArgs startupArgs)
     {
         // One copy per data folder: a portable copy runs beside the installed one
@@ -221,7 +248,7 @@ public partial class App : Application
         if (Recorder.Recording) NoteName();
         else
         {
-            var previous = CurrentName; CurrentName = Watcher.Current(MonitorSource, Snapshot(Settings.ActiveRecordingProfile));
+            var previous = CurrentName; CurrentName = Watcher.Current(MonitorSource, Snapshot(Settings.ActiveRecordingProfile)); LookUpYear(CurrentName);
             if (previous?.Key != CurrentName?.Key || previous?.NameKey != CurrentName?.NameKey) StatusChanged?.Invoke(); // the Record view shows it straight away
         }
         mainWindow.PushSources();
@@ -247,7 +274,7 @@ public partial class App : Application
     {
         if (Recorder.Session is not { } session) return;
         var profile = Settings.RecordingProfileOrActive(session.RecordingProfileId);
-        CurrentName = Watcher.Current(RecordingSource, Snapshot(profile));
+        CurrentName = Watcher.Current(RecordingSource, Snapshot(profile)); LookUpYear(CurrentName);
         if (CurrentName is not { HasName: true } name) return;
         if (name.NameKey == lastNameKey)
         {
@@ -277,7 +304,7 @@ public partial class App : Application
             lastNameKey = name.NameKey;
             return;
         }
-        var change = new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, AlbumArtist = name.AlbumArtist, TrackNumber = name.TrackNumber, Source = name.Label };
+        var change = new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, AlbumArtist = name.AlbumArtist, TrackNumber = name.TrackNumber, Year = YearFor(name), Source = name.Label };
         session.Changes.Add(change);
         if (name.Picture) _ = SavePlayerArtAsync(session, change, name.Key);
         session.Save();
@@ -426,7 +453,7 @@ public partial class App : Application
         changes = Recorder.Session?.Changes.Select(change => new { change.Frame, change.Artist, change.Title, change.Album, change.Manual, change.Problem }) ?? Enumerable.Empty<object>(),
         dropoutList = Recorder.Dropouts.Select(dropout => new { dropout.Frame, dropout.Ms }),
         clips = Recorder.Clips.Select(clip => new { clip.Frame, clip.Samples }),
-        current = CurrentName == null ? null : new { CurrentName.Key, CurrentName.Label, CurrentName.Artist, CurrentName.Title, CurrentName.Album },
+        current = CurrentName == null ? null : new { CurrentName.Key, CurrentName.Label, CurrentName.Artist, CurrentName.Title, CurrentName.Album, year = YearFor(CurrentName) },
         source = RecordingSource,
         playing = Player.Playing,
         playingSession = Player.SessionId,

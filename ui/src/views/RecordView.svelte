@@ -289,7 +289,7 @@
           {#if currentSource.genres}<tr><th>Genre</th><td>{currentSource.genres}</td></tr>{/if}
           <tr><th>Picture</th><td class:none={!currentSource.picture}>{currentSource.picture ? 'provided' : missing}</td></tr>
         {:else if currentSource.rule}<tr><th>Rule</th><td>{currentSource.rule}</td></tr>{/if}
-        <tr><th>Year</th><td class="none">Windows media info has no year; the album match in the Tags step fills it in</td></tr>
+        <tr><th>Year</th>{#if current?.year}<td>{current.year} <span class="quiet">· looked up on MusicBrainz (Windows media info has no year)</span></td>{:else}<td class="none">{currentSource.album ? 'looking it up…' : 'not provided (needs an album name to look up)'}</td>{/if}</tr>
       </tbody>
     </table>
   {:else}

@@ -83,7 +83,7 @@ public static class TrackBuilder
             var named = name != null && name.Title != "";
             var minimumSeconds = named || name != null ? 3 : Math.Max(1, gapSettings.MinTrackSeconds); // a name change or marker means a track was meant to start here
             if (end - start < (long)minimumSeconds * rate) continue;
-            var track = new Track { Start = start, End = end, Artist = name?.Artist ?? "", Title = name?.Title ?? "", Album = name?.Album ?? "", AlbumArtist = name?.AlbumArtist ?? "", TrackNumber = name?.TrackNumber ?? 0, PlayerArtPath = name?.ArtPath ?? "" };
+            var track = new Track { Start = start, End = end, Artist = name?.Artist ?? "", Title = name?.Title ?? "", Album = name?.Album ?? "", AlbumArtist = name?.AlbumArtist ?? "", TrackNumber = name?.TrackNumber ?? 0, PlayerArtPath = name?.ArtPath ?? "", Year = name?.Year ?? "" };
             // What the user needs to know about each edge: an edge inside silence is a safe bet; a hard cut or a hand-placed marker wants a listen
             var startHow = boundaries[index].how; var endHow = index + 1 < boundaries.Count ? boundaries[index + 1].how : "session";
             (track.StartNote, track.StartSure) = start > segmentStart ? ("In the silence before the first sound", true) : startHow switch

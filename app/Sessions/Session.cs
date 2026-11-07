@@ -14,6 +14,7 @@ public class NameChange
     public string AlbumArtist { get; set; } = "";
     public int TrackNumber { get; set; }
     public string ArtPath { get; set; } = ""; // the picture the player sent, saved in the session folder
+    public string Year { get; set; } = ""; // the album's year, looked up while recording
     public string Source { get; set; } = "";
     public bool Manual { get; set; } // M pressed while recording
     public string Problem { get; set; } = ""; // "dropout", "clipping" or "retake": this take is damaged or unwanted; a later take with the same name replaces it
