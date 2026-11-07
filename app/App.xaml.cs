@@ -274,11 +274,12 @@ public partial class App : Application
         session.Changes.RemoveAt(index); session.Save(); StatusChanged?.Invoke();
     }
 
-    // The latest marker of the same album passes on its year, genre and composer (typed or looked up), even with other names in between
+    // The latest marker of the same album passes on its year, genre and composer (typed or looked up), even with other names in between.
+    // Players often send the album a moment after the title, so this runs again when the album arrives
     static void CarryAlbumTags(Session session, NameChange change)
     {
         if (change.Album == "") return;
-        var before = session.Changes.LastOrDefault(other => string.Equals(other.Album, change.Album, StringComparison.OrdinalIgnoreCase));
+        var before = session.Changes.LastOrDefault(other => other != change && string.Equals(other.Album, change.Album, StringComparison.OrdinalIgnoreCase));
         if (before == null) return;
         if (change.Year == "") change.Year = before.Year;
         if (change.Genre == "") change.Genre = before.Genre;
@@ -333,7 +334,7 @@ public partial class App : Application
             if (session.Changes.LastOrDefault() is { } latest && string.Equals(latest.Title, name.Title, StringComparison.OrdinalIgnoreCase))
             {
                 var filled = false;
-                if (latest.Album == "" && name.Album != "") { latest.Album = name.Album; filled = true; }
+                if (latest.Album == "" && name.Album != "") { latest.Album = name.Album; CarryAlbumTags(session, latest); filled = true; }
                 if (latest.AlbumArtist == "" && name.AlbumArtist != "") { latest.AlbumArtist = name.AlbumArtist; filled = true; }
                 if (latest.TrackNumber == 0 && name.TrackNumber > 0) { latest.TrackNumber = name.TrackNumber; filled = true; }
                 if (latest.Artist == "" && name.Artist != "") { latest.Artist = name.Artist; filled = true; }
@@ -349,8 +350,8 @@ public partial class App : Application
         if (session.Changes.LastOrDefault() is { Manual: false } last && frame - last.Frame < 30L * session.SampleRate && string.Equals(last.Title.Trim(), name.Title.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             int Filled(string artist, string album, string albumArtist, int number) => (artist != "" ? 1 : 0) + (album != "" ? 1 : 0) + (albumArtist != "" ? 1 : 0) + (number > 0 ? 1 : 0);
-            if (Filled(name.Artist, name.Album, name.AlbumArtist, name.TrackNumber) > Filled(last.Artist, last.Album, last.AlbumArtist, last.TrackNumber)) { last.Artist = name.Artist; last.Album = name.Album; last.AlbumArtist = name.AlbumArtist; last.TrackNumber = name.TrackNumber; last.Source = name.Label; session.Save(); StatusChanged?.Invoke(); }
-            else if ((last.Album == "" && name.Album != "") || (last.AlbumArtist == "" && name.AlbumArtist != "")) { if (last.Album == "") last.Album = name.Album; if (last.AlbumArtist == "") last.AlbumArtist = name.AlbumArtist; session.Save(); StatusChanged?.Invoke(); }
+            if (Filled(name.Artist, name.Album, name.AlbumArtist, name.TrackNumber) > Filled(last.Artist, last.Album, last.AlbumArtist, last.TrackNumber)) { last.Artist = name.Artist; last.Album = name.Album; last.AlbumArtist = name.AlbumArtist; last.TrackNumber = name.TrackNumber; last.Source = name.Label; CarryAlbumTags(session, last); session.Save(); StatusChanged?.Invoke(); }
+            else if ((last.Album == "" && name.Album != "") || (last.AlbumArtist == "" && name.AlbumArtist != "")) { if (last.Album == "") { last.Album = name.Album; CarryAlbumTags(session, last); } if (last.AlbumArtist == "") last.AlbumArtist = name.AlbumArtist; session.Save(); StatusChanged?.Invoke(); }
             if (last.ArtPath == "" && name.Picture) _ = SavePlayerArtAsync(session, last, name.Key);
             lastNameKey = name.NameKey;
             return;
