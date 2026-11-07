@@ -261,7 +261,7 @@ public partial class App : Application
     public void ApplySkin() => mainWindow.PushSkin();
     public void ApplyUiScale() => mainWindow.ApplyUiScale();
     public void RefreshInactiveGlass() => mainWindow.RefreshInactiveGlass();
-    public void ShowMainWindow() { mainWindow.Show(); if (mainWindow.WindowState == WindowState.Minimized) mainWindow.WindowState = WindowState.Normal; mainWindow.Activate(); }
+    public void ShowMainWindow() { if (IsQuitting) return; mainWindow.Show(); if (mainWindow.WindowState == WindowState.Minimized) mainWindow.WindowState = WindowState.Normal; mainWindow.Activate(); }
     // No tray: tips show as a message in the window
     public void ShowTip(string title, string text) => Tip?.Invoke(title, text);
 
@@ -281,16 +281,20 @@ public partial class App : Application
         return true;
     }
 
-    public void Quit()
+    public void Quit(bool windowClosing = false)
     {
         if (IsQuitting) return;
         IsQuitting = true;
-        mainWindow.SaveBounds(); Settings.Save();
-        if (Recorder.Recording) FinishRecording(); else Recorder.Stop();
-        Player.Dispose();
-        foreach (var sessionId in openSessions.Keys.ToList()) CloseOpen(sessionId);
-        settingsWindow?.Close();
-        mainWindow.Close();
-        Shutdown();
+        try
+        {
+            mainWindow.SaveBounds(); Settings.Save();
+            if (Recorder.Recording) FinishRecording(); else Recorder.Stop();
+            Player.Dispose();
+            foreach (var sessionId in openSessions.Keys.ToList()) CloseOpen(sessionId);
+            settingsWindow?.Close();
+            if (!windowClosing) mainWindow.Close();
+        }
+        catch (Exception quitError) { CrashReporter.Write("While quitting", quitError, false); }
+        finally { Shutdown(); } // whatever happened above, the process ends
     }
 }

@@ -453,12 +453,12 @@ public partial class MainWindow : Window
     void PushWindowState() => Push(JsonSerializer.Serialize(new { type = "window", glass = glassActive, frameless = App.Settings.General.Frameless, maximised = WindowState == WindowState.Maximized }));
 
     // Close (X) quits: warnings first if a recording or export would be cut short
+    // The window is closing already, so the app finishes up around it rather than closing it again (which WPF refuses, leaving the app running windowless)
     protected override void OnClosing(CancelEventArgs closingArgs)
     {
         if (App.IsQuitting) return;
-        closingArgs.Cancel = true;
-        if (!App.ConfirmQuit()) return;
+        if (!App.ConfirmQuit()) { closingArgs.Cancel = true; return; }
         exportCancel?.Cancel();
-        App.Quit();
+        App.Quit(true);
     }
 }
