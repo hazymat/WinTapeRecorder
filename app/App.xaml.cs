@@ -263,7 +263,8 @@ public partial class App : Application
     // Track numbers count up within each run of tracks sharing artist and album (SPEC.md › Recording): what the live list showed
     static void NumberTracks(Session session)
     {
-        string key(Track track) => TagLookup.Loose(track.AlbumArtist != "" ? track.AlbumArtist : track.Artist) + "|" + TagLookup.Loose(track.Album);
+        string key(Track track) => TagLookup.Loose(track.AlbumArtist) + "|" + TagLookup.Loose(track.Album); // by album: a guest or a band name on one track doesn't split it
+        session.RetakesNumbered = true;
         string previous = ""; int number = 0;
         // A retake counts where the bad take was, however much later it was played
         bool Same(string first, string second) => string.Equals(first.Trim(), second.Trim(), StringComparison.OrdinalIgnoreCase);
@@ -271,8 +272,8 @@ public partial class App : Application
         foreach (var track in session.Tracks)
         {
             if (!track.Skip) { if (!moved.Contains(track)) order.Add(track); continue; }
-            if (!track.SkipReason.Contains("recorded again later")) continue;
-            var retake = session.Tracks.FirstOrDefault(later => later.Start > track.Start && !later.Skip && !moved.Contains(later) && Same(later.Title, track.Title) && Same(later.Artist, track.Artist));
+            if (!track.SkipReason.Contains("recorded again later", StringComparison.OrdinalIgnoreCase)) continue;
+            var retake = session.Tracks.FirstOrDefault(later => later.Start > track.Start && !later.Skip && !moved.Contains(later) && Same(later.Title, track.Title) && Same(later.Artist, track.Artist) && (later.Album == "" || track.Album == "" || Same(later.Album, track.Album)));
             if (retake != null) { order.Add(retake); moved.Add(retake); }
         }
         foreach (var track in order)
@@ -576,6 +577,7 @@ public partial class App : Application
             if (session.AppendFrom >= 0) MergeAppended(session, peaks, Settings.RecordingProfileOrActive(session.RecordingProfileId)); // cut off while adding to it
             if (session.Tracks.Count == 0 && session.TotalFrames > 0) session.Tracks = TrackBuilder.Build(session, peaks, Settings.RecordingProfileOrActive(session.RecordingProfileId));
             foreach (var track in session.Tracks) { if (track.DetectedStart < 0) track.DetectedStart = track.Start; if (track.DetectedEnd < 0) track.DetectedEnd = track.End; } // older sessions: as they are now
+            if (!session.RetakesNumbered && session.Tracks.Any(track => track.SkipReason.Contains("recorded again later", StringComparison.OrdinalIgnoreCase))) NumberTracks(session); // once, for sessions numbered before retakes kept their place
             TrackBuilder.FillAlbumArtists(session.Tracks);
             if (session.Quality.Count == 0 && session.TotalFrames > audio.SampleRate * 2) session.Quality = MeasureQuality(audio); // recorded before this was measured live
             session.Save();

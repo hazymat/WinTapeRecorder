@@ -161,6 +161,7 @@ public class Session
     public int ClippedSamples { get; set; }
     public List<NameChange> Changes { get; set; } = new();
     public List<Dropout> Dropouts { get; set; } = new();
+    public bool RetakesNumbered { get; set; } // track numbers were set with retakes in the bad takes' places
     public long AppendFrom { get; set; } = -1; // adding to a finished recording: where the new audio starts, until it's finished again
     public List<Dropout> Gaps { get; set; } = new(); // playback stalls: the sound cut dead mid-song, then came back
     public List<OtherSound> OtherSounds { get; set; } = new();

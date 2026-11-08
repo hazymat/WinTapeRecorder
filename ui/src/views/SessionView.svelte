@@ -417,7 +417,7 @@
   // The album's main artist: the one most of its tracks have (featured credits on single tracks don't count against it)
   function mainArtist(list: Track[]) { const counts = new Map<string, number>(); for (const track of list) if (track.artist) counts.set(track.artist, (counts.get(track.artist) ?? 0) + 1); return Array.from(counts.entries()).sort((first, second) => second[1] - first[1] || first[0].length - second[0].length)[0]?.[0] ?? '' }
   // One album artist for the whole album, so it stays one album however the track artists vary
-  function sameAlbumArtist(group: ListAlbum) { const list = tracks.filter(track => group.ids.includes(track.id)), main = mainArtist(list); if (!main) return; const next = copy(); for (const track of next) if (group.ids.includes(track.id)) { track.albumArtist = main; track.exported = false } commit(next, `Album artist set to ${main}`) }
+  function sameAlbumArtist(group: ListAlbum) { const list = tracks.filter(track => group.ids.includes(track.id)), main = mainArtist(list); if (!main) return; const next = copy(); for (const track of next) if (group.ids.includes(track.id) || (track.album && squash(track.album) === squash(group.album) && !track.albumArtist && list.some(member => member.artist === track.artist))) { track.albumArtist = main; track.exported = false } commit(next, `Album artist set to ${main}`) }
   function useAllFrom(group: ListAlbum, list: Track[], match: AlbumMatch) {
     const next = copy()
     for (const track of next) if (group.ids.includes(track.id)) {

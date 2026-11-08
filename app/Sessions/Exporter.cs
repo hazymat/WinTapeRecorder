@@ -102,7 +102,10 @@ public static class Exporter
             if (key != previous || runs.Count == 0) runs.Add(new List<Track>()); previous = key;
             runs[^1].Add(track);
         }
-        foreach (var run in runs) for (var index = 0; index < run.Count; index++) result[run[index]] = (index + 1, run.Count);
+        // The count is the whole album's, even when a retake sits apart from the rest
+        string KeyOf(Track track) => track.Album != "" ? "album:" + Squash(track.Album) + "|" + Squash(track.AlbumArtist) : "artist:" + Squash(track.Artist);
+        var sizes = runs.SelectMany(run => run).GroupBy(KeyOf).ToDictionary(group => group.Key, group => group.Count());
+        foreach (var run in runs) for (var index = 0; index < run.Count; index++) result[run[index]] = (index + 1, sizes[KeyOf(run[index])]);
         return result;
     }
 
