@@ -92,7 +92,8 @@ sealed class SegmentReader : ISampleProvider
             {
                 var silent = (int)Math.Min(pauseLeft, framesWanted - framesDone);
                 Note(true);
-                Array.Clear(buffer, offset + framesDone * channels, silent * channels);
+                // Written one by one: NAudio hands over a byte array posing as floats, and Array.Clear would only blank a quarter of it, replaying the end of the clip as a buzz
+                for (var sample = offset + framesDone * channels; sample < offset + (framesDone + silent) * channels; sample++) buffer[sample] = 0;
                 pauseLeft -= silent; framesDone += silent; outputFrames += silent;
                 continue;
             }
