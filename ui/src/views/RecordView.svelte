@@ -57,7 +57,9 @@
   // Where a marker is: the selected one being dragged follows the audio under its fixed screen position
   function markerFrame(index: number) { const change = app.status?.changes[index]; if (!change) return 0; if (flagDrag && flagDrag.index === index) return flagDrag.frame; if (dragging && dragging.moved && index === selected) { const { span } = liveRange(); return Math.max(0, Math.min(app.levels.seconds * (app.status?.sampleRate ?? 48000), viewStart + dragging.pinX * span / liveWidth)) } return change.frame }
   function markerX(index: number) { const { start, span } = liveRange(); return (markerFrame(index) - start) / span * liveWidth }
-  function markerAt(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((_, index) => { const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
+  // In the flag row the whole flag counts (it sticks out to the right of the line), as in Albums & cuts
+  function markerAt(x: number, y = 99) { if (y < flagZone) { const changes = app.status?.changes ?? []; for (let index = changes.length - 1; index >= 0; index--) { const offset = x - markerX(index); if (offset >= -3 && offset <= 13) return index } } return markerNear(x) }
+  function markerNear(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((_, index) => { const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
   function pause() { if (!following || !app.status) return; const { start, span } = liveRange(); viewStart = start; viewSpan = span; following = false }
   export function catchUp() { followSeconds = 60; liveScale = 1; following = true; selected = -1; dragging = null; drawLive() }
   function selectMarker(index: number, centre = false) {
@@ -152,7 +154,7 @@
   let lastFlagClick: null | { index: number; at: number } = null
   function onLiveDown(event: PointerEvent) {
     if (event.button !== 0 || !app.status) return
-    const onMarker = markerAt(event.offsetX)
+    const onMarker = markerAt(event.offsetX, event.offsetY)
     if (onMarker >= 0) { pause(); flagDrag = { index: onMarker, frame: app.status.changes[onMarker].frame, startX: event.offsetX, moved: false, onFlag: event.offsetY < flagZone }; liveCanvas?.setPointerCapture(event.pointerId); return }
     pause()
     dragging = { startX: event.offsetX, startViewStart: viewStart, pinX: selected >= 0 ? markerX(selected) : 0, moved: false, onMarker }
@@ -161,7 +163,7 @@
   function onLiveMove(event: PointerEvent) {
     if (flagDrag && app.status) { if (!flagDrag.moved && Math.abs(event.offsetX - flagDrag.startX) < 3) return; flagDrag.moved = true; flagDrag.frame = Math.max(0, Math.min(app.levels.seconds * app.status.sampleRate, viewStart + event.offsetX * viewSpan / liveWidth)); if (liveCanvas) liveCanvas.style.cursor = 'ew-resize'; drawLive(); return }
     if (!dragging) {
-      const index = markerAt(event.offsetX)
+      const index = markerAt(event.offsetX, event.offsetY)
       if (index !== hovered) { hovered = index; drawLive() }
       if (liveCanvas) liveCanvas.style.cursor = index >= 0 ? 'ew-resize' : 'grab'
       if (index >= 0) { liveCanvas?.setAttribute('title', `Drag to move marker ${index + 1}; click to zoom in on it${event.offsetY < flagZone ? `; double-click the flag to ${app.status?.changes[index]?.confirmed ? 'undo the confirmation' : 'confirm this cut'}` : ''}`); return }
@@ -303,7 +305,7 @@
   function checkQuiet() { request<{ soundsOff: boolean; notificationsOff: boolean }>({ type: 'quietCheck' }).then(found => quiet = found).catch(() => { }) }
   $effect(() => { checkQuiet(); const again = () => checkQuiet(); window.addEventListener('focus', again); return () => window.removeEventListener('focus', again) })
   // The track list: the same columns as Albums & cuts, minus artwork, source and fades
-  const recColumns = '48px 150px minmax(80px, 1fr) minmax(80px, 1fr) 60px 36px minmax(110px, 1.4fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) 72px 26px'
+  const recColumns = '48px 182px minmax(80px, 1fr) minmax(80px, 1fr) 60px 36px minmax(110px, 1.4fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) 72px 26px'
   // Ticked tracks (by marker index) act together through the bar at the bottom
   const ticked = $derived(selection.scope === 'record' ? selection.keys : [])
   const recActions: SelectionAction[] = [
@@ -533,7 +535,7 @@
     </div>
     <Hint id="live-wave" text="Drag or zoom (wheel) the wave to stop following and look around; Ctrl+wheel sets its height. Click a marker to select it, then drag the audio under it and let go to place it; click it again or press Esc to let go. Catch up goes back to the last minute at normal height. The strip above is the whole recording: click it to look there." />
     <canvas class="live-strip" bind:this={stripCanvas} title="The whole recording so far: click or drag to look there" onpointerdown={onStrip} onpointermove={onStrip}></canvas>
-    <canvas class="live-wave" onclick={(event) => { if (event.detail === 2 && event.offsetY < flagZone) { const index = markerAt(event.offsetX); if (index >= 0) { sendToShell({ type: 'editChanges', indexes: [index], confirmed: !app.status?.changes[index]?.confirmed }); lastFlagClick = null } } }} bind:this={liveCanvas} bind:clientWidth={liveWidth} tabindex="-1" onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp} onpointercancel={onLiveUp} onpointerleave={() => { if (!dragging && hovered >= 0) { hovered = -1; drawLive() } }}></canvas>
+    <canvas class="live-wave" bind:this={liveCanvas} bind:clientWidth={liveWidth} tabindex="-1" onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp} onpointercancel={onLiveUp} onpointerleave={() => { if (!dragging && hovered >= 0) { hovered = -1; drawLive() } }}></canvas>
 
     <div class="tracks-head">
       <h3>Tracks marked so far</h3>
@@ -560,7 +562,7 @@
           {@const nextFrame = changes[index + 1]?.frame ?? app.levels.seconds * rate}
           <div class="row" class:replaced={replacedBy(index) >= 0} class:lifting={liftingIndex === index} class:lifted={liftedIndex === index} class:current={selected === index} onpointerdown={(event) => liftDown(index, event)} role="listitem">
             <span class="tick-cell"><input type="checkbox" class="tick" checked={ticked.includes(String(index))} onchange={() => tickIndexes([index], !ticked.includes(String(index)))} aria-label="Select track {index + 1}" /> {index + 1}</span>
-            <span class="hear"><button class="hear-start locate" class:grabbed={selected === index} class:checked={change.confirmed} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Find this start in the wave above, zoomed in (click again to let go)"><span class="pill-time">{formatTime(change.frame, rate, false)}</span>{#if change.detectedFrame != null && change.detectedFrame >= 0 && change.detectedFrame !== change.frame}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'editChange', index, frame: change.detectedFrame }) }} onkeydown={() => { }} title={`Moved. Click to put it back where it was placed (${formatTime(change.detectedFrame, rate, false)})`}>↺</span>{/if}<span class="locate-icon">⌖</span></button><button class="hear-end locate" onclick={() => selectMarker(index, true)} title="Length so far"><span class="pill-time">{formatLength(Math.max(0, nextFrame - change.frame), rate)}</span></button></span>
+            <span class="hear"><button class="hear-start locate" class:grabbed={selected === index} class:checked={change.confirmed} onclick={() => selected === index ? deselect() : selectMarker(index, true)} title="Find this start in the wave above, zoomed in (click again to let go)"><span class="pill-time">{formatTime(change.frame, rate, false)}</span>{#if change.detectedFrame != null && change.detectedFrame >= 0 && change.detectedFrame !== change.frame}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'editChange', index, frame: change.detectedFrame }) }} onkeydown={() => { }} title={`Moved. Click to put it back where it was placed (${formatTime(change.detectedFrame, rate, false)})`}>↺</span>{/if}<span class="locate-icon">⌖</span></button><button class="hear-end locate" onclick={() => selectMarker(index, true)} title="Length so far"><span class="pill-time">{formatLength(Math.max(0, nextFrame - change.frame), rate)}</span></button><button class="ok" class:on={change.confirmed} onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'editChanges', indexes: [index], confirmed: !change.confirmed }) }} title={change.confirmed ? 'This cut is confirmed. Click to undo' : 'Happy with where this track starts? Click to confirm the cut (or double-click its flag in the wave)'} aria-label="Confirm this cut">✓</button></span>
             <input value={change.artist} placeholder="Artist" onchange={(event) => sendToShell({ type: 'editChange', index, artist: (event.target as HTMLInputElement).value.trim() })} />
             <input value={change.album} placeholder="Album" onchange={(event) => sendToShell({ type: 'editChange', index, album: (event.target as HTMLInputElement).value.trim() })} />
             <input value={change.year ?? ''} placeholder={group.year || 'Year'} onchange={(event) => sendToShell({ type: 'editChange', index, year: (event.target as HTMLInputElement).value.trim() })} />
@@ -653,6 +655,9 @@
   .row input:hover { border-color: var(--line); }
   .row input:focus { background: var(--panel); }
   .hear { display: flex; gap: 0; white-space: nowrap; }
+  .hear .ok { width: 24px; padding: 0; margin: 0 4px; border-radius: 7px; background: var(--panel); color: var(--fg-quiet); border: 1px solid var(--line); font-weight: 700; }
+  .hear .ok.on { background: #3ecf6e; color: #fff; border-color: transparent; }
+  .hear .ok:hover { background: color-mix(in srgb, #3ecf6e 40%, var(--panel)); color: var(--fg); }
   .hear .hear-start, .hear .hear-end { width: 82px; padding: 0 6px; justify-content: space-between; font-family: var(--font-display); font-weight: 500; }
   .hear .hear-start.doubt, .hear .hear-end.doubt { color: var(--warn); }
   .pill-time { font-size: 12px; }
