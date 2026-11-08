@@ -193,7 +193,14 @@ public partial class MainWindow : Window
                     break;
                 case "keepThroughSilence": App.Recorder.KeepThroughSilence = true; break;
                 // Start over (SPEC.md › Recording): the recording so far is thrown away, and optionally a new one starts straight away
+                case "appendRecording":
+                    {
+                        var appendProblem = App.AppendRecording(Text(message, "id"), Text(message, "source") is { Length: > 0 } appendSource ? appendSource : "auto");
+                        Reply(message, new { ok = appendProblem == "", reason = appendProblem });
+                    }
+                    break;
                 case "discardRecording":
+                    if (App.Recorder.Session?.AppendFrom >= 0) break; // adding to a finished recording: never throw the whole session away
                     {
                         var restartSource = App.RecordingSource; var restartProfile = App.Recorder.Session?.RecordingProfileId ?? "";
                         var thrown = App.StopRecording();

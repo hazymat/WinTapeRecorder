@@ -59,8 +59,8 @@
   function markerFrame(index: number) { const change = app.status?.changes[index]; if (!change) return 0; if (flagDrag && flagDrag.index === index) return flagDrag.frame; if (dragging && dragging.moved && index === selected) { const { span } = liveRange(); return Math.max(0, Math.min(app.levels.seconds * (app.status?.sampleRate ?? 48000), viewStart + dragging.pinX * span / liveWidth)) } return change.frame }
   function markerX(index: number) { const { start, span } = liveRange(); return (markerFrame(index) - start) / span * liveWidth }
   // In the flag row the whole flag counts (it sticks out to the right of the line), as in Albums & cuts
-  function markerAt(x: number, y = 99) { if (y < flagZone) { const changes = app.status?.changes ?? []; for (let index = changes.length - 1; index >= 0; index--) { const offset = x - markerX(index); if (offset >= -3 && offset <= 13) return index } } return markerNear(x) }
-  function markerNear(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((_, index) => { const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
+  function markerAt(x: number, y = 99) { if (y < flagZone) { const changes = app.status?.changes ?? []; for (let index = changes.length - 1; index >= 0; index--) { if (!listed(changes[index])) continue; const offset = x - markerX(index); if (offset >= -3 && offset <= 13) return index } } return markerNear(x) }
+  function markerNear(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((change, index) => { if (!listed(change)) return; const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
   function pause() { if (!following || !app.status) return; const { start, span } = liveRange(); viewStart = start; viewSpan = span; following = false }
   export function catchUp() { followSeconds = 60; liveScale = 1; following = true; selected = -1; dragging = null; drawLive() }
   function selectMarker(index: number, centre = false) {
@@ -131,7 +131,7 @@
       // Markers: the selected one in the accent colour with a band; the hovered one brighter
       context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'
       status.changes.forEach((change, index) => {
-        const x = markerX(index); if (x < -2 || x > liveWidth + 2) return
+        const x = markerX(index); if (x < -2 || x > liveWidth + 2 || !listed(change)) return
         const isSelected = index === selected, isHovered = index === hovered && !isSelected
         context.fillStyle = colour('--warn', '#ffb74d')
         if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.1 + 0.3 * pulse() : 0.12; context.fillRect(x - 6, 0, 12, height); context.globalAlpha = 1 }
@@ -226,8 +226,10 @@
   async function stepMarker(delta: number) {
     const changes = app.status?.changes ?? []
     if (!changes.length) return
-    const from = selected >= 0 ? selected : changes.findIndex(change => change.id === lastMarkerId)
-    const target = from < 0 ? 0 : Math.max(0, Math.min(changes.length - 1, from + delta))
+    const steps = changes.flatMap((change, index) => listed(change) ? [index] : [])
+    if (!steps.length) return
+    const from = steps.indexOf(selected >= 0 ? selected : changes.findIndex(change => change.id === lastMarkerId))
+    const target = steps[from < 0 ? 0 : Math.max(0, Math.min(steps.length - 1, from + delta))]
     if (target === selected) return
     const group = albums.find(album => album.indexes.includes(target))
     if (group) foldedAlbums = foldedAlbums.filter(key => key !== foldKey(group)) // a folded album opens to show the marker
@@ -263,14 +265,16 @@
     const rate = status.sampleRate || 48000, recorded = app.levels.seconds * rate
     const trackAt = (frame: number) => { let found = -1; status.changes.forEach((change, index) => { if (change.frame <= frame) found = index }); return found }
     // The take an issue hit, by its id: -2 when that take has since been removed (the issue goes with it)
+    const before = (item: { frame: number }) => !listed(item)
     const ownerOf = (item: { frame: number; changeId?: string }) => { if (!item.changeId) return trackAt(item.frame); return status.changes.findIndex(change => change.id === item.changeId) }
     const name = (index: number) => { const change = status.changes[index]; return change?.title ? `“${change.title}”` : index >= 0 ? `track ${index + 1}` : 'the recording' }
     const list: Issue[] = []
-    for (const dropout of status.dropoutList ?? []) { const index = ownerOf(dropout); if (index < 0 && dropout.changeId) continue; list.push({ kind: 'dropout', frame: dropout.frame, index, text: `Dropout at ${formatTime(dropout.frame, rate, false)} in ${name(index)}: about ${dropout.ms} ms lost.`, action: 'Play that track again; the new take replaces this one.' }) }
-    for (const gap of status.gapList ?? []) { const index = ownerOf(gap); if (index < 0 && gap.changeId) continue; list.push({ kind: 'gap', frame: gap.frame, index, text: `The sound cut out at ${formatTime(gap.frame, rate, false)} in ${name(index)} for ${gap.ms < 1000 ? gap.ms + ' ms' : (gap.ms / 1000).toFixed(1) + ' s'}: the player stalled (a busy PC?).`, action: 'The gap is in the recording: play that track again; the new take replaces this one.' }) }
-    for (const other of status.otherSounds ?? []) { const index = ownerOf(other); if (index < 0 && other.changeId) continue; list.push({ kind: 'other', frame: other.frame, index, text: `${other.app} made a sound at ${formatTime(other.frame, rate, false)} in ${name(index)} (${(other.ms / 1000).toFixed(1)} s, peak ${other.peakDb} dB).`, action: 'It is in the recording: play that track again, or turn on Do not disturb so it does not happen again.' }) }
-    for (const clip of status.clips ?? []) { const index = ownerOf(clip); if (index < 0 && clip.changeId) continue; list.push({ kind: 'clipping', frame: clip.frame, index, text: `Clipping at ${formatTime(clip.frame, rate, false)} in ${name(index)}: ${clip.samples} samples at full scale.`, action: 'Turn the source down a little and play that track again.' }) }
+    for (const dropout of status.dropoutList ?? []) { if (before(dropout)) continue; const index = ownerOf(dropout); if (index < 0 && dropout.changeId) continue; list.push({ kind: 'dropout', frame: dropout.frame, index, text: `Dropout at ${formatTime(dropout.frame, rate, false)} in ${name(index)}: about ${dropout.ms} ms lost.`, action: 'Play that track again; the new take replaces this one.' }) }
+    for (const gap of status.gapList ?? []) { if (before(gap)) continue; const index = ownerOf(gap); if (index < 0 && gap.changeId) continue; list.push({ kind: 'gap', frame: gap.frame, index, text: `The sound cut out at ${formatTime(gap.frame, rate, false)} in ${name(index)} for ${gap.ms < 1000 ? gap.ms + ' ms' : (gap.ms / 1000).toFixed(1) + ' s'}: the player stalled (a busy PC?).`, action: 'The gap is in the recording: play that track again; the new take replaces this one.' }) }
+    for (const other of status.otherSounds ?? []) { if (before(other)) continue; const index = ownerOf(other); if (index < 0 && other.changeId) continue; list.push({ kind: 'other', frame: other.frame, index, text: `${other.app} made a sound at ${formatTime(other.frame, rate, false)} in ${name(index)} (${(other.ms / 1000).toFixed(1)} s, peak ${other.peakDb} dB).`, action: 'It is in the recording: play that track again, or turn on Do not disturb so it does not happen again.' }) }
+    for (const clip of status.clips ?? []) { if (before(clip)) continue; const index = ownerOf(clip); if (index < 0 && clip.changeId) continue; list.push({ kind: 'clipping', frame: clip.frame, index, text: `Clipping at ${formatTime(clip.frame, rate, false)} in ${name(index)}: ${clip.samples} samples at full scale.`, action: 'Turn the source down a little and play that track again.' }) }
     status.changes.forEach((change, index) => {
+      if (!listed(change)) return
       if (!change.title && recorded - change.frame > 10 * rate && !change.problem) list.push({ kind: 'noname', frame: change.frame, index, text: `Track ${index + 1} (from ${formatTime(change.frame, rate, false)}) has no name.`, action: 'Type its artist and title in the list below.' })
       if (change.problem === 'retake' && !list.some(issue => issue.index === index)) list.push({ kind: 'retake', frame: change.frame, index, text: `Track ${index + 1} ${name(index)} is marked for a retake.`, action: 'Play it again; the new take replaces this one.' })
     })
@@ -339,7 +343,7 @@
     { label: 'Remove markers', key: 'Delete', danger: true, run: keys => { for (const key of keys.map(Number).sort((first, second) => second - first)) sendToShell({ type: 'removeChange', index: key }); clearSelection() } },
   ]
   function tickIndexes(indexes: number[], on: boolean) { const keys = new Set(ticked); for (const index of indexes) { if (on) keys.add(String(index)); else keys.delete(String(index)) } if (keys.size) selectKeys('record', Array.from(keys).sort((first, second) => Number(first) - Number(second)), recActions, 'track'); else clearSelection() }
-  function tickAll(on: boolean) { tickIndexes(changes.map((_, index) => index), on) }
+  function tickAll(on: boolean) { tickIndexes(changes.flatMap((change, index) => listed(change) ? [index] : []), on) }
   // Press and hold a track to pick it up; drop it on another album's header to join that album, or in the gap to give it its own
   let liftingIndex = $state(-1), liftedIndex = $state(-1), dropOn = $state(''), liftTimer = 0, liftStart = { x: 0, y: 0 }
   function liftDown(index: number, event: PointerEvent) {
@@ -378,9 +382,13 @@
   type Album = { key: string; artist: string; album: string; year: string; genre: string; composer: string; indexes: number[] }
   const loose = (text: string) => (text ?? '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
   const changes = $derived<Change[]>(app.status?.changes ?? [])
+  // Adding to a finished recording: only what's being added is listed; the tracks already there are edited in Albums & cuts
+  const appendFrom = $derived(app.status?.appendFrom ?? -1)
+  const listed = (change: { frame: number }) => appendFrom < 0 || change.frame >= appendFrom
   const albums = $derived.by(() => {
     const list: Album[] = []
     changes.forEach((change, index) => {
+      if (!listed(change)) return
       const key = change.album ? 'album:' + loose(change.album) : 'artist:' + loose(change.artist), last = list[list.length - 1] // by album, so a featured artist doesn't split it
       if (last && last.key === key) { last.indexes.push(index); if (!last.year && change.year) last.year = change.year; if (!last.genre && change.genre) last.genre = change.genre; if (!last.composer && change.composer) last.composer = change.composer }
       else list.push({ key, artist: change.artist, album: change.album, year: change.year ?? '', genre: change.genre ?? '', composer: change.composer ?? '', indexes: [index] })
@@ -456,6 +464,7 @@
       {#if recording}
         <div class="clock" class:armed-clock={app.status?.waitingForSound || app.status?.paused}>{app.status?.waitingForSound ? 'Armed' : app.status?.paused ? 'Paused' : formatTime(app.levels.seconds * 1000, 1000, false)}</div>
         {#if app.status?.waitingForSound}<div class="quiet info">waiting for sound: press play in your player; the silence before it isn't kept</div>{/if}
+        {#if appendFrom >= 0}<div class="quiet info adding">{app.status?.paused ? 'Adding to this recording: start the track in your player, then press the round button.' : 'Adding to this recording. A track with the same title, artist and album replaces its old take.'}</div>{/if}
         {#if hoursLeft != null}<div class="quiet info" class:space-low={hoursLeft < 1} title="Free space on {app.status?.diskDrive}: {((app.status?.diskFreeBytes ?? 0) / 1e9).toFixed(1)} GB">Room for {hoursText(hoursLeft)} more on {app.status?.diskDrive}</div>{/if}
         <div class="quiet info">{app.status?.sessionName} · {sizeText} WAV{#if firstEstimate}{' · '}<span class="estimate" title={estimates.map(estimate => `${estimate.name}: ${estimate.text}`).join(String.fromCharCode(10))}>{firstEstimate.text} as {firstEstimate.name}{estimates.length > 1 ? ` (+${estimates.length - 1} more)` : ''}</span>{/if}</div>
       {:else}
@@ -466,8 +475,8 @@
         <div class="quiet">Ctrl+R starts and stops recording from anywhere in the app.</div>
       {/if}
     </div>
-    {#if recording}<button class="ghost start-over" onclick={() => startingOver = true} title="Throw this recording away">Start over…</button>{/if}
-    {#if recording}<button class="primary finish" onclick={toggleRecording} title="Stop recording for good and go to Albums & cuts (Ctrl+R)">Finish and start editing the cuts<kbd>Ctrl+R</kbd></button>{/if}
+    {#if recording && appendFrom < 0}<button class="ghost start-over" onclick={() => startingOver = true} title="Throw this recording away">Start over…</button>{/if}
+    {#if recording}<button class="primary finish" onclick={toggleRecording} title="Stop recording for good and go to Albums & cuts (Ctrl+R)">{appendFrom >= 0 ? 'Finish and go back to the cuts' : 'Finish and start editing the cuts'}<kbd>Ctrl+R</kbd></button>{/if}
     {#if recording}<button class="ghost marker" onclick={() => sendToShell({ type: 'marker' })} title="Mark a new track here (M)"><Icon name="marker" size={14} />New track here<kbd>M</kbd></button>{/if}
   </div>
 
@@ -743,6 +752,7 @@
   .album-row.row-grid { border-radius: 8px; background: var(--panel); border: 1px solid var(--line); align-items: center; }
   .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .track-no { font-family: var(--font-display); font-size: 12px; text-align: center; color: var(--fg-quiet); }
+  .adding { color: var(--accent) !important; font-weight: 600; }
   .space-low { color: var(--danger) !important; font-weight: 600; }
   .quiet-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 6px 12px; margin-bottom: 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12.5px; }
   .quiet-item { display: inline-flex; align-items: center; gap: 8px; color: var(--warn); font-weight: 600; }

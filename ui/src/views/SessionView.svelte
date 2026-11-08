@@ -220,6 +220,10 @@
     commit(next.filter(track => track.id !== removed.id), how === 'gap' ? 'Removed 1 track (its audio is skipped on export)' : 'Removed 1 track and closed the gap')
     clearSelection()
   }
+  async function addToRecording() {
+    const result = await request<{ ok: boolean; reason: string }>({ type: 'appendRecording', id: sessionId })
+    if (result.ok) nav.view = 'record'; else toast(result.reason)
+  }
   function deleteTracks(keys: string[]) {
     const ids = keys.length ? keys : current ? [current.id] : []
     if (!ids.length) return
@@ -876,6 +880,7 @@
       <button class="ghost icon" onclick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={16} /><kbd>Ctrl+Z</kbd></button>
       <button class="ghost icon" onclick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"><Icon name="redo" size={16} /><kbd>Ctrl+Y</kbd></button>
       <button class="ghost" onclick={openHistory} title="Every earlier state of this track list, to go back to">History…</button>
+      <button class="ghost" disabled={!!app.status?.recording} onclick={addToRecording} title="Go back to recording and add more to the end of this session, for example a track that went wrong. Your cuts and tags stay as they are">Add to this recording</button>
     </div>
     {#if step === 'cuts'}
     <div class="group">
