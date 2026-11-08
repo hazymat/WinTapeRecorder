@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import { request, sendToShell } from '../bridge'
   import { app, nav, toast, formatTime, formatLength, writeSetting, readSetting } from '../state.svelte'
   import LevelMeter from '../parts/LevelMeter.svelte'
@@ -218,7 +219,32 @@
     drawLive()
   }
   $effect(() => { const canvas = liveCanvas; if (!canvas) return; canvas.addEventListener('wheel', onLiveWheel, { passive: false }); return () => canvas.removeEventListener('wheel', onLiveWheel) })
+  // Stepping through the markers from the keyboard (SPEC.md › Recording › Live editing): the left hand steps, the right hand drags the wave.
+  // With nothing selected it carries on from the last marker that was; with none ever selected it starts at the first
+  let lastMarkerId = ''
+  $effect(() => { const id = selected >= 0 ? app.status?.changes[selected]?.id : undefined; if (id) lastMarkerId = id })
+  async function stepMarker(delta: number) {
+    const changes = app.status?.changes ?? []
+    if (!changes.length) return
+    const from = selected >= 0 ? selected : changes.findIndex(change => change.id === lastMarkerId)
+    const target = from < 0 ? 0 : Math.max(0, Math.min(changes.length - 1, from + delta))
+    if (target === selected) return
+    const group = albums.find(album => album.indexes.includes(target))
+    if (group) foldedAlbums = foldedAlbums.filter(key => key !== foldKey(group)) // a folded album opens to show the marker
+    selectMarker(target, true)
+    await tick()
+    document.querySelector('.rec-list .row.current')?.scrollIntoView({ block: 'nearest' })
+  }
+  // Arrows only ever select a marker. They're left alone while typing (they move the caret), in a dialog, or with Ctrl, Alt or Shift
+  function arrowsAreFree(event: KeyboardEvent) {
+    if (event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return false
+    if (problemFor >= 0 || removing >= 0 || startingOver) return false
+    const target = event.target as HTMLElement | null
+    return !target?.matches?.('input:not([type=checkbox]):not([type=radio]), textarea, select, [contenteditable=true]')
+  }
+
   function onLiveKey(event: KeyboardEvent) {
+    if (recording && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && arrowsAreFree(event)) { event.preventDefault(); stepMarker(event.key === 'ArrowLeft' ? -1 : 1); return }
     if (event.key !== 'Escape' || !recording || (event.target as HTMLElement)?.matches?.('input, textarea')) return
     if (selected >= 0) { event.preventDefault(); deselect() } else if (!following || liveScale > 1.05 || followSeconds !== 60) { event.preventDefault(); catchUp() }
   }
@@ -538,7 +564,17 @@
     <canvas class="live-wave" bind:this={liveCanvas} bind:clientWidth={liveWidth} tabindex="-1" onpointerdown={onLiveDown} onpointermove={onLiveMove} onpointerup={onLiveUp} onpointercancel={onLiveUp} onpointerleave={() => { if (!dragging && hovered >= 0) { hovered = -1; drawLive() } }}></canvas>
 
     <div class="tracks-head">
-      <h3>Tracks marked so far</h3>
+      <div class="tracks-title">
+        <h3>Tracks marked so far</h3>
+        {#if changes.length}
+          <!-- These never take the keyboard focus, so Space can't press one by accident -->
+          <span class="marker-nav">
+            <button class="ghost" onpointerdown={(event) => event.preventDefault()} onclick={() => stepMarker(-1)} title="Go to the previous marker in the wave (left arrow)">Previous marker<kbd>←</kbd></button>
+            <button class="ghost" onpointerdown={(event) => event.preventDefault()} onclick={() => stepMarker(1)} title="Go to the next marker in the wave (right arrow)">Next marker<kbd>→</kbd></button>
+            <button class="ghost" disabled={selected < 0} onpointerdown={(event) => event.preventDefault()} onclick={deselect} title="Let go of the selected marker (Esc)">Deselect<kbd>Esc</kbd></button>
+          </span>
+        {/if}
+      </div>
       <Dropdown label="Track names" value={source} options={sourceChoices} align="right" onchange={(value) => source = value} />
     </div>
     <Hint id="live-edit-albums" text="Tracks are grouped by album; numbers count up by themselves. Edit an album's artist, name or year in its header to change all its tracks. A track that should belong to the album above or below: drag it by ⋮⋮ onto that album, or use ⤒ / ⤓." />
@@ -761,6 +797,12 @@
   .joins button { width: 24px; height: 26px; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; color: var(--fg); cursor: pointer; }
   .joins button:hover { background: var(--hover); }
   .tracks-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .tracks-title { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; min-width: 0; }
+  .marker-nav { display: inline-flex; gap: 5px; }
+  .marker-nav button { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; height: 24px; font-size: 11.5px; white-space: nowrap; }
+  .marker-nav button:disabled { opacity: 0.45; cursor: default; }
+  .marker-nav kbd { font-size: 10.5px; }
+  .rec-list .row { scroll-margin-top: 44px; }
   .line { margin: 4px 0; font-size: 13px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
   .line-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-quiet); font-weight: 600; min-width: 92px; }
   .field i { font-style: normal; font-size: 11px; color: var(--fg-quiet); margin-right: 5px; }
