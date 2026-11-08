@@ -288,7 +288,7 @@ public static class TagLookup
     }
 
     // A small preview for the track list, as a data URL (the page can't read files itself)
-    public static string Thumbnail(string path, int size = 256) // 256 px: the 84 px tiles stay sharp at 200% scaling
+    public static string Thumbnail(string path, int size = 512) // 512 px: the large cover preview stays sharp at 200% scaling
     {
         try
         {

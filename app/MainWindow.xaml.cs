@@ -283,11 +283,32 @@ public partial class MainWindow : Window
                 case "deleteSession": App.DeleteSession(Text(message, "id")); Reply(message, true); break;
                 // ---- Tags (SPEC.md › Tags) ----
                 case "lookup": Reply(message, await TagLookup.SearchAsync(Text(message, "source"), Text(message, "artist"), Text(message, "title"), Text(message, "album"), App.Settings.General.DiscogsToken)); break;
+                // A cover's real size and resolution, and the picture itself for comparing (SPEC.md › Fill gaps & covers). A web cover is fetched to the session folder first
+                case "artInfo":
+                    if (App.TryGetOpen(Text(message, "id"), out var artOpen))
+                    {
+                        var artPath = Text(message, "path"); var artUrl = Text(message, "url"); var artFull = message.TryGetProperty("full", out var fullFlag) && fullFlag.GetBoolean();
+                        try
+                        {
+                            Reply(message, await Task.Run<object>(async () =>
+                            {
+                                var bytes = artPath != "" ? await File.ReadAllBytesAsync(artPath) : await TagLookup.ArtBytesAsync(artUrl);
+                                if (artPath == "" && artFull) TagLookup.SaveArtBytes(bytes, artOpen.session.Folder, "art-web-");
+                                using var stream = new MemoryStream(bytes);
+                                var frame = System.Windows.Media.Imaging.BitmapDecoder.Create(stream, System.Windows.Media.Imaging.BitmapCreateOptions.DelayCreation, System.Windows.Media.Imaging.BitmapCacheOption.None).Frames[0];
+                                var type = bytes.Length > 4 && bytes[0] == 0x89 ? "image/png" : "image/jpeg";
+                                return new { width = frame.PixelWidth, height = frame.PixelHeight, bytes = bytes.Length, data = artFull ? $"data:{type};base64,{Convert.ToBase64String(bytes)}" : "" };
+                            }));
+                        }
+                        catch (Exception artError) { Reply(message, new { error = artError.Message }); }
+                    }
+                    else Reply(message, new { error = "That session isn't open." });
+                    break;
                 case "fetchArt":
-                    if (App.TryGetOpen(Text(message, "id"), out var artSession))
+                    if (App.TryGetOpen(Text(message, "id"), out var coverSession))
                     {
                         string savedArt;
-                        try { savedArt = await TagLookup.SaveArtAsync(Text(message, "url"), artSession.session.Folder); }
+                        try { savedArt = await TagLookup.SaveArtAsync(Text(message, "url"), coverSession.session.Folder); }
                         catch (HttpRequestException) { Reply(message, new { error = "That release has no cover picture online." }); break; }
                         Reply(message, new { path = savedArt, thumb = TagLookup.Thumbnail(savedArt) });
                     }
