@@ -207,8 +207,37 @@ public partial class App : Application
     DateTime lastCheckpoint = DateTime.UtcNow;
     int otherSoundsShown;
     bool wasWaiting;
+    // Long recordings (SPEC.md › Recording › Long sessions): while recording, Windows is asked not to sleep the PC for being idle.
+    // Closing a laptop lid, a low battery, or a restart for Windows Update can still stop it
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint flags);
+    bool keptAwake;
+    void KeepAwake(bool awake)
+    {
+        if (awake == keptAwake) return;
+        keptAwake = awake;
+        const uint Continuous = 0x80000000, SystemRequired = 0x00000001;
+        SetThreadExecutionState(awake ? Continuous | SystemRequired : Continuous);
+    }
+
+    // Free space where the recording goes, looked at every 10 s at most
+    (string drive, long free, DateTime at) diskFree = ("", -1, DateTime.MinValue);
+    (string drive, long free) DiskFree()
+    {
+        if (DateTime.UtcNow - diskFree.at < TimeSpan.FromSeconds(10)) return (diskFree.drive, diskFree.free);
+        try
+        {
+            var folder = Recorder.Session?.Folder ?? SessionStore.FolderFor(Settings.ActiveRecordingProfile);
+            var root = Path.GetPathRoot(Path.GetFullPath(folder)) ?? "";
+            var drive = new DriveInfo(root);
+            diskFree = (root.TrimEnd('\\'), drive.AvailableFreeSpace, DateTime.UtcNow);
+        }
+        catch { diskFree = ("", -1, DateTime.UtcNow); }
+        return (diskFree.drive, diskFree.free);
+    }
+
     public void CheckSilence()
     {
+        KeepAwake(Recorder.Recording);
         if (Recorder.Recording && Recorder.WaitingForSound != wasWaiting) { wasWaiting = Recorder.WaitingForSound; StatusChanged?.Invoke(); }
         if (Recorder.Recording) { var others = Recorder.OtherSoundsSoFar.Count; if (others != otherSoundsShown) { otherSoundsShown = others; StatusChanged?.Invoke(); } } else otherSoundsShown = 0;
         if (Recorder.Recording && DateTime.UtcNow - lastCheckpoint > TimeSpan.FromSeconds(30)) { lastCheckpoint = DateTime.UtcNow; try { Recorder.Checkpoint(); } catch { } }
@@ -579,6 +608,8 @@ public partial class App : Application
         channels = Recorder.Session?.Channels ?? 0,
         cutoffText = SpectralCutoff.Describe(Recorder.CurrentCutoffHz),
         sampleRate = Recorder.Session?.SampleRate ?? 0,
+        diskDrive = DiskFree().drive,
+        diskFreeBytes = DiskFree().free,
         changes = Recorder.Session?.Changes.Select(change => new { change.Id, change.Frame, change.DetectedFrame, change.Artist, change.Title, change.Album, change.Year, change.Genre, change.Composer, change.Confirmed, change.Manual, change.Problem, change.Note }) ?? Enumerable.Empty<object>(),
         dropoutList = Recorder.Dropouts.ToList().Select(dropout => new { dropout.Frame, dropout.Ms, changeId = IssueOwner("dropout", dropout.Frame) }),
         gapList = Recorder.GapsNow().Select(gap => new { gap.Frame, gap.Ms, changeId = IssueOwner("gap", gap.Frame) }),

@@ -254,6 +254,14 @@
     }
     return list
   })
+  // How long fits in the free space where the recording goes (SPEC.md › Recording › Long sessions)
+  const hoursLeft = $derived.by(() => {
+    const status = app.status, free = status?.diskFreeBytes ?? -1
+    if (!status || free < 0) return null
+    const rate = status.sampleRate || 48000, channels = status.channels || 2, bits = status.bitDepth || profile?.bitDepth || 24
+    return free / (rate * channels * bits / 8) / 3600
+  })
+  const hoursText = (hours: number) => hours >= 48 ? `${Math.floor(hours / 24)} days ${Math.round(hours % 24)} h` : hours >= 10 ? `${Math.round(hours)} hours` : hours >= 1 ? `${hours.toFixed(1)} hours` : `${Math.round(hours * 60)} minutes`
   const sizeText = $derived(app.levels.bytes > 1e9 ? `${(app.levels.bytes / 1e9).toFixed(2)} GB` : `${(app.levels.bytes / 1e6).toFixed(0)} MB`)
   // What each output profile would make of the recording so far: FLAC from the encoder's running estimate, lossy from bitrate × time, WAV as is (SPEC.md › Recording)
   const megabytes = (bytes: number) => bytes > 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${(bytes / 1e6).toFixed(0)} MB`
@@ -410,6 +418,7 @@
       <button class="ghost" onclick={() => sendToShell({ type: 'openSettings', tab: 'Recording' })}>Edit profiles…</button>
     </div>
     <p class="quiet device">{app.status?.device ? `From ${app.status.device}${profile?.loopback ? ' (what it plays)' : ''}` : 'No audio device open.'}{profile?.bitDepth ? ` · ${profile.bitDepth === 32 ? '32-bit float' : profile.bitDepth + '-bit'} WAV` : ''}</p>
+    {#if hoursLeft != null}<p class="quiet device space" class:space-low={hoursLeft < 1}>Room for about <strong>{hoursText(hoursLeft)}</strong> of recording on {app.status?.diskDrive} ({((app.status?.diskFreeBytes ?? 0) / 1e9).toFixed(0)} GB free). It can record that long in one go: the PC is kept awake while recording, but closing a laptop's lid, a low battery or a Windows Update restart can still stop it, so set those to never for very long sessions.</p>{/if}
   {/if}
   {#if recording && app.status?.dropouts}<p class="warn">{app.status.dropouts} dropout{app.status.dropouts === 1 ? '' : 's'}: the PC was too busy and samples were lost. They're marked in the session.</p>{/if}
 
@@ -419,6 +428,7 @@
       {#if recording}
         <div class="clock" class:armed-clock={app.status?.waitingForSound || app.status?.paused}>{app.status?.waitingForSound ? 'Armed' : app.status?.paused ? 'Paused' : formatTime(app.levels.seconds * 1000, 1000, false)}</div>
         {#if app.status?.waitingForSound}<div class="quiet info">waiting for sound: press play in your player; the silence before it isn't kept</div>{/if}
+        {#if hoursLeft != null}<div class="quiet info" class:space-low={hoursLeft < 1} title="Free space on {app.status?.diskDrive}: {((app.status?.diskFreeBytes ?? 0) / 1e9).toFixed(1)} GB">Room for {hoursText(hoursLeft)} more on {app.status?.diskDrive}</div>{/if}
         <div class="quiet info">{app.status?.sessionName} · {sizeText} WAV{#if firstEstimate}{' · '}<span class="estimate" title={estimates.map(estimate => `${estimate.name}: ${estimate.text}`).join(String.fromCharCode(10))}>{firstEstimate.text} as {firstEstimate.name}{estimates.length > 1 ? ` (+${estimates.length - 1} more)` : ''}</span>{/if}</div>
       {:else}
         <input class="session-name" bind:value={sessionName} placeholder="Session name (optional)" onkeydown={(event) => { if (event.key === 'Enter') toggleRecording() }} />
@@ -692,6 +702,7 @@
   .album-row.row-grid { border-radius: 8px; background: var(--panel); border: 1px solid var(--line); align-items: center; }
   .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .track-no { font-family: var(--font-display); font-size: 12px; text-align: center; color: var(--fg-quiet); }
+  .space-low { color: var(--danger) !important; font-weight: 600; }
   .quiet-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 6px 12px; margin-bottom: 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12.5px; }
   .quiet-item { display: inline-flex; align-items: center; gap: 8px; color: var(--warn); font-weight: 600; }
   .quiet-item.ok { color: #2e9e57; }
