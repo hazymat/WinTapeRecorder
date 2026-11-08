@@ -459,7 +459,12 @@ public partial class App : Application
         }
         var change = new NameChange { Frame = frame, Artist = name.Artist, Title = name.Title, Album = name.Album, AlbumArtist = name.AlbumArtist, TrackNumber = name.TrackNumber, Year = YearFor(name), Source = name.Label };
         // Players show an idle title for a moment between songs: a name that lasted under 5 s with no album was only that blip, so it goes
-        if (session.Changes.Count > 1 && session.Changes[^1] is { Manual: false, Problem: "", Album: "" } blip && frame - blip.Frame < 5L * session.SampleRate) session.Changes.RemoveAt(session.Changes.Count - 1);
+        if (session.Changes.Count > 1 && session.Changes[^1] is { Manual: false, Problem: "", Album: "" } blip && frame - blip.Frame < 5L * session.SampleRate)
+        {
+            session.Changes.RemoveAt(session.Changes.Count - 1);
+            // Back to the song it interrupted (a video or notification took over "now playing" for a moment): the song simply carries on
+            if (session.Changes.LastOrDefault() is { } resumed && string.Equals(resumed.Title.Trim(), name.Title.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(resumed.Artist.Trim(), name.Artist.Trim(), StringComparison.OrdinalIgnoreCase)) { lastNameKey = name.NameKey; session.Save(); StatusChanged?.Invoke(); return; }
+        }
         CarryAlbumTags(session, change);
         session.Changes.Add(change);
         if (name.Picture) _ = SavePlayerArtAsync(session, change, name.Key);

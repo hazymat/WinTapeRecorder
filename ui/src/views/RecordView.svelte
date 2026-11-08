@@ -317,7 +317,7 @@
     const changes = app.status?.changes ?? [], change = changes[index]
     if (!change || !faulty(change.problem) || !change.title) return -1
     const same = (text: string | undefined, other: string | undefined) => (text ?? '').trim().toLowerCase() === (other ?? '').trim().toLowerCase()
-    return changes.findIndex((later, at) => at > index && same(later.title, change.title) && same(later.artist, change.artist))
+    return changes.findIndex((later, at) => at > index && same(later.title, change.title) && same(later.artist, change.artist) && (!later.album || !change.album || same(later.album, change.album)))
   }
   function removeMarker(index: number) { const count = app.status?.changes.length ?? 0; if ((index > 0 && index < count - 1) || faulty(app.status?.changes[index]?.problem ?? '')) removing = index; else sendToShell({ type: 'removeChange', index }) }
   function closeGap(how: 'previous' | 'next' | 'middle') {
