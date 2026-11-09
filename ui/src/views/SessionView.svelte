@@ -956,6 +956,7 @@
     </div>
   </nav>
   <div class="toolbar">
+    <button class="ghost record-more" disabled={!!app.status?.recording} onclick={addToRecording} title="Go back to recording and add more to the end of this session, for example a track that went wrong. Your cuts and tags stay as they are"><span class="red-dot"></span>Record more</button>
     <button class="ghost" class:on={playing} onclick={() => playing ? stop() : playFrom(cursor)} title="Play from the playhead: click in the wave or on a track to move it (Space)"><Icon name={playing ? 'stop' : 'play'} size={16} />{playing ? 'Stop' : 'Play'}<kbd>Space</kbd></button>
     {#if step === 'cuts'}
     <div class="group">
@@ -982,7 +983,6 @@
       <button class="ghost icon" onclick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={16} /><kbd>Ctrl+Z</kbd></button>
       <button class="ghost icon" onclick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"><Icon name="redo" size={16} /><kbd>Ctrl+Y</kbd></button>
       <button class="ghost" onclick={openHistory} title="Every earlier state of this track list, to go back to">History…</button>
-      <button class="ghost" disabled={!!app.status?.recording} onclick={addToRecording} title="Go back to recording and add more to the end of this session, for example a track that went wrong. Your cuts and tags stay as they are">Add to this recording</button>
     </div>
     {#if step === 'cuts'}
     <div class="group">
@@ -1332,6 +1332,8 @@
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .row.playing-now { background: var(--accent-soft); }
+  .record-more { display: inline-flex; align-items: center; gap: 7px; }
+  .red-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--danger); flex: none; }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
   .number, .time, .fades { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
   .edge { background: none; border: 1px solid transparent; border-radius: 5px; padding: 2px 4px; text-align: left; cursor: pointer; }
