@@ -188,12 +188,13 @@
   async function snapped(frame: number) { return snapToZero ? await request<number>({ type: 'nearestZero', id: sessionId, frame, radius: Math.max(200, Math.round(view.framesPerPixel * 12)) }) : frame }
 
   async function setEdgeAtCursor(edge: 'start' | 'end', chosen?: Track) {
-    const track = chosen ?? current; if (!track) { toast('Put the playhead inside a track first'); return }
+    const track = chosen ?? current; if (!track) { toast('Put the playhead inside a track first'); return false }
     const frame = await snapped(cursor)
     const next = copy(), edited = next.find(candidate => candidate.id === track.id)!
-    if (edge === 'start' && frame >= edited.end || edge === 'end' && frame <= edited.start) { toast(edge === 'start' ? 'The start must be before the end' : 'The end must be after the start'); return }
+    if (edge === 'start' && frame >= edited.end || edge === 'end' && frame <= edited.start) { toast(edge === 'start' ? 'The start must be before the end' : 'The end must be after the start'); return false }
     edited[edge] = frame; grab = { trackId: track.id, edge }
     commit(next, `Track ${tracks.indexOf(track) + 1} ${edge === 'start' ? 'starts' : 'ends'} at ${formatTime(frame, rate)}`)
+    return true
   }
   async function splitAtCursor() {
     const frame = await snapped(cursor)
@@ -848,11 +849,12 @@
   }
 
   // ---- Track list selection and its actions (the multi-select bar) ----
+  // Tick a track and it takes the blue cursor as its start or end; ticking doesn't move the cursor
+  async function edgeToCursor(edge: 'start' | 'end', keys: string[]) { const track = tracks.find(candidate => candidate.id === keys[0]); if (track && await setEdgeAtCursor(edge, track)) clearSelection() }
   const actions: SelectionAction[] = [
-    { label: 'Hear starts', run: keys => audition('starts', keys) },
-    { label: 'Hear ends', run: keys => audition('ends', keys) },
+    { label: 'Start at cursor', key: 'S', single: true, run: keys => edgeToCursor('start', keys) },
+    { label: 'End at cursor', key: 'E', single: true, run: keys => edgeToCursor('end', keys) },
     { label: 'Confirm', key: 'Y', run: keys => confirmTracks(keys) },
-    { label: 'Export', run: keys => exportTracks(keys) },
     { label: 'Tags…', key: 'T', run: keys => tagging = keys },
     { label: 'Look up…', key: 'L', run: keys => openLookup(keys) },
     { label: 'Fades…', key: 'F', run: keys => { const first = tracks.find(track => keys.includes(track.id)); dialog = { kind: 'fades', keys, fadeIn: String(first?.fadeInMs ?? 0), fadeOut: String(first?.fadeOutMs ?? 0) } } },
@@ -949,7 +951,7 @@
       {:else}
         {#if outputChoices.length}<Dropdown label="Output profile" value={outputProfileId} options={outputChoices} onchange={(value) => { if (value === '__manage') { sendToShell({ type: 'openSettings', tab: 'Output profiles' }); return } if (session) session.outputProfileId = value; sendToShell({ type: 'saveSession', id: sessionId, outputProfileId: value }) }} />{/if}
         <span class="export-size" title="Estimated size of everything this session exports, with each album's profile (FLAC from the usual ratio, MP3 and AAC from the bitrate)">≈ {sizeText(estimateBytes(exportable))}</span>
-        {#if exportingHere}<button class="primary danger-button" onclick={() => sendToShell({ type: 'cancelExport' })} title="Stop after the track being written (it's finished or removed, never left half-written)">Cancel export ({app.status?.exportDone}/{app.status?.exportTotal})</button>{:else if queued}<button class="primary" onclick={() => sendToShell({ type: 'unqueueExport', id: sessionId })} title="Another session is exporting; this one starts after it. Click to take it out of the queue">Export queued: click to unqueue</button>{:else}        <button class="primary" disabled={!exportable.length} onclick={() => exportTracks(selectedIds.length ? selectedIds : unexported.length ? unexported.map(track => track.id) : undefined)} title="Ctrl+E"><Icon name="export" size={16} />{selectedIds.length ? `Export ${selectedIds.length} selected` : unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>{/if}
+        {#if exportingHere}<button class="primary danger-button" onclick={() => sendToShell({ type: 'cancelExport' })} title="Stop after the track being written (it's finished or removed, never left half-written)">Cancel export ({app.status?.exportDone}/{app.status?.exportTotal})</button>{:else if queued}<button class="primary" onclick={() => sendToShell({ type: 'unqueueExport', id: sessionId })} title="Another session is exporting; this one starts after it. Click to take it out of the queue">Export queued: click to unqueue</button>{:else}        <button class="primary" disabled={!exportable.length} onclick={() => exportTracks(selectedIds.length ? selectedIds : unexported.length ? unexported.map(track => track.id) : undefined)} title="Ctrl+E"><Icon name="export" size={16} />{selectedIds.length ? `Export ${selectedIds.length} selected` : unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>{#if selectedIds.length}<button class="ghost" onclick={() => exportTracks((unexported.length ? unexported : exportable).map(track => track.id))} title="Ignore the ticks and export everything">{unexported.length && unexported.length < exportable.length ? `Export the ${unexported.length} left` : 'Export all'}</button>{/if}{/if}
       {/if}
     </div>
   </nav>
@@ -1177,9 +1179,7 @@
         {/if}
       {/if}
       {#if group}
-      <div class="row has-cursor-tools" class:lifting={lifting === track.id} class:lifted={lifted === track.id} onpointerdown={(event) => liftDown(track, event)} class:current={track.id === current?.id} class:playing-now={playingPart === track.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
-        <!-- Browse the wave, place the blue cursor, then bring this row's start or end to it: the row itself isn't selected, so the cursor stays put -->
-        <span class="cursor-tools no-hold" role="group" aria-label="Move to the cursor" onpointerdown={(event) => event.stopPropagation()} onclick={(event) => event.stopPropagation()} onkeydown={() => { }}><span class="cursor-time">⌖ {formatTime(cursor, rate)}</span><button disabled={cursor >= track.end} onclick={() => setEdgeAtCursor('start', track)} title="Make this track start at the blue cursor">Start here</button><button disabled={cursor <= track.start} onclick={() => setEdgeAtCursor('end', track)} title="Make this track end at the blue cursor">End here</button></span>
+      <div class="row" class:lifting={lifting === track.id} class:lifted={lifted === track.id} onpointerdown={(event) => liftDown(track, event)} class:current={track.id === current?.id} class:playing-now={playingPart === track.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); tick(event, [track.id], !selectedIds.includes(track.id)) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
         <span class="hear no-hold">
           <button class="hear-start" class:checked={track.startChecked} class:doubt={!track.startSure && !track.startChecked} class:heard={focused?.trackId === track.id && focused.edge === 'start'} class:grabbed={grab?.trackId === track.id && grab.edge === 'start'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }} title={`Hear the start, zoomed in. ${track.startNote || ''}`} aria-label="Hear start"><Icon name="play" size={10} /><span class="pill-time">{formatTime(track.start, rate, false)}</span>{#if track.detectedStart != null && track.detectedStart >= 0 && track.start !== track.detectedStart}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'start') }} onkeydown={() => { }} title={`Moved. Click to put the start back where it was detected (${formatTime(track.detectedStart, rate, false)})`}>↺</span>{/if}</button><button class="hear-end" class:checked={track.endChecked} class:doubt={!track.endSure && !track.endChecked} class:heard={focused?.trackId === track.id && focused.edge === 'end'} class:grabbed={grab?.trackId === track.id && grab.edge === 'end'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }} title={`Hear the end, zoomed in. Length ${formatDuration((track.end - track.start) / rate)}. ${track.endNote || ''}`} aria-label="Hear end">{#if track.detectedEnd != null && track.detectedEnd >= 0 && track.end !== track.detectedEnd}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'end') }} onkeydown={() => { }} title={`Moved. Click to put the end back where it was detected (${formatTime(track.detectedEnd, rate, false)})`}>↺</span>{/if}<span class="pill-time">{formatLength(track.end - track.start, rate)}</span><Icon name="play" size={10} /></button><button class="ok" class:on={track.startChecked && track.endChecked} class:half={!!track.startChecked !== !!track.endChecked} onclick={(event) => { event.stopPropagation(); confirmTrack(track) }} title={track.startChecked && track.endChecked ? 'Start and end confirmed. Click to undo (Y)' : 'Happy with this start and end? Click to confirm both (Y)'} aria-label="Confirm this track's start and end">✓</button>
@@ -1331,13 +1331,6 @@
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .row.playing-now { background: var(--accent-soft); }
-  .row.has-cursor-tools { position: relative; }
-  .cursor-tools { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); z-index: 3; display: none; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: 7px; background: linear-gradient(var(--panel-solid), var(--panel-solid)), var(--bg); border: 1px solid var(--line); box-shadow: 0 4px 14px var(--shadow); font-size: 11.5px; white-space: nowrap; }
-  .row.has-cursor-tools:hover .cursor-tools { display: inline-flex; }
-  .cursor-time { color: #5ccfff; font-family: var(--font-display); margin-right: 4px; }
-  .cursor-tools button { height: 20px; padding: 0 8px; font: inherit; font-size: 11.5px; font-weight: 600; border-radius: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
-  .cursor-tools button:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); border-color: transparent; }
-  .cursor-tools button:disabled { opacity: 0.4; cursor: default; }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
   .number, .time, .fades { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
   .edge { background: none; border: 1px solid transparent; border-radius: 5px; padding: 2px 4px; text-align: left; cursor: pointer; }
