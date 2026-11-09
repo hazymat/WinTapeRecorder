@@ -386,10 +386,29 @@
   // Adding to a finished recording: only what's being added is listed; the tracks already there are edited in Albums & cuts
   const appendFrom = $derived(app.status?.appendFrom ?? -1)
   const listed = (change: { frame: number }) => appendFrom < 0 || change.frame >= appendFrom
+  // Record more, before anything has been named or recorded: the empty marker waiting for the first track isn't an album yet
+  const nothingYet = $derived(appendFrom >= 0 && changes.filter(listed).length === 1 && !changes.filter(listed)[0].title)
+  // Record more: what's already in the session, as edited, by album and folded away; it's shown, not edited here
+  type EarlierTrack = { id: string; start: number; end: number; artist: string; title: string; album: string; albumArtist: string; year: string; genre: string; composer: string; trackNumber: number; skip: boolean }
+  let earlierTracks = $state<EarlierTrack[]>([])
+  let earlierOpen = $state<string[]>([])
+  $effect(() => { if (appendFrom >= 0) request<EarlierTrack[]>({ type: 'appendTracks' }).then(async found => { earlierTracks = found; await tick(); const list = document.querySelector('.rec-list'); if (list) list.scrollTop = list.scrollHeight }).catch(() => { }); else { earlierTracks = []; earlierOpen = [] } })
+  const earlierAlbums = $derived.by(() => {
+    const byKey = new Map<string, Album & { tracks: EarlierTrack[] }>()
+    for (const track of earlierTracks) {
+      const key = track.album ? 'album:' + loose(track.album) : 'artist:' + loose(track.artist)
+      const found = byKey.get(key) ?? { key, album: track.album, artist: track.albumArtist || track.artist, year: track.year, genre: '', composer: '', indexes: [], tracks: [] }
+      if (!found.year) found.year = track.year
+      found.tracks.push(track); byKey.set(key, found)
+    }
+    for (const album of byKey.values()) album.tracks.sort((first, second) => (first.trackNumber || 9999) - (second.trackNumber || 9999))
+    return Array.from(byKey.values())
+  })
+  function openEarlier(key: string) { earlierOpen = earlierOpen.includes(key) ? earlierOpen.filter(other => other !== key) : [...earlierOpen, key] }
   const albums = $derived.by(() => {
     const list: Album[] = []
     changes.forEach((change, index) => {
-      if (!listed(change)) return
+      if (!listed(change) || nothingYet) return
       const key = change.album ? 'album:' + loose(change.album) : 'artist:' + loose(change.artist), last = list[list.length - 1] // by album, so a featured artist doesn't split it
       if (last && last.key === key) { last.indexes.push(index); if (!last.year && change.year) last.year = change.year; if (!last.genre && change.genre) last.genre = change.genre; if (!last.composer && change.composer) last.composer = change.composer }
       else list.push({ key, artist: change.artist, album: change.album, year: change.year ?? '', genre: change.genre ?? '', composer: change.composer ?? '', indexes: [index] })
@@ -515,7 +534,7 @@
         <span class="quiet small">{currentSource.label.replace('Media info: ', 'via ')}{currentSource.playing ? '' : ' (paused)'}</span>
       {:else}<span class="quiet">nothing named; gaps split tracks</span>{/if}
     </p>
-    {#if albums.length}
+    {#if albums.length || earlierAlbums.length}
       <div class="summary-sub">Albums so far</div>
       <div class="album-strip">
         {#each albums.slice().reverse() as group, position (group.key + group.indexes[0])}
@@ -530,6 +549,9 @@
               {#if open}<span class="album-tracks">{#each group.indexes as index}<span>{trackNumber(group, index) || '–'}. {changes[index].title || 'untitled'}</span>{/each}</span>{/if}
             </span>
           </button>
+        {/each}
+        {#each earlierAlbums.slice().reverse() as album (album.key)}
+          <button class="album-card" onclick={() => openEarlier(album.key)} title="Show its tracks in the list below"><span class="disc" style:--hue={hue(album.key)}>{initials(album)}</span><span class="album-text"><span class="album-name">{albumLine(album)}</span><span class="album-track quiet">{album.tracks.filter(track => !track.skip).length} tracks</span></span></button>
         {/each}
       </div>
     {/if}
@@ -590,7 +612,20 @@
     <Hint id="live-edit-albums" text="Tracks are grouped by album; numbers count up by themselves. Edit an album's artist, name or year in its header to change all its tracks. A track that should belong to the album above or below: drag it by ⋮⋮ onto that album, or use ⤒ / ⤓." />
     <!-- The same list as Albums & cuts (SPEC.md › Recording › Live editing), without auditioning: Start | Length find the line in the wave -->
     <div class="list rec-list" style:--columns={recColumns}>
-      <div class="row head"><span><input type="checkbox" class="tick" checked={changes.length > 0 && ticked.length === changes.length} indeterminate={ticked.length > 0 && ticked.length < changes.length} onchange={() => tickAll(ticked.length !== changes.length)} aria-label="Select all tracks" /></span><span class="head-cell">Start · Length</span><span class="head-cell">Artist</span><span class="head-cell">Album</span><span class="head-cell">Year</span><span class="head-cell">No.</span><span class="head-cell">Title</span><span class="head-cell">Genre</span><span class="head-cell">Composer</span><span></span><span></span></div>
+      <div class="row head"><span><input type="checkbox" class="tick" checked={changes.some(listed) && ticked.length === changes.filter(listed).length} indeterminate={ticked.length > 0 && ticked.length < changes.filter(listed).length} onchange={() => tickAll(ticked.length !== changes.filter(listed).length)} aria-label="Select all tracks" /></span><span class="head-cell">Start · Length</span><span class="head-cell">Artist</span><span class="head-cell">Album</span><span class="head-cell">Year</span><span class="head-cell">No.</span><span class="head-cell">Title</span><span class="head-cell">Genre</span><span class="head-cell">Composer</span><span></span><span></span></div>
+      {#if earlierAlbums.length}
+        <div class="earlier-title">Already in this recording<span class="quiet">Edit these in Albums & cuts</span></div>
+        {#each earlierAlbums as album (album.key)}
+          {@const rate = app.status?.sampleRate ?? 48000}
+          <button class="earlier-album" onclick={() => openEarlier(album.key)} aria-expanded={earlierOpen.includes(album.key)}><span class="fold">{earlierOpen.includes(album.key) ? '▾' : '▸'}</span><strong>{album.album || 'No album'}</strong> - {album.artist || 'unknown artist'}{album.year ? ` (${album.year})` : ''}<span class="quiet">{album.tracks.filter(track => !track.skip).length} tracks</span></button>
+          {#if earlierOpen.includes(album.key)}
+            {#each album.tracks as track, position (track.id)}
+              <div class="row earlier-row" class:left-out={track.skip} role="listitem"><span class="number">{track.trackNumber || position + 1}</span><span class="time">{formatTime(track.start, rate, false)} · {formatLength(track.end - track.start, rate)}</span><span>{track.artist}</span><span>{track.album}</span><span>{track.year}</span><span class="number">{track.trackNumber || ''}</span><span>{track.title}{track.skip ? ' (left out)' : ''}</span><span>{track.genre}</span><span>{track.composer}</span><span></span><span></span></div>
+            {/each}
+          {/if}
+        {/each}
+        <div class="earlier-title now">Being added now{#if nothingYet}<span class="quiet">Nothing yet</span>{/if}</div>
+      {/if}
       {#each albums as group, groupIndex (group.key + group.indexes[0])}
         {@const allTicked = group.indexes.every(index => ticked.includes(String(index)))}
         <div class="album-row open row-grid" class:over={dropOn === 'album:' + group.indexes[0]} data-drop={'album:' + group.indexes[0]} id={'album-' + group.indexes[0]} role="group" aria-label={albumLine(group)}>
@@ -753,6 +788,15 @@
   .album-row.row-grid { border-radius: 8px; background: var(--panel); border: 1px solid var(--line); align-items: center; }
   .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .track-no { font-family: var(--font-display); font-size: 12px; text-align: center; color: var(--fg-quiet); }
+  .earlier-title { display: flex; align-items: baseline; gap: 10px; padding: 10px 8px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg); }
+  .earlier-title .quiet { font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 12px; }
+  .earlier-title.now { color: var(--accent); }
+  .earlier-album { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 28px; padding: 0 8px; margin-top: 3px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
+  .earlier-album .quiet { margin-left: auto; font-size: 12px; }
+  .earlier-album:hover { background: var(--hover); }
+  .earlier-row { color: var(--fg-quiet); }
+  .earlier-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; min-width: 0; }
+  .earlier-row.left-out { opacity: 0.5; }
   .adding { color: var(--accent) !important; font-weight: 600; }
   .space-low { color: var(--danger) !important; font-weight: 600; }
   .quiet-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 6px 12px; margin-bottom: 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12.5px; }

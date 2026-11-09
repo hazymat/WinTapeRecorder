@@ -193,6 +193,10 @@ public partial class MainWindow : Window
                     break;
                 case "keepThroughSilence": App.Recorder.KeepThroughSilence = true; break;
                 // Start over (SPEC.md › Recording): the recording so far is thrown away, and optionally a new one starts straight away
+                // Record more: the tracks already in the session, as edited, to show above what's being added
+                case "appendTracks":
+                    Reply(message, (App.Recorder.Session?.Tracks ?? new List<Track>()).Select(track => new { id = track.Id, start = track.Start, end = track.End, artist = track.Artist, title = track.Title, album = track.Album, albumArtist = track.AlbumArtist, year = track.Year, genre = track.Genre, composer = track.Composer, trackNumber = track.TrackNumber, skip = track.Skip }));
+                    break;
                 case "appendRecording":
                     {
                         var appendProblem = App.AppendRecording(Text(message, "id"), Text(message, "source") is { Length: > 0 } appendSource ? appendSource : "auto");

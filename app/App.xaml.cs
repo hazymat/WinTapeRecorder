@@ -329,7 +329,7 @@ public partial class App : Application
             RecordingSource = source; CurrentName = Watcher.Current(source, Snapshot(profile)); LookUpYear(CurrentName);
             var first = new NameChange { Frame = session.AppendFrom, Source = "marker", Manual = true };
             lastNameKey = "";
-            if (CurrentName is { HasName: true } name)
+            if (CurrentName is { HasName: true, Playing: true } name) // something only sitting in a player or a tab isn't what's about to be recorded
             {
                 first.Artist = name.Artist; first.Title = name.Title; first.Album = name.Album; first.AlbumArtist = name.AlbumArtist; first.TrackNumber = name.TrackNumber; first.Year = YearFor(name); first.Source = name.Label; first.Manual = false;
                 CarryAlbumTags(session, first); lastNameKey = name.NameKey;
@@ -507,6 +507,7 @@ public partial class App : Application
         var profile = Settings.RecordingProfileOrActive(session.RecordingProfileId);
         CurrentName = Watcher.Current(RecordingSource, Snapshot(profile)); LookUpYear(CurrentName);
         if (CurrentName is not { HasName: true } name) return;
+        if (Recorder.Paused && !name.Playing) return; // paused and nothing playing: that name isn't the next track
         if (name.NameKey == lastNameKey)
         {
             // Players send the album and such a moment after the title: fill what the marker still lacks, never what was typed
