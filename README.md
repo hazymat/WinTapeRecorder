@@ -1,5 +1,7 @@
 # WinTapeRecorder
 
+**WinTapeRecorder is a free, open-source Windows app.** Read more about it, and download it, on its website: [hazymat.github.io/WinTapeRecorder](https://hazymat.github.io/WinTapeRecorder/)
+
 A tape recorder for Windows listening sessions. Record a whole session into one WAV file, let WinTapeRecorder mark where each track starts and ends, fine-tune the cuts on a waveform you can zoom down to single samples, audition the joins, then export every track as its own tagged file in one go. The session's WAV stays until you've checked the results and close the session.
 
 - **Records** any input, or what any output device is playing (loopback).
