@@ -7,6 +7,7 @@ namespace WinTapeRecorder.Sessions;
 // A now-playing name seen while recording, at the frame it appeared (SPEC.md › Track detection)
 public class NameChange
 {
+    public string TrackId { get; set; } = ""; // Record more: the finished track this row stands for
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8]; // lets an issue follow the take it hit, whatever is moved or removed around it
     public long Frame { get; set; }
     public long DetectedFrame { get; set; } = -1; // where it was placed by itself, once it has been moved by hand (for ↺)
@@ -162,6 +163,7 @@ public class Session
     public List<NameChange> Changes { get; set; } = new();
     public List<Dropout> Dropouts { get; set; } = new();
     public bool RetakesNumbered { get; set; } // track numbers were set with retakes in the bad takes' places
+    public List<NameChange>? ChangesBeforeAppend { get; set; } // Record more: the names as captured, put back at the next Finish
     public long AppendFrom { get; set; } = -1; // adding to a finished recording: where the new audio starts, until it's finished again
     public List<Dropout> Gaps { get; set; } = new(); // playback stalls: the sound cut dead mid-song, then came back
     public List<OtherSound> OtherSounds { get; set; } = new();

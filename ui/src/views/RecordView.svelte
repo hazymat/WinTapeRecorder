@@ -59,8 +59,8 @@
   function markerFrame(index: number) { const change = app.status?.changes[index]; if (!change) return 0; if (flagDrag && flagDrag.index === index) return flagDrag.frame; if (dragging && dragging.moved && index === selected) { const { span } = liveRange(); return Math.max(0, Math.min(app.levels.seconds * (app.status?.sampleRate ?? 48000), viewStart + dragging.pinX * span / liveWidth)) } return change.frame }
   function markerX(index: number) { const { start, span } = liveRange(); return (markerFrame(index) - start) / span * liveWidth }
   // In the flag row the whole flag counts (it sticks out to the right of the line), as in Albums & cuts
-  function markerAt(x: number, y = 99) { if (y < flagZone) { const changes = app.status?.changes ?? []; for (let index = changes.length - 1; index >= 0; index--) { if (!listed(changes[index])) continue; const offset = x - markerX(index); if (offset >= -3 && offset <= 13) return index } } return markerNear(x) }
-  function markerNear(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((change, index) => { if (!listed(change)) return; const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
+  function markerAt(x: number, y = 99) { if (y < flagZone) { const changes = app.status?.changes ?? []; for (let index = changes.length - 1; index >= 0; index--) { const offset = x - markerX(index); if (offset >= -3 && offset <= 13) return index } } return markerNear(x) }
+  function markerNear(x: number) { const changes = app.status?.changes ?? []; let best = -1, bestDistance = 7; changes.forEach((_, index) => { const distance = Math.abs(markerX(index) - x); if (distance < bestDistance || (index === selected && distance < 9)) { best = index; bestDistance = distance } }); return best }
   function pause() { if (!following || !app.status) return; const { start, span } = liveRange(); viewStart = start; viewSpan = span; following = false }
   export function catchUp() { followSeconds = 60; liveScale = 1; following = true; selected = -1; dragging = null; drawLive() }
   function selectMarker(index: number, centre = false) {
@@ -131,7 +131,7 @@
       // Markers: the selected one in the accent colour with a band; the hovered one brighter
       context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'
       status.changes.forEach((change, index) => {
-        const x = markerX(index); if (x < -2 || x > liveWidth + 2 || !listed(change)) return
+        const x = markerX(index); if (x < -2 || x > liveWidth + 2) return
         const isSelected = index === selected, isHovered = index === hovered && !isSelected
         context.fillStyle = colour('--warn', '#ffb74d')
         if (isSelected || isHovered) { context.globalAlpha = isSelected ? 0.1 + 0.3 * pulse() : 0.12; context.fillRect(x - 6, 0, 12, height); context.globalAlpha = 1 }
@@ -226,10 +226,8 @@
   async function stepMarker(delta: number) {
     const changes = app.status?.changes ?? []
     if (!changes.length) return
-    const steps = changes.flatMap((change, index) => listed(change) ? [index] : [])
-    if (!steps.length) return
-    const from = steps.indexOf(selected >= 0 ? selected : changes.findIndex(change => change.id === lastMarkerId))
-    const target = steps[from < 0 ? 0 : Math.max(0, Math.min(steps.length - 1, from + delta))]
+    const from = selected >= 0 ? selected : changes.findIndex(change => change.id === lastMarkerId)
+    const target = from < 0 ? 0 : Math.max(0, Math.min(changes.length - 1, from + delta))
     if (target === selected) return
     const group = albums.find(album => album.indexes.includes(target))
     if (group) foldedAlbums = foldedAlbums.filter(key => key !== foldKey(group)) // a folded album opens to show the marker
@@ -265,16 +263,14 @@
     const rate = status.sampleRate || 48000, recorded = app.levels.seconds * rate
     const trackAt = (frame: number) => { let found = -1; status.changes.forEach((change, index) => { if (change.frame <= frame) found = index }); return found }
     // The take an issue hit, by its id: -2 when that take has since been removed (the issue goes with it)
-    const before = (item: { frame: number }) => !listed(item)
     const ownerOf = (item: { frame: number; changeId?: string }) => { if (!item.changeId) return trackAt(item.frame); return status.changes.findIndex(change => change.id === item.changeId) }
     const name = (index: number) => { const change = status.changes[index]; return change?.title ? `“${change.title}”` : index >= 0 ? `track ${index + 1}` : 'the recording' }
     const list: Issue[] = []
-    for (const dropout of status.dropoutList ?? []) { if (before(dropout)) continue; const index = ownerOf(dropout); if (index < 0 && dropout.changeId) continue; list.push({ kind: 'dropout', frame: dropout.frame, index, text: `Dropout at ${formatTime(dropout.frame, rate, false)} in ${name(index)}: about ${dropout.ms} ms lost.`, action: 'Play that track again; the new take replaces this one.' }) }
-    for (const gap of status.gapList ?? []) { if (before(gap)) continue; const index = ownerOf(gap); if (index < 0 && gap.changeId) continue; list.push({ kind: 'gap', frame: gap.frame, index, text: `The sound cut out at ${formatTime(gap.frame, rate, false)} in ${name(index)} for ${gap.ms < 1000 ? gap.ms + ' ms' : (gap.ms / 1000).toFixed(1) + ' s'}: the player stalled (a busy PC?).`, action: 'The gap is in the recording: play that track again; the new take replaces this one.' }) }
-    for (const other of status.otherSounds ?? []) { if (before(other)) continue; const index = ownerOf(other); if (index < 0 && other.changeId) continue; list.push({ kind: 'other', frame: other.frame, index, text: `${other.app} made a sound at ${formatTime(other.frame, rate, false)} in ${name(index)} (${(other.ms / 1000).toFixed(1)} s, peak ${other.peakDb} dB).`, action: 'It is in the recording: play that track again, or turn on Do not disturb so it does not happen again.' }) }
-    for (const clip of status.clips ?? []) { if (before(clip)) continue; const index = ownerOf(clip); if (index < 0 && clip.changeId) continue; list.push({ kind: 'clipping', frame: clip.frame, index, text: `Clipping at ${formatTime(clip.frame, rate, false)} in ${name(index)}: ${clip.samples} samples at full scale.`, action: 'Turn the source down a little and play that track again.' }) }
+    for (const dropout of status.dropoutList ?? []) { const index = ownerOf(dropout); if (index < 0 && dropout.changeId) continue; list.push({ kind: 'dropout', frame: dropout.frame, index, text: `Dropout at ${formatTime(dropout.frame, rate, false)} in ${name(index)}: about ${dropout.ms} ms lost.`, action: 'Play that track again; the new take replaces this one.' }) }
+    for (const gap of status.gapList ?? []) { const index = ownerOf(gap); if (index < 0 && gap.changeId) continue; list.push({ kind: 'gap', frame: gap.frame, index, text: `The sound cut out at ${formatTime(gap.frame, rate, false)} in ${name(index)} for ${gap.ms < 1000 ? gap.ms + ' ms' : (gap.ms / 1000).toFixed(1) + ' s'}: the player stalled (a busy PC?).`, action: 'The gap is in the recording: play that track again; the new take replaces this one.' }) }
+    for (const other of status.otherSounds ?? []) { const index = ownerOf(other); if (index < 0 && other.changeId) continue; list.push({ kind: 'other', frame: other.frame, index, text: `${other.app} made a sound at ${formatTime(other.frame, rate, false)} in ${name(index)} (${(other.ms / 1000).toFixed(1)} s, peak ${other.peakDb} dB).`, action: 'It is in the recording: play that track again, or turn on Do not disturb so it does not happen again.' }) }
+    for (const clip of status.clips ?? []) { const index = ownerOf(clip); if (index < 0 && clip.changeId) continue; list.push({ kind: 'clipping', frame: clip.frame, index, text: `Clipping at ${formatTime(clip.frame, rate, false)} in ${name(index)}: ${clip.samples} samples at full scale.`, action: 'Turn the source down a little and play that track again.' }) }
     status.changes.forEach((change, index) => {
-      if (!listed(change)) return
       if (!change.title && recorded - change.frame > 10 * rate && !change.problem) list.push({ kind: 'noname', frame: change.frame, index, text: `Track ${index + 1} (from ${formatTime(change.frame, rate, false)}) has no name.`, action: 'Type its artist and title in the list below.' })
       if (change.problem === 'retake' && !list.some(issue => issue.index === index)) list.push({ kind: 'retake', frame: change.frame, index, text: `Track ${index + 1} ${name(index)} is marked for a retake.`, action: 'Play it again; the new take replaces this one.' })
     })
@@ -344,7 +340,7 @@
   ]
   function tickIndexes(indexes: number[], on: boolean) { const keys = new Set(ticked); for (const index of indexes) { if (on) keys.add(String(index)); else keys.delete(String(index)) } if (keys.size) selectKeys('record', Array.from(keys).sort((first, second) => Number(first) - Number(second)), recActions, 'track'); else clearSelection() }
   const tickRecord = (event: MouseEvent, indexes: number[], on: boolean) => tickKeys(event, 'record', indexes.map(String), albums.filter(group => !foldedAlbums.includes(foldKey(group))).flatMap(group => group.indexes).map(String), on, recActions, 'track')
-  function tickAll(on: boolean) { tickIndexes(changes.flatMap((change, index) => listed(change) ? [index] : []), on) }
+  function tickAll(on: boolean) { tickIndexes(changes.map((_, index) => index), on) }
   // Press and hold a track to pick it up; drop it on another album's header to join that album, or in the gap to give it its own
   let liftingIndex = $state(-1), liftedIndex = $state(-1), dropOn = $state(''), liftTimer = 0, liftStart = { x: 0, y: 0 }
   function liftDown(index: number, event: PointerEvent) {
@@ -383,32 +379,10 @@
   type Album = { key: string; artist: string; album: string; year: string; genre: string; composer: string; indexes: number[] }
   const loose = (text: string) => (text ?? '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
   const changes = $derived<Change[]>(app.status?.changes ?? [])
-  // Adding to a finished recording: only what's being added is listed; the tracks already there are edited in Albums & cuts
-  const appendFrom = $derived(app.status?.appendFrom ?? -1)
-  const listed = (change: { frame: number }) => appendFrom < 0 || change.frame >= appendFrom
-  // Record more, before anything has been named or recorded: the empty marker waiting for the first track isn't an album yet
-  const nothingYet = $derived(appendFrom >= 0 && changes.filter(listed).length === 1 && !changes.filter(listed)[0].title)
-  // Record more: what's already in the session, as edited, by album and folded away; it's shown, not edited here
-  type EarlierTrack = { id: string; start: number; end: number; artist: string; title: string; album: string; albumArtist: string; year: string; genre: string; composer: string; trackNumber: number; skip: boolean }
-  let earlierTracks = $state<EarlierTrack[]>([])
-  let earlierOpen = $state<string[]>([])
-  $effect(() => { if (appendFrom >= 0) request<EarlierTrack[]>({ type: 'appendTracks' }).then(async found => { earlierTracks = found; await tick(); const list = document.querySelector('.rec-list'); if (list) list.scrollTop = list.scrollHeight }).catch(() => { }); else { earlierTracks = []; earlierOpen = [] } })
-  const earlierAlbums = $derived.by(() => {
-    const byKey = new Map<string, Album & { tracks: EarlierTrack[] }>()
-    for (const track of earlierTracks) {
-      const key = track.album ? 'album:' + loose(track.album) : 'artist:' + loose(track.artist)
-      const found = byKey.get(key) ?? { key, album: track.album, artist: track.albumArtist || track.artist, year: track.year, genre: '', composer: '', indexes: [], tracks: [] }
-      if (!found.year) found.year = track.year
-      found.tracks.push(track); byKey.set(key, found)
-    }
-    for (const album of byKey.values()) album.tracks.sort((first, second) => (first.trackNumber || 9999) - (second.trackNumber || 9999))
-    return Array.from(byKey.values())
-  })
-  function openEarlier(key: string) { earlierOpen = earlierOpen.includes(key) ? earlierOpen.filter(other => other !== key) : [...earlierOpen, key] }
+  const appendFrom = $derived(app.status?.appendFrom ?? -1) // Record more: the finished recording is carrying on
   const albums = $derived.by(() => {
     const list: Album[] = []
     changes.forEach((change, index) => {
-      if (!listed(change) || nothingYet) return
       const key = change.album ? 'album:' + loose(change.album) : 'artist:' + loose(change.artist), last = list[list.length - 1] // by album, so a featured artist doesn't split it
       if (last && last.key === key) { last.indexes.push(index); if (!last.year && change.year) last.year = change.year; if (!last.genre && change.genre) last.genre = change.genre; if (!last.composer && change.composer) last.composer = change.composer }
       else list.push({ key, artist: change.artist, album: change.album, year: change.year ?? '', genre: change.genre ?? '', composer: change.composer ?? '', indexes: [index] })
@@ -484,7 +458,6 @@
       {#if recording}
         <div class="clock" class:armed-clock={app.status?.waitingForSound || app.status?.paused}>{app.status?.waitingForSound ? 'Armed' : app.status?.paused ? 'Paused' : formatTime(app.levels.seconds * 1000, 1000, false)}</div>
         {#if app.status?.waitingForSound}<div class="quiet info">waiting for sound: press play in your player; the silence before it isn't kept</div>{/if}
-        {#if appendFrom >= 0}<div class="quiet info adding">{app.status?.paused ? 'Adding to this recording: start the track in your player, then press the round button.' : 'Adding to this recording. A track with the same title, artist and album replaces its old take.'}</div>{/if}
         {#if hoursLeft != null}<div class="quiet info" class:space-low={hoursLeft < 1} title="Free space on {app.status?.diskDrive}: {((app.status?.diskFreeBytes ?? 0) / 1e9).toFixed(1)} GB">Room for {hoursText(hoursLeft)} more on {app.status?.diskDrive}</div>{/if}
         <div class="quiet info">{app.status?.sessionName} · {sizeText} WAV{#if firstEstimate}{' · '}<span class="estimate" title={estimates.map(estimate => `${estimate.name}: ${estimate.text}`).join(String.fromCharCode(10))}>{firstEstimate.text} as {firstEstimate.name}{estimates.length > 1 ? ` (+${estimates.length - 1} more)` : ''}</span>{/if}</div>
       {:else}
@@ -496,7 +469,7 @@
       {/if}
     </div>
     {#if recording && appendFrom < 0}<button class="ghost start-over" onclick={() => startingOver = true} title="Throw this recording away">Start over…</button>{/if}
-    {#if recording}<button class="primary finish" onclick={toggleRecording} title="Stop recording for good and go to Albums & cuts (Ctrl+R)">{appendFrom >= 0 ? 'Finish and go back to the cuts' : 'Finish and start editing the cuts'}<kbd>Ctrl+R</kbd></button>{/if}
+    {#if recording}<button class="primary finish" onclick={toggleRecording} title="Stop recording for good and go to Albums & cuts (Ctrl+R)">Finish and start editing the cuts<kbd>Ctrl+R</kbd></button>{/if}
     {#if recording}<button class="ghost marker" onclick={() => sendToShell({ type: 'marker' })} title="Mark a new track here (M)"><Icon name="marker" size={14} />New track here<kbd>M</kbd></button>{/if}
   </div>
 
@@ -534,7 +507,7 @@
         <span class="quiet small">{currentSource.label.replace('Media info: ', 'via ')}{currentSource.playing ? '' : ' (paused)'}</span>
       {:else}<span class="quiet">nothing named; gaps split tracks</span>{/if}
     </p>
-    {#if albums.length || earlierAlbums.length}
+    {#if albums.length}
       <div class="summary-sub">Albums so far</div>
       <div class="album-strip">
         {#each albums.slice().reverse() as group, position (group.key + group.indexes[0])}
@@ -549,9 +522,6 @@
               {#if open}<span class="album-tracks">{#each group.indexes as index}<span>{trackNumber(group, index) || '–'}. {changes[index].title || 'untitled'}</span>{/each}</span>{/if}
             </span>
           </button>
-        {/each}
-        {#each earlierAlbums.slice().reverse() as album (album.key)}
-          <button class="album-card" onclick={() => openEarlier(album.key)} title="Show its tracks in the list below"><span class="disc" style:--hue={hue(album.key)}>{initials(album)}</span><span class="album-text"><span class="album-name">{albumLine(album)}</span><span class="album-track quiet">{album.tracks.filter(track => !track.skip).length} tracks</span></span></button>
         {/each}
       </div>
     {/if}
@@ -612,20 +582,7 @@
     <Hint id="live-edit-albums" text="Tracks are grouped by album; numbers count up by themselves. Edit an album's artist, name or year in its header to change all its tracks. A track that should belong to the album above or below: drag it by ⋮⋮ onto that album, or use ⤒ / ⤓." />
     <!-- The same list as Albums & cuts (SPEC.md › Recording › Live editing), without auditioning: Start | Length find the line in the wave -->
     <div class="list rec-list" style:--columns={recColumns}>
-      <div class="row head"><span><input type="checkbox" class="tick" checked={changes.some(listed) && ticked.length === changes.filter(listed).length} indeterminate={ticked.length > 0 && ticked.length < changes.filter(listed).length} onchange={() => tickAll(ticked.length !== changes.filter(listed).length)} aria-label="Select all tracks" /></span><span class="head-cell">Start · Length</span><span class="head-cell">Artist</span><span class="head-cell">Album</span><span class="head-cell">Year</span><span class="head-cell">No.</span><span class="head-cell">Title</span><span class="head-cell">Genre</span><span class="head-cell">Composer</span><span></span><span></span></div>
-      {#if earlierAlbums.length}
-        <div class="earlier-title">Already in this recording<span class="quiet">Edit these in Albums & cuts</span></div>
-        {#each earlierAlbums as album (album.key)}
-          {@const rate = app.status?.sampleRate ?? 48000}
-          <button class="earlier-album" onclick={() => openEarlier(album.key)} aria-expanded={earlierOpen.includes(album.key)}><span class="fold">{earlierOpen.includes(album.key) ? '▾' : '▸'}</span><strong>{album.album || 'No album'}</strong> - {album.artist || 'unknown artist'}{album.year ? ` (${album.year})` : ''}<span class="quiet">{album.tracks.filter(track => !track.skip).length} tracks</span></button>
-          {#if earlierOpen.includes(album.key)}
-            {#each album.tracks as track, position (track.id)}
-              <div class="row earlier-row" class:left-out={track.skip} role="listitem"><span class="number">{track.trackNumber || position + 1}</span><span class="time">{formatTime(track.start, rate, false)} · {formatLength(track.end - track.start, rate)}</span><span>{track.artist}</span><span>{track.album}</span><span>{track.year}</span><span class="number">{track.trackNumber || ''}</span><span>{track.title}{track.skip ? ' (left out)' : ''}</span><span>{track.genre}</span><span>{track.composer}</span><span></span><span></span></div>
-            {/each}
-          {/if}
-        {/each}
-        <div class="earlier-title now">Being added now{#if nothingYet}<span class="quiet">Nothing yet</span>{/if}</div>
-      {/if}
+      <div class="row head"><span><input type="checkbox" class="tick" checked={changes.length > 0 && ticked.length === changes.length} indeterminate={ticked.length > 0 && ticked.length < changes.length} onchange={() => tickAll(ticked.length !== changes.length)} aria-label="Select all tracks" /></span><span class="head-cell">Start · Length</span><span class="head-cell">Artist</span><span class="head-cell">Album</span><span class="head-cell">Year</span><span class="head-cell">No.</span><span class="head-cell">Title</span><span class="head-cell">Genre</span><span class="head-cell">Composer</span><span></span><span></span></div>
       {#each albums as group, groupIndex (group.key + group.indexes[0])}
         {@const allTicked = group.indexes.every(index => ticked.includes(String(index)))}
         <div class="album-row open row-grid" class:over={dropOn === 'album:' + group.indexes[0]} data-drop={'album:' + group.indexes[0]} id={'album-' + group.indexes[0]} role="group" aria-label={albumLine(group)}>
@@ -788,16 +745,6 @@
   .album-row.row-grid { border-radius: 8px; background: var(--panel); border: 1px solid var(--line); align-items: center; }
   .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .track-no { font-family: var(--font-display); font-size: 12px; text-align: center; color: var(--fg-quiet); }
-  .earlier-title { display: flex; align-items: baseline; gap: 10px; padding: 10px 8px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg); }
-  .earlier-title .quiet { font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 12px; }
-  .earlier-title.now { color: var(--accent); }
-  .earlier-album { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 28px; padding: 0 8px; margin-top: 3px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
-  .earlier-album .quiet { margin-left: auto; font-size: 12px; }
-  .earlier-album:hover { background: var(--hover); }
-  .earlier-row { color: var(--fg-quiet); }
-  .earlier-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; min-width: 0; }
-  .earlier-row.left-out { opacity: 0.5; }
-  .adding { color: var(--accent) !important; font-weight: 600; }
   .space-low { color: var(--danger) !important; font-weight: 600; }
   .quiet-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 6px 12px; margin-bottom: 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12.5px; }
   .quiet-item { display: inline-flex; align-items: center; gap: 8px; color: var(--warn); font-weight: 600; }

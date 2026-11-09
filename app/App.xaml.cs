@@ -326,20 +326,20 @@ public partial class App : Application
             issueOwners.Clear();
             Recorder.Start(profile, session, resume: true);
             session.AppendFrom = Recorder.FramesWritten; session.Recording = true;
-            RecordingSource = source; CurrentName = Watcher.Current(source, Snapshot(profile)); LookUpYear(CurrentName);
-            var first = new NameChange { Frame = session.AppendFrom, Source = "marker", Manual = true };
-            lastNameKey = "";
-            if (CurrentName is { HasName: true, Playing: true } name) // something only sitting in a player or a tab isn't what's about to be recorded
+            RecordingSource = source; lastNameKey = ""; resumedSong = true;
+            session.ChangesBeforeAppend = session.Changes;
+            session.Changes = session.Tracks.OrderBy(track => track.Start).Select(track => new NameChange
             {
-                first.Artist = name.Artist; first.Title = name.Title; first.Album = name.Album; first.AlbumArtist = name.AlbumArtist; first.TrackNumber = name.TrackNumber; first.Year = YearFor(name); first.Source = name.Label; first.Manual = false;
-                CarryAlbumTags(session, first); lastNameKey = name.NameKey;
-            }
-            session.Changes.Add(first);
+                TrackId = track.Id, Frame = track.Start, Artist = track.Artist, Title = track.Title, Album = track.Album, AlbumArtist = track.AlbumArtist, TrackNumber = track.TrackNumber, Year = track.Year, Genre = track.Genre, Composer = track.Composer,
+                Confirmed = track.StartChecked && track.EndChecked, Note = track.Note, ArtPath = track.PlayerArtPath, Source = "marker", Manual = true,
+                Problem = !track.Skip ? "" : track.SkipReason.Contains("again", StringComparison.OrdinalIgnoreCase) ? "retake" : "skip",
+            }).ToList();
             session.Save();
         }
         catch (Exception appendError)
         {
             Recorder.Stop();
+            if (session.ChangesBeforeAppend != null) { session.Changes = session.ChangesBeforeAppend; session.ChangesBeforeAppend = null; }
             session.AppendFrom = -1; session.Recording = false; try { session.Save(); } catch { }
             StatusChanged?.Invoke(); SessionsChanged?.Invoke();
             return appendError.Message;
@@ -348,11 +348,54 @@ public partial class App : Application
         return "";
     }
 
+    // Record more, on carrying on: what's recorded from here is a new track, named by what's playing, or by the first name that arrives
+    public void StartAppendedTrack()
+    {
+        if (Recorder.Session is not { AppendFrom: >= 0 } session || session.Changes.Any(change => change.Frame >= session.AppendFrom)) return;
+        var profile = Settings.RecordingProfileOrActive(session.RecordingProfileId);
+        CurrentName = Watcher.Current(RecordingSource, Snapshot(profile)); LookUpYear(CurrentName);
+        var first = new NameChange { Frame = session.AppendFrom, Source = "marker", Manual = true };
+        resumedSong = false; lastNameKey = "";
+        if (CurrentName is { HasName: true, Playing: true } name)
+        {
+            first.Artist = name.Artist; first.Title = name.Title; first.Album = name.Album; first.AlbumArtist = name.AlbumArtist; first.TrackNumber = name.TrackNumber; first.Year = YearFor(name); first.Source = name.Label; first.Manual = false;
+            CarryAlbumTags(session, first); lastNameKey = name.NameKey;
+        }
+        session.Changes.Add(first); session.Save(); StatusChanged?.Invoke();
+    }
+
+    // What was changed on the rows of finished tracks goes back onto those tracks; the names as captured return for Revert
+    void ApplyAppendedEdits(Session session)
+    {
+        if (session.ChangesBeforeAppend == null) return;
+        var ordered = session.Tracks.OrderBy(track => track.Start).ToList();
+        for (var index = 0; index < ordered.Count; index++)
+        {
+            var track = ordered[index]; var row = session.Changes.FirstOrDefault(change => change.TrackId == track.Id);
+            if (row == null) { track.Skip = true; track.SkipReason = "Removed while recording"; continue; }
+            var renamed = track.Artist != row.Artist || track.Title != row.Title || track.Album != row.Album || track.Year != row.Year || track.Genre != row.Genre || track.Composer != row.Composer;
+            track.Artist = row.Artist; track.Title = row.Title; track.Album = row.Album; track.Year = row.Year; track.Genre = row.Genre; track.Composer = row.Composer; track.Note = row.Note;
+            if (renamed) track.Exported = false;
+            if (row.Frame != track.Start)
+            {
+                if (index > 0 && ordered[index - 1].End == track.Start) { ordered[index - 1].End = row.Frame; ordered[index - 1].Exported = false; }
+                track.Start = row.Frame; track.Exported = false;
+            }
+            if (row.Confirmed != (track.StartChecked && track.EndChecked)) { track.StartChecked = row.Confirmed; track.EndChecked = row.Confirmed; }
+            if (row.Problem == "skip") { track.Skip = true; if (track.SkipReason == "") track.SkipReason = "Left out while recording"; }
+            else if (row.Problem == "" && track.Skip) { track.Skip = false; track.SkipReason = ""; }
+            else if (row.Problem != "" && row.Problem != "note" && !track.Skip) track.SkipReason = "Marked for a retake, but not recorded again";
+        }
+        session.Changes = session.ChangesBeforeAppend.Concat(session.Changes.Where(change => change.TrackId == "")).OrderBy(change => change.Frame).ToList();
+        session.ChangesBeforeAppend = null;
+    }
+
     // The second Finish: only what was added becomes new tracks. A new track with the same title, artist and album as one already
     // there is its retake: it takes that track's tags and number, and the old take is left out
     void MergeAppended(Session session, Peaks peaks, RecordingProfile profile)
     {
         var from = session.AppendFrom; session.AppendFrom = -1;
+        ApplyAppendedEdits(session);
         session.Changes.RemoveAll(change => change.Frame >= session.TotalFrames); // nothing was recorded after these
         bool Same(string first, string second) => string.Equals(first.Trim(), second.Trim(), StringComparison.OrdinalIgnoreCase);
         var added = TrackBuilder.Build(session, peaks, profile).Where(track => (track.Start + track.End) / 2 >= from && track.End - track.Start >= session.SampleRate / 2).ToList();
@@ -527,7 +570,7 @@ public partial class App : Application
         var frame = Math.Max(0, Recorder.FramesWritten - (long)profile.LatencyMs * session.SampleRate / 1000);
         if (resumedSong) { resumedSong = false; if (session.Changes.LastOrDefault() is { } marked && string.Equals(marked.Title.Trim(), name.Title.Trim(), StringComparison.OrdinalIgnoreCase) && string.Equals(marked.Artist.Trim(), name.Artist.Trim(), StringComparison.OrdinalIgnoreCase)) return; }
         // Nothing recorded since the last marker (paused, picking the song to play): it just takes the new name
-        if (session.Changes.LastOrDefault() is { } unrecorded && unrecorded.Frame >= frame && (!unrecorded.Manual || unrecorded.Title == "") && unrecorded.Problem == "")
+        if (session.Changes.LastOrDefault() is { } unrecorded && (unrecorded.Frame >= frame || (unrecorded.Title == "" && unrecorded.TrackId == "" && frame - unrecorded.Frame < 30L * session.SampleRate)) && (!unrecorded.Manual || unrecorded.Title == "") && unrecorded.Problem == "")
         {
             unrecorded.Artist = name.Artist; unrecorded.Title = name.Title; unrecorded.Album = name.Album; unrecorded.AlbumArtist = name.AlbumArtist; unrecorded.TrackNumber = name.TrackNumber; unrecorded.Year = YearFor(name); unrecorded.Genre = ""; unrecorded.Composer = ""; unrecorded.ArtPath = ""; unrecorded.Source = name.Label; unrecorded.Manual = false;
             CarryAlbumTags(session, unrecorded);

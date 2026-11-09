@@ -177,7 +177,7 @@ public partial class MainWindow : Window
                 // ---- Recording ----
                 case "monitor": if (message.GetProperty("on").GetBoolean()) App.StartMonitoring(Text(message, "profileId")); else App.StopMonitoring(); break;
                 case "record": App.StartRecording(Text(message, "profileId"), Text(message, "source") is { Length: > 0 } source ? source : "auto", Text(message, "name"), message.TryGetProperty("armed", out var armed) && armed.GetBoolean()); break;
-                case "pauseRecording": if (App.Recorder.Recording) { App.Recorder.Paused = message.TryGetProperty("paused", out var pausedFlag) && pausedFlag.GetBoolean(); Push(App.StatusJson()); } break;
+                case "pauseRecording": if (App.Recorder.Recording) { App.Recorder.Paused = message.TryGetProperty("paused", out var pausedFlag) && pausedFlag.GetBoolean(); if (!App.Recorder.Paused) App.StartAppendedTrack(); Push(App.StatusJson()); } break;
                 // Quiet PC check (SPEC.md › Recording › Other sounds): Windows' sound scheme and notification banners, read from the user's
                 // settings; Windows has no supported way for an app to switch Do not disturb, so the buttons open the right Settings page
                 case "quietCheck":
@@ -193,10 +193,6 @@ public partial class MainWindow : Window
                     break;
                 case "keepThroughSilence": App.Recorder.KeepThroughSilence = true; break;
                 // Start over (SPEC.md › Recording): the recording so far is thrown away, and optionally a new one starts straight away
-                // Record more: the tracks already in the session, as edited, to show above what's being added
-                case "appendTracks":
-                    Reply(message, (App.Recorder.Session?.Tracks ?? new List<Track>()).Select(track => new { id = track.Id, start = track.Start, end = track.End, artist = track.Artist, title = track.Title, album = track.Album, albumArtist = track.AlbumArtist, year = track.Year, genre = track.Genre, composer = track.Composer, trackNumber = track.TrackNumber, skip = track.Skip }));
-                    break;
                 case "appendRecording":
                     {
                         var appendProblem = App.AppendRecording(Text(message, "id"), Text(message, "source") is { Length: > 0 } appendSource ? appendSource : "auto");
