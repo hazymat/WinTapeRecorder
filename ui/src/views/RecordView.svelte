@@ -459,7 +459,7 @@
         <div class="clock" class:armed-clock={app.status?.waitingForSound || app.status?.paused}>{app.status?.waitingForSound ? 'Armed' : app.status?.paused ? 'Paused' : formatTime(app.levels.seconds * 1000, 1000, false)}</div>
         {#if app.status?.waitingForSound}<div class="quiet info">waiting for sound: press play in your player; the silence before it isn't kept</div>{/if}
         {#if hoursLeft != null}<div class="quiet info" class:space-low={hoursLeft < 1} title="Free space on {app.status?.diskDrive}: {((app.status?.diskFreeBytes ?? 0) / 1e9).toFixed(1)} GB">Room for {hoursText(hoursLeft)} more on {app.status?.diskDrive}</div>{/if}
-        <div class="quiet info">{app.status?.sessionName} · {sizeText} WAV{#if firstEstimate}{' · '}<span class="estimate" title={estimates.map(estimate => `${estimate.name}: ${estimate.text}`).join(String.fromCharCode(10))}>{firstEstimate.text} as {firstEstimate.name}{estimates.length > 1 ? ` (+${estimates.length - 1} more)` : ''}</span>{/if}</div>
+        <div class="quiet info"><input class="live-name" value={app.status?.sessionName ?? ''} title="Click to rename this session" aria-label="Session name" onkeydown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} onchange={(event) => { const name = (event.target as HTMLInputElement).value.trim(); if (name && app.status) sendToShell({ type: 'renameSession', id: app.status.sessionId, name }) }} /> · {sizeText} WAV{#if firstEstimate}{' · '}<span class="estimate" title={estimates.map(estimate => `${estimate.name}: ${estimate.text}`).join(String.fromCharCode(10))}>{firstEstimate.text} as {firstEstimate.name}{estimates.length > 1 ? ` (+${estimates.length - 1} more)` : ''}</span>{/if}</div>
       {:else}
         <input class="session-name" bind:value={sessionName} placeholder="Session name (optional)" onkeydown={(event) => { if (event.key === 'Enter') toggleRecording() }} />
         <div class="start-mode" role="group" aria-label="When recording starts">
@@ -746,6 +746,8 @@
   .album-row input { font-weight: 600; padding: 1px 6px; font-size: 12.5px; }
   .track-no { font-family: var(--font-display); font-size: 12px; text-align: center; color: var(--fg-quiet); }
   .space-low { color: var(--danger) !important; font-weight: 600; }
+  .live-name { background: none; border: 1px solid transparent; color: inherit; font: inherit; padding: 0 4px; margin-left: -5px; width: 22ch; border-radius: 5px; }
+  .live-name:hover { border-color: var(--line); } .live-name:focus { border-color: var(--accent); background: var(--panel-solid); color: var(--fg); }
   .quiet-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 6px 12px; margin-bottom: 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 12.5px; }
   .quiet-item { display: inline-flex; align-items: center; gap: 8px; color: var(--warn); font-weight: 600; }
   .quiet-item.ok { color: #2e9e57; }

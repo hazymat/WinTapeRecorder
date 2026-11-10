@@ -89,6 +89,10 @@
 
   // Right-click a session: its files in Explorer, or close it
   let sessionMenu = $state<null | { session: SessionSummary; left: number; top: number }>(null)
+  // Renaming in the list itself: Enter or clicking away keeps the name, Esc leaves it as it was
+  let renaming = $state('')
+  function rename(session: SessionSummary, name: string) { renaming = ''; if (name.trim() && name.trim() !== session.name) sendToShell({ type: 'renameSession', id: session.id, name: name.trim() }) }
+  function focusSelect(node: HTMLInputElement) { node.focus(); node.select() }
   let closing = $state<SessionSummary | null>(null)
   let closingAt = $state<{ left: number; top: number } | null>(null) // set: the confirmation drops down there instead of a dialog in the middle
   function askClose(session: SessionSummary, event: Event) { const box = ((event.currentTarget as HTMLElement).closest('.session') ?? event.currentTarget as HTMLElement).getBoundingClientRect(); closingAt = { left: box.left + 8, top: Math.min(box.bottom + 2, innerHeight - 150) }; closing = session }
@@ -106,6 +110,7 @@
   {@const menuSession = sessionMenu.session}
   <div class="session-menu" role="menu" style:left="{sessionMenu.left}px" style:top="{sessionMenu.top}px">
     <button role="menuitem" onclick={() => { sendToShell({ type: 'openFolder', path: menuSession.id + '\\audio.wav' }); sessionMenu = null }}><Icon name="folder" size={15} />Show session files</button>
+    <button role="menuitem" onclick={() => { renaming = menuSession.id; sessionMenu = null }}><Icon name="edit" size={15} />Rename</button>
     <button role="menuitem" disabled={menuSession.recording} onclick={() => { const target = menuSession; sessionMenu = null; openSession(target) }}><Icon name="play" size={15} />Open</button>
     <button role="menuitem" class="danger" disabled={menuSession.recording} onclick={(event) => { const target = menuSession; const at = { left: sessionMenu?.left ?? 20, top: sessionMenu?.top ?? 100 }; sessionMenu = null; closingAt = at; closing = target }}><Icon name="trash" size={15} />Close session…</button>
   </div>
@@ -132,12 +137,16 @@
     <div class="heading">Sessions</div>
     <div class="sessions">
       {#each app.sessions as session (session.id)}
+        {#if renaming === session.id}
+          <div class="session on renaming"><input class="rename-field" value={session.name} use:focusSelect aria-label="Session name" onkeydown={(event) => { if (event.key === 'Enter') rename(session, (event.target as HTMLInputElement).value); else if (event.key === 'Escape') { event.stopPropagation(); renaming = '' } }} onblur={(event) => { if (renaming === session.id) rename(session, (event.target as HTMLInputElement).value) }} /></div>
+        {:else}
         <button class="session" class:on={nav.view === 'session' && nav.sessionId === session.id} onclick={() => openSession(session)} oncontextmenu={(event) => { event.preventDefault(); sessionMenu = { session, left: Math.min(event.clientX, innerWidth - 220), top: Math.min(event.clientY, innerHeight - 110) } }} title={session.crashed ? 'This recording was cut short (crash or power cut). It opens with what was saved.' : ''}>
           <span class="session-name">{session.name}{#if session.recording}<span class="badge live">REC</span>{:else if session.crashed}<span class="badge">!</span>{/if}</span>
-          <span class="session-more" role="button" tabindex="-1" title="Show files, open or close this session (also on right-click)" onclick={(event) => { event.stopPropagation(); const box = (event.currentTarget as HTMLElement).getBoundingClientRect(); sessionMenu = { session, left: Math.min(box.left, innerWidth - 220), top: Math.min(box.bottom + 4, innerHeight - 110) } }} onkeydown={() => { }}>⋯</span>
+          <span class="session-more" role="button" tabindex="-1" title="Rename, show files, open or close this session (also on right-click)" onclick={(event) => { event.stopPropagation(); const box = (event.currentTarget as HTMLElement).getBoundingClientRect(); sessionMenu = { session, left: Math.min(box.left, innerWidth - 220), top: Math.min(box.bottom + 4, innerHeight - 110) } }} onkeydown={() => { }}>⋯</span>
           <span class="session-facts">{dateLabel(session.created)} · {formatDuration(session.seconds)} · {#if app.status?.exportingSession === session.id}<span class="exporting">exporting {app.status.exportDone}/{app.status.exportTotal}…</span>{:else if app.status?.exportQueue?.includes(session.id)}<span class="exporting">export queued</span>{:else}{session.exported}/{session.tracks} exported{session.exported && session.verified === session.exported ? ' ✓' : ''}{/if}</span>
           {#if nav.view === 'session' && nav.sessionId === session.id && !session.recording}<span class="session-tools"><span class="session-tool" role="button" tabindex="-1" title="Show this session's files in Explorer" onclick={(event) => { event.stopPropagation(); sendToShell({ type: 'openFolder', path: session.id + '\audio.wav' }) }} onkeydown={() => { }}><Icon name="folder" size={14} />Files</span><span class="session-tool danger" role="button" tabindex="-1" title="Close this session (deletes its recording; exported files stay)" onclick={(event) => { event.stopPropagation(); askClose(session, event) }} onkeydown={() => { }}><Icon name="trash" size={14} />Close…</span></span>{/if}
         </button>
+        {/if}
       {:else}
         <p class="no-sessions">Recordings you make appear here until you close them.</p>
       {/each}
@@ -210,6 +219,8 @@
   .window-controls button { display: grid; place-items: center; width: 40px; height: 30px; background: none; border: 0; border-radius: 6px; color: var(--fg-quiet); cursor: pointer; }
   .window-controls button:hover { background: var(--hover); color: var(--fg); }
   .window-controls .close:hover { background: #c42b1c; color: #fff; }
+  .session.renaming { padding: 6px 8px; }
+  .rename-field { width: 100%; box-sizing: border-box; height: 28px; padding: 0 8px; font: inherit; font-size: 13.5px; font-weight: 600; }
   .session-menu { position: fixed; z-index: 110; min-width: 200px; padding: 5px; display: flex; flex-direction: column; gap: 2px; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 14px 36px var(--shadow); }
   .session-menu button { display: flex; align-items: center; gap: 8px; background: none; border: 0; color: var(--fg); font: inherit; text-align: left; padding: 7px 10px; border-radius: 7px; cursor: pointer; }
   .session-menu button:hover:not(:disabled) { background: var(--hover); }

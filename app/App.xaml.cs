@@ -170,6 +170,16 @@ public partial class App : Application
         StatusChanged?.Invoke(); SessionsChanged?.Invoke();
     }
 
+    // Renaming a session from anywhere (SPEC.md › Sessions): the one recording, one open in a view, or one only on disk; an export in progress keeps the new name
+    public void RenameSession(string sessionId, string name)
+    {
+        name = name.Trim(); if (name == "") return;
+        if (Recorder.Session is { } recording && recording.Id == sessionId) { recording.Name = name; recording.Save(); }
+        else if (TryGetOpen(sessionId, out var open)) { open.session.Name = name; open.session.Save(); }
+        else if (Session.Load(sessionId) is { } stored) { stored.Name = name; stored.Save(); }
+        StatusChanged?.Invoke(); SessionsChanged?.Invoke();
+    }
+
     public void StartRecording(string profileId, string source, string name, bool armed = false)
     {
         if (Recorder.Recording) return;

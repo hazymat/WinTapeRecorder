@@ -242,6 +242,10 @@ public partial class MainWindow : Window
                     }
                     break;
                 case "peaks": Reply(message, await Task.Run(() => PeaksFor(Text(message, "id"), Number(message, "start"), Number(message, "end"), (int)Number(message, "columns", 800)))); break;
+                case "renameSession":
+                    App.RenameSession(Text(message, "id"), Text(message, "name"));
+                    Push(JsonSerializer.Serialize(new { type = "sessionRenamed", id = Text(message, "id"), name = Text(message, "name").Trim() }));
+                    break;
                 case "saveSession":
                     if (App.TryGetOpen(Text(message, "id"), out var saving))
                     {

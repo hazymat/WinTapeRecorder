@@ -119,6 +119,7 @@
   function readFlag(name: string) { try { return localStorage.getItem('wtr.' + name) === '1' } catch { return false } }
 
   onShellMessage('openProgress', message => { if (message.id === sessionId) loadProgress = message.fraction })
+  onShellMessage('sessionRenamed', message => { if (message.id === sessionId && session) session.name = message.name })
   onShellMessage('suggestion', message => { if (message.id !== sessionId) return; const track = tracks.find(candidate => candidate.id === message.trackId); if (track) { track.suggestion = message.suggestion; track.suggestionLooked = message.looked } })
   onShellMessage('albumCheck', message => { if (message.id === sessionId && session) session.albumCheck = message.check })
   onShellMessage('albumProgress', message => { if (message.id === sessionId) albumProgress = { done: message.done, total: message.total } })
@@ -928,7 +929,7 @@
 {:else}
 <div class="session">
   <header class="session-title" use:intoTitleBar>
-    <input class="name" value={session.name} onchange={(event) => { const name = (event.target as HTMLInputElement).value.trim(); if (name && session) { session.name = name; sendToShell({ type: 'saveSession', id: sessionId, name }) } }} aria-label="Session name" />
+    <input class="name" value={session.name} onchange={(event) => { const name = (event.target as HTMLInputElement).value.trim(); if (name && session) { session.name = name; sendToShell({ type: 'renameSession', id: sessionId, name }) } }} onkeydown={(event) => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur() }} title="Click to rename this session" aria-label="Session name" />
     <span class="facts">{new Date(session.created).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} · {formatDuration(session.totalFrames / rate)} · {session.device || 'Unknown device'} · {rate / 1000} kHz {session.bitDepth === 32 ? 'float' : session.bitDepth + '-bit'} · {tracks.length} tracks{exportedCount ? `, ${exportedCount} exported` : ''}</span>
     {#if session.cutOff}<span class="clip-warning" title="The app or PC stopped while this was recording. Everything up to the last couple of seconds was saved.">Cut off by a crash or power cut at {formatTime(session.totalFrames, rate, false)}</span>{/if}
     {#if session.otherSounds?.length}<span class="clip-warning" title={session.otherSounds.map(other => `${formatTime(other.frame, rate, false)}: ${other.app}, ${(other.ms / 1000).toFixed(1)} s`).join(String.fromCharCode(10))}>{session.otherSounds.length} sound{session.otherSounds.length === 1 ? '' : 's'} from other apps</span>{/if}
