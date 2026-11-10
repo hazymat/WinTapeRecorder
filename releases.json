@@ -1,0 +1,1549 @@
+{
+ "v0.1.1": {
+  "assets": {
+   "WinTapeRecorder-0.1.1-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.1.1-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-06T23:13:49Z"
+ },
+ "v0.10.20": {
+  "assets": {
+   "WinTapeRecorder-0.10.20-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.10.20-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.10.20-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.10.20-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T01:14:38Z"
+ },
+ "v0.100.213": {
+  "assets": {
+   "WinTapeRecorder-0.100.213-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.100.213-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.100.213-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.100.213-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 4,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 4,
+   "releases.stable.json": 3
+  },
+  "prerelease": false,
+  "published": "2026-11-10T14:00:08Z"
+ },
+ "v0.101.215": {
+  "assets": {
+   "WinTapeRecorder-0.101.215-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.101.215-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.101.215-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.101.215-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 3,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-10T14:22:26Z"
+ },
+ "v0.102.217": {
+  "assets": {
+   "WinTapeRecorder-0.102.217-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.102.217-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.102.217-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.102.217-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-10T14:53:26Z"
+ },
+ "v0.11.22": {
+  "assets": {
+   "WinTapeRecorder-0.11.22-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.11.22-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.11.22-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.11.22-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T01:28:04Z"
+ },
+ "v0.12.24": {
+  "assets": {
+   "WinTapeRecorder-0.12.24-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.12.24-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.12.24-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.12.24-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T01:37:13Z"
+ },
+ "v0.13.26": {
+  "assets": {
+   "WinTapeRecorder-0.13.26-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.13.26-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.13.26-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.13.26-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T01:43:52Z"
+ },
+ "v0.14.28": {
+  "assets": {
+   "WinTapeRecorder-0.14.28-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.14.28-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.14.28-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.14.28-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T01:50:39Z"
+ },
+ "v0.15.30": {
+  "assets": {
+   "WinTapeRecorder-0.15.30-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.15.30-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.15.30-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.15.30-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T01:54:50Z"
+ },
+ "v0.16.32": {
+  "assets": {
+   "WinTapeRecorder-0.16.32-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.16.32-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.16.32-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.16.32-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T01:59:55Z"
+ },
+ "v0.17.34": {
+  "assets": {
+   "WinTapeRecorder-0.17.34-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.17.34-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.17.34-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.17.34-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T02:06:53Z"
+ },
+ "v0.18.36": {
+  "assets": {
+   "WinTapeRecorder-0.18.36-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.18.36-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.18.36-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.18.36-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T02:15:00Z"
+ },
+ "v0.19.38": {
+  "assets": {
+   "WinTapeRecorder-0.19.38-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.19.38-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.19.38-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.19.38-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 5,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T02:21:24Z"
+ },
+ "v0.2.3": {
+  "assets": {
+   "WinTapeRecorder-0.2.3-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.2.3-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.2.3-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.2.3-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-06T23:23:34Z"
+ },
+ "v0.20.40": {
+  "assets": {
+   "WinTapeRecorder-0.20.40-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.20.40-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.20.40-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.20.40-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 5,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T02:37:08Z"
+ },
+ "v0.21.42": {
+  "assets": {
+   "WinTapeRecorder-0.21.42-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.21.42-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1
+  },
+  "prerelease": true,
+  "published": "2026-11-07T02:42:04Z"
+ },
+ "v0.21.43": {
+  "assets": {
+   "WinTapeRecorder-0.21.43-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.21.43-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.21.43-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.21.43-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T02:47:01Z"
+ },
+ "v0.22.45": {
+  "assets": {
+   "WinTapeRecorder-0.22.45-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.22.45-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.22.45-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.22.45-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T02:53:09Z"
+ },
+ "v0.23.47": {
+  "assets": {
+   "WinTapeRecorder-0.23.47-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.23.47-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.23.47-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.23.47-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T02:58:11Z"
+ },
+ "v0.24.49": {
+  "assets": {
+   "WinTapeRecorder-0.24.49-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.24.49-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.24.49-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.24.49-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T03:04:16Z"
+ },
+ "v0.25.51": {
+  "assets": {
+   "WinTapeRecorder-0.25.51-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.25.51-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.25.51-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.25.51-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 4,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T03:13:56Z"
+ },
+ "v0.26.53": {
+  "assets": {
+   "WinTapeRecorder-0.26.53-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.26.53-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2
+  },
+  "prerelease": true,
+  "published": "2026-11-07T10:06:55Z"
+ },
+ "v0.26.54": {
+  "assets": {
+   "WinTapeRecorder-0.26.54-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.26.54-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.26.54-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.26.54-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T10:08:39Z"
+ },
+ "v0.27.56": {
+  "assets": {
+   "WinTapeRecorder-0.27.56-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.27.56-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.27.56-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.27.56-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 5,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T10:19:27Z"
+ },
+ "v0.28.58": {
+  "assets": {
+   "WinTapeRecorder-0.28.58-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.28.58-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.28.58-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.28.58-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T10:30:03Z"
+ },
+ "v0.29.60": {
+  "assets": {
+   "WinTapeRecorder-0.29.60-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.29.60-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.29.60-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.29.60-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T10:36:27Z"
+ },
+ "v0.3.5": {
+  "assets": {
+   "WinTapeRecorder-0.3.5-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.3.5-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2
+  },
+  "prerelease": true,
+  "published": "2026-11-07T00:25:03Z"
+ },
+ "v0.3.6": {
+  "assets": {
+   "WinTapeRecorder-0.3.6-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.3.6-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.3.6-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.3.6-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T00:27:40Z"
+ },
+ "v0.30.62": {
+  "assets": {
+   "WinTapeRecorder-0.30.62-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.30.62-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.30.62-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.30.62-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T10:42:44Z"
+ },
+ "v0.31.64": {
+  "assets": {
+   "WinTapeRecorder-0.31.64-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.31.64-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.31.64-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.31.64-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T10:49:55Z"
+ },
+ "v0.32.66": {
+  "assets": {
+   "WinTapeRecorder-0.32.66-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.32.66-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.32.66-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.32.66-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T10:56:42Z"
+ },
+ "v0.33.68": {
+  "assets": {
+   "WinTapeRecorder-0.33.68-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.33.68-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.33.68-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.33.68-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T11:03:29Z"
+ },
+ "v0.34.70": {
+  "assets": {
+   "WinTapeRecorder-0.34.70-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.34.70-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.34.70-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.34.70-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T11:10:00Z"
+ },
+ "v0.35.72": {
+  "assets": {
+   "WinTapeRecorder-0.35.72-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.35.72-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.35.72-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.35.72-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T11:19:09Z"
+ },
+ "v0.36.74": {
+  "assets": {
+   "WinTapeRecorder-0.36.74-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.36.74-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.36.74-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.36.74-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T11:28:17Z"
+ },
+ "v0.37.76": {
+  "assets": {
+   "WinTapeRecorder-0.37.76-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.37.76-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.37.76-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.37.76-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T13:14:46Z"
+ },
+ "v0.38.78": {
+  "assets": {
+   "WinTapeRecorder-0.38.78-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.38.78-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.38.78-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.38.78-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T13:22:08Z"
+ },
+ "v0.39.80": {
+  "assets": {
+   "WinTapeRecorder-0.39.80-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.39.80-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.39.80-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.39.80-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T13:28:14Z"
+ },
+ "v0.4.8": {
+  "assets": {
+   "WinTapeRecorder-0.4.8-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.4.8-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.4.8-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.4.8-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T00:32:15Z"
+ },
+ "v0.40.82": {
+  "assets": {
+   "WinTapeRecorder-0.40.82-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.40.82-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.40.82-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.40.82-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T13:34:46Z"
+ },
+ "v0.40.85": {
+  "assets": {
+   "WinTapeRecorder-0.40.85-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.40.85-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1
+  },
+  "prerelease": true,
+  "published": "2026-11-07T13:37:38Z"
+ },
+ "v0.40.87": {
+  "assets": {
+   "WinTapeRecorder-0.40.87-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.40.87-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1
+  },
+  "prerelease": true,
+  "published": "2026-11-07T13:38:12Z"
+ },
+ "v0.41.89": {
+  "assets": {
+   "WinTapeRecorder-0.41.89-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.41.89-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1
+  },
+  "prerelease": true,
+  "published": "2026-11-07T13:41:12Z"
+ },
+ "v0.41.90": {
+  "assets": {
+   "WinTapeRecorder-0.41.90-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.41.90-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.41.90-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.41.90-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T13:42:40Z"
+ },
+ "v0.42.92": {
+  "assets": {
+   "WinTapeRecorder-0.42.92-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.42.92-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.42.92-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.42.92-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T13:49:44Z"
+ },
+ "v0.43.94": {
+  "assets": {
+   "WinTapeRecorder-0.43.94-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.43.94-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.43.94-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.43.94-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T13:56:50Z"
+ },
+ "v0.44.96": {
+  "assets": {
+   "WinTapeRecorder-0.44.96-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.44.96-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.44.96-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.44.96-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T14:04:04Z"
+ },
+ "v0.45.98": {
+  "assets": {
+   "WinTapeRecorder-0.45.98-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.45.98-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.45.98-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.45.98-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T14:12:46Z"
+ },
+ "v0.46.100": {
+  "assets": {
+   "WinTapeRecorder-0.46.100-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.46.100-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.46.100-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.46.100-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T14:20:32Z"
+ },
+ "v0.47.102": {
+  "assets": {
+   "WinTapeRecorder-0.47.102-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.47.102-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.47.102-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.47.102-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T14:28:33Z"
+ },
+ "v0.48.104": {
+  "assets": {
+   "WinTapeRecorder-0.48.104-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.48.104-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.48.104-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.48.104-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T14:36:33Z"
+ },
+ "v0.49.106": {
+  "assets": {
+   "WinTapeRecorder-0.49.106-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.49.106-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2
+  },
+  "prerelease": true,
+  "published": "2026-11-07T14:41:52Z"
+ },
+ "v0.49.107": {
+  "assets": {
+   "WinTapeRecorder-0.49.107-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.49.107-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.49.107-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.49.107-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T14:42:31Z"
+ },
+ "v0.5.10": {
+  "assets": {
+   "WinTapeRecorder-0.5.10-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.5.10-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.5.10-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.5.10-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T00:40:00Z"
+ },
+ "v0.50.109": {
+  "assets": {
+   "WinTapeRecorder-0.50.109-dev-delta.nupkg": 3,
+   "WinTapeRecorder-0.50.109-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.50.109-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.50.109-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T14:55:27Z"
+ },
+ "v0.51.111": {
+  "assets": {
+   "WinTapeRecorder-0.51.111-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.51.111-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.51.111-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.51.111-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T15:04:44Z"
+ },
+ "v0.52.113": {
+  "assets": {
+   "WinTapeRecorder-0.52.113-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.52.113-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.52.113-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.52.113-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T15:10:35Z"
+ },
+ "v0.53.115": {
+  "assets": {
+   "WinTapeRecorder-0.53.115-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.53.115-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.53.115-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.53.115-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 2,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T15:16:35Z"
+ },
+ "v0.54.117": {
+  "assets": {
+   "WinTapeRecorder-0.54.117-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.54.117-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.54.117-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.54.117-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T15:36:24Z"
+ },
+ "v0.55.119": {
+  "assets": {
+   "WinTapeRecorder-0.55.119-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.55.119-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.55.119-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.55.119-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T15:42:56Z"
+ },
+ "v0.56.121": {
+  "assets": {
+   "WinTapeRecorder-0.56.121-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.56.121-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.56.121-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.56.121-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T15:49:57Z"
+ },
+ "v0.57.123": {
+  "assets": {
+   "WinTapeRecorder-0.57.123-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.57.123-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.57.123-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.57.123-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T15:55:58Z"
+ },
+ "v0.58.125": {
+  "assets": {
+   "WinTapeRecorder-0.58.125-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.58.125-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2
+  },
+  "prerelease": true,
+  "published": "2026-11-07T16:02:57Z"
+ },
+ "v0.58.126": {
+  "assets": {
+   "WinTapeRecorder-0.58.126-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.58.126-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.58.126-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.58.126-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 0,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T16:05:28Z"
+ },
+ "v0.59.128": {
+  "assets": {
+   "WinTapeRecorder-0.59.128-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.59.128-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.59.128-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.59.128-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T16:12:28Z"
+ },
+ "v0.6.12": {
+  "assets": {
+   "WinTapeRecorder-0.6.12-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.6.12-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.6.12-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.6.12-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T00:48:37Z"
+ },
+ "v0.60.130": {
+  "assets": {
+   "WinTapeRecorder-0.60.130-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.60.130-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.60.130-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.60.130-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T16:20:46Z"
+ },
+ "v0.61.132": {
+  "assets": {
+   "WinTapeRecorder-0.61.132-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.61.132-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.61.132-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.61.132-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T16:35:02Z"
+ },
+ "v0.62.134": {
+  "assets": {
+   "WinTapeRecorder-0.62.134-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.62.134-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.62.134-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.62.134-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 4,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T16:45:49Z"
+ },
+ "v0.63.136": {
+  "assets": {
+   "WinTapeRecorder-0.63.136-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.63.136-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.63.136-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.63.136-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T16:58:21Z"
+ },
+ "v0.64.138": {
+  "assets": {
+   "WinTapeRecorder-0.64.138-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.64.138-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.64.138-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.64.138-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T17:11:57Z"
+ },
+ "v0.65.140": {
+  "assets": {
+   "WinTapeRecorder-0.65.140-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.65.140-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.65.140-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.65.140-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T17:19:20Z"
+ },
+ "v0.66.142": {
+  "assets": {
+   "WinTapeRecorder-0.66.142-dev-delta.nupkg": 3,
+   "WinTapeRecorder-0.66.142-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.66.142-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.66.142-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T17:31:14Z"
+ },
+ "v0.67.144": {
+  "assets": {
+   "WinTapeRecorder-0.67.144-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.67.144-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.67.144-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.67.144-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 2,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T17:40:53Z"
+ },
+ "v0.68.146": {
+  "assets": {
+   "WinTapeRecorder-0.68.146-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.68.146-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.68.146-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.68.146-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T17:47:38Z"
+ },
+ "v0.69.148": {
+  "assets": {
+   "WinTapeRecorder-0.69.148-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.69.148-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.69.148-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.69.148-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T19:34:15Z"
+ },
+ "v0.7.14": {
+  "assets": {
+   "WinTapeRecorder-0.7.14-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.7.14-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.7.14-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.7.14-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T00:54:28Z"
+ },
+ "v0.70.150": {
+  "assets": {
+   "WinTapeRecorder-0.70.150-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.70.150-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.70.150-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.70.150-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T19:41:36Z"
+ },
+ "v0.71.152": {
+  "assets": {
+   "WinTapeRecorder-0.71.152-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.71.152-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.71.152-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.71.152-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T19:58:04Z"
+ },
+ "v0.72.154": {
+  "assets": {
+   "WinTapeRecorder-0.72.154-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.72.154-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.72.154-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.72.154-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 4,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T20:45:11Z"
+ },
+ "v0.73.156": {
+  "assets": {
+   "WinTapeRecorder-0.73.156-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.73.156-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.73.156-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.73.156-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T21:44:27Z"
+ },
+ "v0.74.158": {
+  "assets": {
+   "WinTapeRecorder-0.74.158-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.74.158-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.74.158-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.74.158-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T21:57:27Z"
+ },
+ "v0.75.160": {
+  "assets": {
+   "WinTapeRecorder-0.75.160-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.75.160-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.75.160-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.75.160-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T22:09:04Z"
+ },
+ "v0.76.162": {
+  "assets": {
+   "WinTapeRecorder-0.76.162-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.76.162-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.76.162-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.76.162-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 3,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T22:22:07Z"
+ },
+ "v0.77.164": {
+  "assets": {
+   "WinTapeRecorder-0.77.164-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.77.164-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.77.164-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.77.164-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T22:30:03Z"
+ },
+ "v0.78.166": {
+  "assets": {
+   "WinTapeRecorder-0.78.166-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.78.166-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.78.166-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.78.166-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 4,
+   "WinTapeRecorder-Setup.exe": 2,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T22:48:08Z"
+ },
+ "v0.79.168": {
+  "assets": {
+   "WinTapeRecorder-0.79.168-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.79.168-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.79.168-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.79.168-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 4,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-07T23:52:38Z"
+ },
+ "v0.8.16": {
+  "assets": {
+   "WinTapeRecorder-0.8.16-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.8.16-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.8.16-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.8.16-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T01:01:24Z"
+ },
+ "v0.80.170": {
+  "assets": {
+   "WinTapeRecorder-0.80.170-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.80.170-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.80.170-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.80.170-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 5,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-08T01:08:49Z"
+ },
+ "v0.81.172": {
+  "assets": {
+   "WinTapeRecorder-0.81.172-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.81.172-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.81.172-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.81.172-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 8,
+   "WinTapeRecorder-Setup.exe": 6,
+   "releases.dev.json": 2,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-08T02:37:36Z"
+ },
+ "v0.82.174": {
+  "assets": {
+   "WinTapeRecorder-0.82.174-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.82.174-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.82.174-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.82.174-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 3,
+   "releases.stable.json": 1
+  },
+  "prerelease": false,
+  "published": "2026-11-08T17:18:38Z"
+ },
+ "v0.83.176": {
+  "assets": {
+   "WinTapeRecorder-0.83.176-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.83.176-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.83.176-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.83.176-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 4,
+   "releases.stable.json": 3
+  },
+  "prerelease": false,
+  "published": "2026-11-08T17:25:13Z"
+ },
+ "v0.84.178": {
+  "assets": {
+   "WinTapeRecorder-0.84.178-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.84.178-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.84.178-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.84.178-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 5,
+   "releases.stable.json": 4
+  },
+  "prerelease": false,
+  "published": "2026-11-08T17:38:31Z"
+ },
+ "v0.85.180": {
+  "assets": {
+   "WinTapeRecorder-0.85.180-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.85.180-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.85.180-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.85.180-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 4,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 6,
+   "releases.stable.json": 5
+  },
+  "prerelease": false,
+  "published": "2026-11-08T18:12:33Z"
+ },
+ "v0.86.182": {
+  "assets": {
+   "WinTapeRecorder-0.86.182-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.86.182-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.86.182-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.86.182-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 8,
+   "releases.stable.json": 4
+  },
+  "prerelease": false,
+  "published": "2026-11-08T21:56:55Z"
+ },
+ "v0.87.184": {
+  "assets": {
+   "WinTapeRecorder-0.87.184-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.87.184-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.87.184-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.87.184-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 4,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 8,
+   "releases.stable.json": 4
+  },
+  "prerelease": false,
+  "published": "2026-11-08T22:05:44Z"
+ },
+ "v0.88.186": {
+  "assets": {
+   "WinTapeRecorder-0.88.186-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.88.186-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.88.186-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.88.186-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 9,
+   "releases.stable.json": 4
+  },
+  "prerelease": false,
+  "published": "2026-11-08T22:40:31Z"
+ },
+ "v0.89.188": {
+  "assets": {
+   "WinTapeRecorder-0.89.188-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.89.188-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.89.188-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.89.188-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 10,
+   "releases.stable.json": 5
+  },
+  "prerelease": false,
+  "published": "2026-11-08T23:00:06Z"
+ },
+ "v0.9.18": {
+  "assets": {
+   "WinTapeRecorder-0.9.18-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.9.18-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.9.18-stable-delta.nupkg": 2,
+   "WinTapeRecorder-0.9.18-stable-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1,
+   "releases.stable.json": 2
+  },
+  "prerelease": false,
+  "published": "2026-11-07T01:07:13Z"
+ },
+ "v0.90.190": {
+  "assets": {
+   "WinTapeRecorder-0.90.190-dev-delta.nupkg": 3,
+   "WinTapeRecorder-0.90.190-dev-full.nupkg": 3,
+   "WinTapeRecorder-0.90.190-stable-delta.nupkg": 3,
+   "WinTapeRecorder-0.90.190-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 11,
+   "releases.stable.json": 8
+  },
+  "prerelease": false,
+  "published": "2026-11-09T00:17:19Z"
+ },
+ "v0.91.192": {
+  "assets": {
+   "WinTapeRecorder-0.91.192-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.91.192-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.91.192-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.91.192-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 12,
+   "releases.stable.json": 7
+  },
+  "prerelease": false,
+  "published": "2026-11-09T11:46:23Z"
+ },
+ "v0.92.194": {
+  "assets": {
+   "WinTapeRecorder-0.92.194-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.92.194-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.92.194-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.92.194-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 12,
+   "releases.stable.json": 7
+  },
+  "prerelease": false,
+  "published": "2026-11-09T16:02:41Z"
+ },
+ "v0.93.196": {
+  "assets": {
+   "WinTapeRecorder-0.93.196-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.93.196-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.93.196-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.93.196-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 12,
+   "releases.stable.json": 7
+  },
+  "prerelease": false,
+  "published": "2026-11-09T16:25:47Z"
+ },
+ "v0.94.198": {
+  "assets": {
+   "WinTapeRecorder-0.94.198-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.94.198-dev-full.nupkg": 5,
+   "WinTapeRecorder-0.94.198-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.94.198-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 4,
+   "WinTapeRecorder-Setup.exe": 2,
+   "releases.dev.json": 12,
+   "releases.stable.json": 7
+  },
+  "prerelease": false,
+  "published": "2026-11-09T21:38:35Z"
+ },
+ "v0.95.200": {
+  "assets": {
+   "WinTapeRecorder-0.95.200-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.95.200-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2
+  },
+  "prerelease": true,
+  "published": "2026-11-10T12:29:45Z"
+ },
+ "v0.95.201": {
+  "assets": {
+   "WinTapeRecorder-0.95.201-dev-delta.nupkg": 1,
+   "WinTapeRecorder-0.95.201-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 1
+  },
+  "prerelease": true,
+  "published": "2026-11-10T12:31:52Z"
+ },
+ "v0.95.202": {
+  "assets": {
+   "WinTapeRecorder-0.95.202-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.95.202-dev-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2
+  },
+  "prerelease": true,
+  "published": "2026-11-10T12:32:05Z"
+ },
+ "v0.95.203": {
+  "assets": {
+   "WinTapeRecorder-0.95.203-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.95.203-dev-full.nupkg": 3,
+   "WinTapeRecorder-0.95.203-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.95.203-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 9,
+   "releases.stable.json": 8
+  },
+  "prerelease": false,
+  "published": "2026-11-10T12:36:14Z"
+ },
+ "v0.96.205": {
+  "assets": {
+   "WinTapeRecorder-0.96.205-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.96.205-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.96.205-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.96.205-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 8,
+   "releases.stable.json": 7
+  },
+  "prerelease": false,
+  "published": "2026-11-10T12:47:20Z"
+ },
+ "v0.97.207": {
+  "assets": {
+   "WinTapeRecorder-0.97.207-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.97.207-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.97.207-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.97.207-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 4,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 7,
+   "releases.stable.json": 6
+  },
+  "prerelease": false,
+  "published": "2026-11-10T13:07:14Z"
+ },
+ "v0.98.209": {
+  "assets": {
+   "WinTapeRecorder-0.98.209-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.98.209-dev-full.nupkg": 2,
+   "WinTapeRecorder-0.98.209-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.98.209-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 5,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 6,
+   "releases.stable.json": 5
+  },
+  "prerelease": false,
+  "published": "2026-11-10T13:21:58Z"
+ },
+ "v0.99.211": {
+  "assets": {
+   "WinTapeRecorder-0.99.211-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.99.211-dev-full.nupkg": 3,
+   "WinTapeRecorder-0.99.211-stable-delta.nupkg": 1,
+   "WinTapeRecorder-0.99.211-stable-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 2,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 5,
+   "releases.stable.json": 4
+  },
+  "prerelease": false,
+  "published": "2026-11-10T13:42:54Z"
+ }
+}
