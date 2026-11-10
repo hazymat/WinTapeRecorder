@@ -1,6 +1,6 @@
 <script lang="ts">
   import { sendToShell, onShellMessage, request } from './bridge'
-  import { app, nav, ui, toast, writeSetting, formatDuration, type SessionSummary } from './state.svelte'
+  import { app, nav, ui, toast, writeSetting, readSetting, formatDuration, type SessionSummary, tour } from './state.svelte'
   import { selection, clearSelection } from './lib/selection.svelte'
   import RecordView from './views/RecordView.svelte'
   import SessionView from './views/SessionView.svelte'
@@ -8,6 +8,7 @@
   import WhatsNew from './parts/WhatsNew.svelte'
   import ResizeEdges from './parts/ResizeEdges.svelte'
   import Icon from './parts/Icon.svelte'
+  import Tour from './parts/Tour.svelte'
   import Dialog from './parts/Dialog.svelte'
 
   // ---- From the shell ----
@@ -88,6 +89,9 @@
   }
 
   // Right-click a session: its files in Explorer, or close it
+  // First run: a short welcome pointing at the tour; shown once
+  let welcome = $state(readSetting('welcomeSeen', '') !== '1')
+  function closeWelcome(start: boolean) { welcome = false; writeSetting('welcomeSeen', '1'); if (start) { tour.open = true; tour.tab = 'show' } }
   let sessionMenu = $state<null | { session: SessionSummary; left: number; top: number }>(null)
   // Renaming in the list itself: Enter or clicking away keeps the name, Esc leaves it as it was
   let renaming = $state('')
@@ -152,6 +156,7 @@
       {/each}
     </div>
     <div class="spacer"></div>
+    <button class="section tour-button" class:on={tour.open} onclick={() => { tour.open = !tour.open; welcome = false; writeSetting('welcomeSeen', '1') }} title="A guided tour of the screen you're on (safe while recording)"><span class="glyph"><Icon name="tour" size={18} /></span>Tour</button>
     <button class="section" onclick={() => sendToShell({ type: 'openSettings' })}><span class="glyph"><Icon name="settings" size={18} /></span>Settings</button>
   </nav>
   <div class="content-column">
@@ -176,6 +181,20 @@
     <ActionStrip />
   </div>
 </div>
+
+<Tour />
+{#if welcome}
+  <div class="welcome" role="dialog" aria-label="Welcome">
+    <h3>Welcome to WinTapeRecorder</h3>
+    <p>If you're anything like me, you're a little impatient to try this out and see if it fits your needs. When you're ready, look for <strong>Tour</strong> on the left. My humble suggestion:</p>
+    <ol>
+      <li>Start playing music from another app, then check here that the level meter moves and the track info comes in. Yes? Stop the music, choose <strong>Start on sound</strong>, press record, then play from the beginning.</li>
+      <li>Watch the magic when tracks change.</li>
+      <li>Open the <strong>Tour</strong>, which you can safely do while recording!</li>
+    </ol>
+    <div class="welcome-buttons"><button class="primary" onclick={() => closeWelcome(true)}>Start the tour now</button><button class="ghost" onclick={() => closeWelcome(false)}>Let me try first</button></div>
+  </div>
+{/if}
 
 <style>
   .shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); height: 100vh; }
@@ -221,6 +240,12 @@
   .window-controls .close:hover { background: #c42b1c; color: #fff; }
   .session.renaming { padding: 6px 8px; }
   .rename-field { width: 100%; box-sizing: border-box; height: 28px; padding: 0 8px; font: inherit; font-size: 13.5px; font-weight: 600; }
+  .welcome { position: fixed; z-index: 450; left: 270px; bottom: 70px; width: min(460px, calc(100vw - 300px)); padding: 16px 18px 14px; border-radius: 14px; background: linear-gradient(var(--panel-solid), var(--panel-solid)), var(--bg); border: 2px solid #ffd60a; box-shadow: 0 20px 60px var(--shadow); font-size: 13.5px; line-height: 1.5; }
+  .welcome h3 { margin: 0 0 8px; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--fg); }
+  .welcome p { margin: 0 0 8px; } .welcome ol { margin: 0 0 12px; padding-left: 20px; } .welcome li { margin-bottom: 4px; }
+  .welcome-buttons { display: flex; gap: 8px; }
+  .tour-button .glyph { color: #ffd60a; }
+  .tour-button.on { color: #ffd60a; }
   .session-menu { position: fixed; z-index: 110; min-width: 200px; padding: 5px; display: flex; flex-direction: column; gap: 2px; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 14px 36px var(--shadow); }
   .session-menu button { display: flex; align-items: center; gap: 8px; background: none; border: 0; color: var(--fg); font: inherit; text-align: left; padding: 7px 10px; border-radius: 7px; cursor: pointer; }
   .session-menu button:hover:not(:disabled) { background: var(--hover); }

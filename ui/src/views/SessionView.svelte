@@ -51,6 +51,9 @@
   const unverified = $derived(tracks.filter(track => !track.skip && track.exported && !track.verified))
   const exportable = $derived(tracks.filter(track => !track.skip))
   let step = $state<'cuts' | 'tags' | 'export'>('cuts')
+  // The tour knows which step is showing, and can ask for another
+  $effect(() => { nav.step = step })
+  $effect(() => { if (nav.wantStep) { step = nav.wantStep; nav.wantStep = '' } })
   let focused = $state<Edge | null>(null)
   // Check the cuts: each start and end in turn, zoomed in both axes with the edge grabbed, and played
   function focusEdge(target: Edge, play = true) {

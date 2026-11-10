@@ -21,7 +21,9 @@ export const app = $state({
 })
 
 // The open view: the recorder, or one session
-export const nav = $state({ view: 'record' as 'record' | 'session', sessionId: readSetting('session', '') })
+export const nav = $state({ view: 'record' as 'record' | 'session', sessionId: readSetting('session', ''), step: 'cuts' as 'cuts' | 'tags' | 'export', wantStep: '' as '' | 'cuts' | 'tags' | 'export' })
+// The tour (docs/TOUR.md): open or paused, which tab, and how far it got on each screen
+export const tour = $state({ open: false, tab: 'show' as 'show' | 'explore', index: {} as Record<string, number> })
 
 export function readSetting(name: string, fallback: string) { try { return localStorage.getItem('wtr.' + name) ?? fallback } catch { return fallback } }
 export function writeSetting(name: string, value: string) { try { localStorage.setItem('wtr.' + name, value) } catch { } }

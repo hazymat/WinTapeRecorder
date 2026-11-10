@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type IconName = 'record' | 'stop' | 'pause' | 'play' | 'marker' | 'settings' | 'minimise' | 'maximise' | 'restore' | 'close' | 'folder' | 'export' | 'zoom-in' | 'zoom-out' | 'fit' | 'split' | 'tape' | 'trash' | 'starts' | 'ends' | 'redetect' | 'undo' | 'redo' | 'edit'
+  export type IconName = 'record' | 'stop' | 'pause' | 'play' | 'marker' | 'settings' | 'minimise' | 'maximise' | 'restore' | 'close' | 'folder' | 'export' | 'zoom-in' | 'zoom-out' | 'fit' | 'split' | 'tape' | 'trash' | 'starts' | 'ends' | 'redetect' | 'undo' | 'redo' | 'edit' | 'tour'
 </script>
 <script lang="ts">
   // SVG icons: text glyphs render off-centre with colour fringes in WebView2
@@ -24,6 +24,7 @@
   {:else if name === 'fit'}<path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4" class="stroke" /><path d="M7 12h10" class="stroke" />
   {:else if name === 'split'}<path d="M12 3.5v17" class="stroke" /><path d="M4 9l3 3-3 3M20 9l-3 3 3 3" class="stroke" />
   {:else if name === 'tape'}<rect x="3" y="6" width="18" height="12" rx="2" class="stroke" /><circle cx="8.5" cy="11.5" r="2" class="stroke" /><circle cx="15.5" cy="11.5" r="2" class="stroke" /><path d="M7 18l1.5-2.5h7L17 18" class="stroke" />
+  {:else if name === 'tour'}<circle cx="12" cy="12" r="8.5" class="stroke" /><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6 M12 16.6v.2" class="stroke" />
   {:else if name === 'edit'}<path d="M5 19l1-4.5L15.5 5l3.5 3.5L9.5 18z M13.5 7l3.5 3.5" class="stroke" />
   {:else if name === 'trash'}<path d="M5 7h14M10 7V5h4v2M7 7l1 12.5h8L17 7" class="stroke" />
   {:else if name === 'starts'}<path d="M6 4.5v15" class="stroke" /><path d="M10 7.5v9l7-4.5z" />

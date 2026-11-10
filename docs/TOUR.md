@@ -1,4 +1,6 @@
-# Tour (planned, not built yet)
+# Tour (first version built)
+
+The first version is in `ui/src/parts/Tour.svelte`, with its steps in `ui/src/lib/tour.ts`. Edit the copy there.
 
 Mat's notes for an in-app tour, organised. Text in quotes is Mat's own wording, to be used as the tour copy (lightly edited when it's built). Open questions are at the end. Mat will add more detail before this is built.
 
