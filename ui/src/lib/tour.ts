@@ -2,7 +2,7 @@
 // "The app concept" holds the ideas behind the app; "Show me" walks the screen you're on; "Explore" shows the whole journey.
 // "target" is a CSS selector ('@wave' is the biggest wave on screen); a step without one, or whose target isn't on screen, just talks.
 export type TourContext = 'record' | 'waiting' | 'recording' | 'cuts' | 'tags' | 'export'
-export type TourStep = { title: string; text: string; more?: string | string[]; target?: string; keys?: boolean }
+export type TourStep = { title: string; text: string; more?: string | string[]; target?: string; keys?: boolean; image?: string }
 
 export const contextNames: Record<TourContext, string> = {
   record: 'Getting ready to record', waiting: 'Waiting for the music', recording: 'While you record', cuts: 'Albums & cuts', tags: 'Fill gaps & covers', export: 'Export',
@@ -16,11 +16,25 @@ export const concepts: TourStep[] = [
   { title: 'A mouse with a scroll wheel', text: "Strongly recommended. WinTapeRecorder does a decent job of placing track markers, but you'll want to check each one, and that means zooming in and out a lot. A touchpad works, but a scroll wheel is much easier.", more: ["Finding a gap means zooming in and out, a lot", "The app jumps marker to marker and zooms for you", "Wheel and wave soon become all you need"] },
   { title: 'Marking while recording is optional', text: "You can check markers while it records, but you don't have to finish that before moving on. It's a convenience: record a long session, and whenever you have a few spare minutes, check a few markers. That's less to do later." },
   { title: 'The green ticks', text: "Tick ✓ when you're happy with a marker. You don't need to, but it helps you remember which ones you've checked when you come back later. The ticks carry over from recording to Albums & cuts." },
-  { title: 'Where does a track start?', text: "Zoom in and out until the marker sits in the gap. The wheel zooms in time; Ctrl + wheel zooms the height.", more: ["Full height: tells quiet music from real silence", "Zoom right down to single samples if you need to", "Some albums hiss between tracks: zoom in and out", "Live albums: you're the engineer, trust your ears", "↺ puts a marker back where it was placed"] },
   { title: 'Problems and retakes', text: "If something spoils a take (a notification ding, say), mark it with Problem? and play the track again later. The new take replaces the bad one by itself.", more: ["A retake: same title, artist and album, played later", "It takes the bad take's place and number", "The bad take is left out of the export", "Dropouts and cut-outs are flagged by themselves", "Already finished? Go back to step 1, Record"] },
   { title: 'Leave it going', text: "You could leave it going overnight, and turn your speakers down. In most cases you'll come back to find everything split into tracks and grouped by album. Then it's just a case of tidying up and exporting.", more: ["Turn the speakers or amp down, not the Windows volume", "It stops by itself after 5 minutes of silence"] },
   { title: 'Wave and spectrogram', text: "While recording you see the wave. In Albums & cuts you can switch to a spectrogram (W), which shows the music as colour by pitch. You don't need it, but it can make a gap easy to spot." },
   { title: 'Four steps', text: "Record, Albums & cuts, Fill gaps & covers, and Export. You can always go back to Record to add more. Explore shows each step, and can open them even while you're recording." },
+]
+
+// Finding track starts: two worked examples, from a track that starts after silence to one that doesn't
+export const starts: TourStep[] = [
+  { title: 'Finding a track start', text: "Two examples: one with real silence before the track, and one without. Both use the same two moves: Ctrl + wheel for the height, and the wheel on its own for time." },
+  { title: 'Silence first: normal height', text: "At normal height the wave looks flat before the music, so the marker looks right.", image: 'start-1-normal.webp' },
+  { title: 'Zoom the height', text: "Ctrl + wheel up makes the wave taller. Now there's a quiet sound before the marker: the track had already started.", image: 'start-2-taller.webp' },
+  { title: 'Zoom it right up', text: "Taller still (about ×900). A perfectly flat line is true digital silence; the moment it moves is where the sound begins.", image: 'start-3-tallest.webp' },
+  { title: 'Down to single samples', text: "The wheel on its own zooms in time, right down to single samples: each dot is one. Here's the exact sample where the sound starts.", image: 'start-4-samples.webp' },
+  { title: 'The little yellow ticks', text: "They mark where the wave crosses zero between two samples. A cut on a zero crossing avoids a tiny click at the start or end of a track.", more: ["Good practice, not essential", "Sometimes there isn't one close enough, and that's fine", "We can't know exactly where the producer meant the track to start: we can see where the silence ends"], image: 'start-4-samples.webp' },
+  { title: 'No silence: too tall', text: "Not every album has silence between tracks. Here, the same height is useless: everything is solid.", image: 'change-1-too-tall.webp' },
+  { title: 'Lower the height', text: "Ctrl + wheel down. Better, but you still can't tell how far you are from the end of the last track.", image: 'change-2-lower.webp' },
+  { title: 'Zoom out in time', text: "The wheel on its own, down, to zoom out. Now you can see the last track fade into hiss and the next one begin. Make the call yourself.", more: ["The dotted amber line is where Windows reported the new name", "That may or may not be where the music changed", "Live albums and crossfades: you're the engineer, trust your ears"], image: 'change-3-wider.webp' },
+  { title: 'Optional: a zero crossing', text: "Zoom right back in, and put the line on a yellow tick if one is close.", image: 'change-4-samples.webp' },
+  { title: 'Moving the flags', text: "Red is where one track ends, green where the next starts. They sit together; it's usually best to keep them together.", more: ["Drag the red flag, then the green one", "Or click a marker and drag the wave under it, then Esc", "♪ and the dotted line show where the name changed while recording, for reference", "↺ puts a marker back where it was placed automatically"], image: 'flags.webp' },
 ]
 
 export const steps: Record<TourContext, TourStep[]> = {

@@ -2,12 +2,12 @@
   // The tour (docs/TOUR.md): a floating window that steps through the screen you're on, pointing at each thing it talks about.
   // ← → step, Esc pauses (it remembers where you were); the Explore tab shows how the other screens fit in, and can open them
   import { app, nav, tour, writeSetting } from '../state.svelte'
-  import { steps, concepts, stages, contextNames, type TourContext } from '../lib/tour'
+  import { steps, concepts, starts, stages, contextNames, type TourContext } from '../lib/tour'
 
   // Recording but no music yet (armed, or started before the player): the tour waits with you, and moves on when the music arrives
   const context = $derived<TourContext>(nav.view === 'record' ? (!app.status?.recording ? 'record' : app.status.waitingForSound || app.levels.seconds - app.levels.silentSeconds < 1 ? 'waiting' : 'recording') : nav.step)
-  const key = $derived(tour.tab === 'concept' ? 'concept' : context)
-  const list = $derived(tour.tab === 'concept' ? concepts : steps[context])
+  const key = $derived(tour.tab === 'concept' || tour.tab === 'starts' ? tour.tab : context)
+  const list = $derived(tour.tab === 'concept' ? concepts : tour.tab === 'starts' ? starts : steps[context])
   const index = $derived(Math.min(tour.index[key] ?? 0, list.length - 1))
   const step = $derived(list[index])
   let moreOpen = $state(false)
@@ -38,7 +38,7 @@
   // The window sits beside its target where there's room, otherwise below or above it
   // The concepts, and anything not tied to something on screen, sit in the middle and take the attention; the rest sits beside what it points at
   const centred = $derived(tour.tab !== 'show' || !rect)
-  const width = $derived(centred ? Math.min(640, innerWidth - 40) : 440)
+  const width = $derived(step?.image && tour.tab !== 'explore' ? Math.min(980, innerWidth - 40) : centred ? Math.min(640, innerWidth - 40) : 440)
   let windowHeight = $state(240)
   const placed = $derived.by(() => {
     if (dragged) return dragged
@@ -64,12 +64,14 @@
   function dragDown(event: PointerEvent) { if ((event.target as HTMLElement).closest('button')) return; dragFrom = { x: event.clientX, y: event.clientY, left: placed.left, top: placed.top }; (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId) }
   function dragMove(event: PointerEvent) { if (dragFrom) dragged = { left: dragFrom.left + event.clientX - dragFrom.x, top: dragFrom.top + event.clientY - dragFrom.y } }
 
-  // Concept → Show me → Explore, and back
+  // The app concept → Finding track starts → Show me → Explore, and back
+  const order = ['concept', 'starts', 'show', 'explore'] as const
   function go(delta: number) {
+    const at = order.indexOf(tour.tab)
     if (tour.tab === 'explore') { if (delta < 0) tour.tab = 'show'; return }
     const next = index + delta
-    if (next < 0) { if (tour.tab === 'show') { tour.tab = 'concept'; tour.index = Object.assign({}, tour.index, { concept: concepts.length - 1 }) } return }
-    if (next >= list.length) { tour.tab = tour.tab === 'concept' ? 'show' : 'explore'; return }
+    if (next < 0) { if (at > 0) { const back = order[at - 1]; tour.tab = back; if (back !== 'show') tour.index = Object.assign({}, tour.index, { [back]: (back === 'concept' ? concepts : starts).length - 1 }) } return }
+    if (next >= list.length) { tour.tab = order[at + 1]; return }
     tour.index = Object.assign({}, tour.index, { [key]: next })
   }
   function pause() { tour.open = false; writeSetting('tourSeen', '1') }
@@ -104,10 +106,11 @@
     <div class="tour-head" role="presentation" onpointerdown={dragDown} onpointermove={dragMove} onpointerup={() => dragFrom = null} title="Drag to move">
       <span class="tour-tabs" role="tablist">
         <button role="tab" class:on={tour.tab === 'concept'} aria-selected={tour.tab === 'concept'} onclick={() => tour.tab = 'concept'}>The app concept</button>
+        <button role="tab" class:on={tour.tab === 'starts'} aria-selected={tour.tab === 'starts'} onclick={() => tour.tab = 'starts'}>Finding track starts</button>
         <button role="tab" class:on={tour.tab === 'show'} aria-selected={tour.tab === 'show'} onclick={() => tour.tab = 'show'}>Show me</button>
         <button role="tab" class:on={tour.tab === 'explore'} aria-selected={tour.tab === 'explore'} onclick={() => tour.tab = 'explore'}>Explore</button>
       </span>
-      <span class="tour-where">{tour.tab === 'explore' ? 'The whole journey' : `${tour.tab === 'concept' ? '' : contextNames[context] + ' · '}${index + 1} of ${list.length}`}</span>
+      <span class="tour-where">{tour.tab === 'explore' ? 'The whole journey' : `${tour.tab === 'show' ? contextNames[context] + ' · ' : ''}${index + 1} of ${list.length}`}</span>
     </div>
     {#if tour.tab !== 'explore' && step}
       <div class="tour-body">
@@ -119,6 +122,7 @@
             <span class="keycap wide">Esc</span><span>Come back to it later</span>
           </div>
         {:else}<p>{step.text}</p>{/if}
+        {#if step.image}<img class="tour-image" src={'tour/' + step.image} alt={step.title} />{/if}
         {#if step.more}
           <button class="tour-more" onclick={() => moreOpen = !moreOpen} aria-expanded={moreOpen}>{moreOpen ? '▾' : '▸'} More info</button>
           {#if moreOpen}{#if Array.isArray(step.more)}<ul class="tour-more-text">{#each step.more as item}<li>{item}</li>{/each}</ul>{:else}<p class="tour-more-text">{step.more}</p>{/if}{/if}
@@ -144,7 +148,7 @@
     {/if}
     <div class="tour-buttons">
       <button onclick={() => go(-1)} disabled={tour.tab === 'concept' && index === 0}>Previous<kbd>←</kbd></button>
-      <button class="tour-next" onclick={() => go(1)} disabled={tour.tab === 'explore'}>{tour.tab === 'concept' && index === list.length - 1 ? 'Show me' : tour.tab === 'show' && index === list.length - 1 ? 'Explore' : 'Next'}<kbd>→</kbd></button>
+      <button class="tour-next" onclick={() => go(1)} disabled={tour.tab === 'explore'}>{index === list.length - 1 ? (tour.tab === 'concept' ? 'Finding track starts' : tour.tab === 'starts' ? 'Show me' : tour.tab === 'show' ? 'Explore' : 'Next') : 'Next'}<kbd>→</kbd></button>
       <span class="spacer"></span>
       <button onclick={pause}>Pause tour<kbd>Esc</kbd></button>
     </div>
@@ -162,6 +166,7 @@
   .tour-window.centred { font-size: 17px; }
   .tour-window.centred .tour-body { padding: 16px 24px 8px; }
   .tour-window.centred .tour-body h3 { font-size: 22px; }
+  .tour-image { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); margin: 4px 0 10px; }
   .tour-dim { position: fixed; inset: 0; z-index: 498; background: rgba(0, 0, 0, 0.35); pointer-events: none; }
   .tour-head { display: flex; align-items: center; gap: 10px; padding: 8px 10px 6px 10px; cursor: move; border-bottom: 1px solid var(--line); }
   .tour-tabs { display: inline-flex; }
@@ -169,7 +174,7 @@
   .tour-tabs button:first-child { border-radius: 7px 0 0 7px; } .tour-tabs button:last-child { border-radius: 0 7px 7px 0; border-left: 0; }
   .tour-tabs button.on { background: #ffd60a; color: #1a1a1a; border-color: transparent; }
   .tour-where { font-size: 11.5px; color: var(--fg-quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tour-body { padding: 10px 14px 4px; overflow-y: auto; min-height: 0; }
+  .tour-body { padding: 10px 14px 4px; overflow-y: auto; overflow-x: hidden; min-height: 0; }
   .tour-body h3 { margin: 0 0 8px; font-size: 19px; text-transform: none; letter-spacing: 0; color: var(--fg); }
   .tour-body p { margin: 0 0 8px; line-height: 1.5; }
   .tour-more { border: 0; background: none; padding: 0; margin: 0 0 6px; font: inherit; font-size: 0.93em; color: var(--accent); cursor: pointer; }
