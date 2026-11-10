@@ -105,7 +105,7 @@ Facts behind this, for the wording:
 - The silence stop is 5 minutes below -70 dB by default, set per recording profile (Settings › Recording profiles). The silence at the end isn't part of any track.
 - The Record page shows how many hours fit in the free disk space.
 - The app keeps the PC from sleeping while it records. A laptop lid closing, a low battery or a Windows Update restart can still stop it, so the tour should say to set those to never for overnight sessions.
-- "Turn your speakers down" should mean the speakers or amplifier themselves, not the Windows volume. Recording what the PC plays may capture at the Windows volume level (the app already warns about this), so turning Windows down could make the recording quieter. To check before the wording is final.
+- "Turn your speakers down" should mean the speakers or amplifier themselves, not the Windows volume. Recording what the PC plays may capture at the Windows volume level (the app reads that volume but doesn't warn about it yet), so turning Windows down could make the recording quieter. To check before the wording is final.
 
 ## 4. Confirmed facts (checked in the app)
 
