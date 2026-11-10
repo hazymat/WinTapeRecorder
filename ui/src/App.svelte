@@ -91,7 +91,7 @@
   // Right-click a session: its files in Explorer, or close it
   // First run: a short welcome pointing at the tour; shown once
   let welcome = $state(readSetting('welcomeSeen', '') !== '1')
-  function closeWelcome(start: boolean) { welcome = false; writeSetting('welcomeSeen', '1'); if (start) { tour.open = true; tour.tab = 'show' } }
+  function closeWelcome(start: boolean) { welcome = false; writeSetting('welcomeSeen', '1'); if (start) { tour.open = true; tour.tab = 'concept' } }
   let sessionMenu = $state<null | { session: SessionSummary; left: number; top: number }>(null)
   // Renaming in the list itself: Enter or clicking away keeps the name, Esc leaves it as it was
   let renaming = $state('')
