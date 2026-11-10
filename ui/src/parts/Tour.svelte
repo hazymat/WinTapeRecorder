@@ -32,13 +32,18 @@
   }
   $effect(() => { if (!tour.open) return; frame = requestAnimationFrame(follow); return () => cancelAnimationFrame(frame) })
   // A new step: bring its target into view, put the window back beside it, fold the extra text
-  $effect(() => { step; context; tour.tab; dragged = null; moreOpen = false; queueMicrotask(() => findTarget(step?.target)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })) })
+  // Once the window has been moved, it stays where the user put it
+  $effect(() => { step; context; tour.tab; moreOpen = false; queueMicrotask(() => findTarget(step?.target)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })) })
 
   // The window sits beside its target where there's room, otherwise below or above it
-  const width = 420
+  // The concepts, and anything not tied to something on screen, sit in the middle and take the attention; the rest sits beside what it points at
+  const centred = $derived(tour.tab !== 'show' || !rect)
+  const width = $derived(centred ? Math.min(640, innerWidth - 40) : 440)
+  let windowHeight = $state(240)
   const placed = $derived.by(() => {
     if (dragged) return dragged
-    const height = windowBox?.offsetHeight ?? 220, gap = 18, margin = 12
+    const height = windowHeight, gap = 18, margin = 12
+    if (centred) return { left: Math.round((innerWidth - width) / 2), top: Math.max(margin, Math.round((innerHeight - height) / 2)) }
     const clamp = (left: number, top: number) => ({ left: Math.max(margin, Math.min(innerWidth - width - margin, left)), top: Math.max(margin, Math.min(innerHeight - height - margin, top)) })
     if (!rect || tour.tab !== 'show') return clamp(innerWidth - width - 28, innerHeight - height - 70)
     if (innerWidth - rect.right > width + gap + margin) return clamp(rect.right + gap, rect.top)
@@ -50,7 +55,7 @@
   // The line from the window to what it's pointing at
   const link = $derived.by(() => {
     if (!rect || tour.tab !== 'show' || !windowBox) return null
-    const height = windowBox.offsetHeight, from = { x: Math.max(placed.left, Math.min(placed.left + width, rect.left + rect.width / 2)), y: Math.max(placed.top, Math.min(placed.top + height, rect.top + rect.height / 2)) }
+    const height = windowHeight, from = { x: Math.max(placed.left, Math.min(placed.left + width, rect.left + rect.width / 2)), y: Math.max(placed.top, Math.min(placed.top + height, rect.top + rect.height / 2)) }
     const to = { x: Math.max(rect.left - 4, Math.min(rect.right + 4, from.x)), y: Math.max(rect.top - 4, Math.min(rect.bottom + 4, from.y)) }
     return Math.hypot(to.x - from.x, to.y - from.y) < 8 ? null : { from, to }
   })
@@ -94,7 +99,8 @@
     <div class="tour-ring" style:left="{rect.left - 5}px" style:top="{rect.top - 5}px" style:width="{rect.width + 10}px" style:height="{rect.height + 10}px"></div>
     {#if link}<svg class="tour-link" aria-hidden="true"><line x1={link.from.x} y1={link.from.y} x2={link.to.x} y2={link.to.y} /><circle cx={link.to.x} cy={link.to.y} r="4" /></svg>{/if}
   {/if}
-  <div class="tour-window" bind:this={windowBox} style:left="{placed.left}px" style:top="{placed.top}px" style:width="{width}px" role="dialog" aria-label="Tour">
+  {#if centred}<div class="tour-dim" role="presentation"></div>{/if}
+  <div class="tour-window" class:centred bind:this={windowBox} bind:offsetHeight={windowHeight} style:left="{placed.left}px" style:top="{placed.top}px" style:width="{width}px" role="dialog" aria-label="Tour">
     <div class="tour-head" role="presentation" onpointerdown={dragDown} onpointermove={dragMove} onpointerup={() => dragFrom = null} title="Drag to move">
       <span class="tour-tabs" role="tablist">
         <button role="tab" class:on={tour.tab === 'concept'} aria-selected={tour.tab === 'concept'} onclick={() => tour.tab = 'concept'}>The app concept</button>
@@ -115,7 +121,7 @@
         {:else}<p>{step.text}</p>{/if}
         {#if step.more}
           <button class="tour-more" onclick={() => moreOpen = !moreOpen} aria-expanded={moreOpen}>{moreOpen ? '▾' : '▸'} More info</button>
-          {#if moreOpen}<p class="tour-more-text">{step.more}</p>{/if}
+          {#if moreOpen}{#if Array.isArray(step.more)}<ul class="tour-more-text">{#each step.more as item}<li>{item}</li>{/each}</ul>{:else}<p class="tour-more-text">{step.more}</p>{/if}{/if}
         {/if}
         {#if step.target && !rect}<p class="tour-absent">(It isn't on screen right now{context === 'recording' ? ': it appears once the first track has been marked' : ''}.)</p>{/if}
       </div>
@@ -152,7 +158,11 @@
   .tour-link { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 499; pointer-events: none; }
   .tour-link line { stroke: #ffd60a; stroke-width: 2.5; stroke-dasharray: 6 4; }
   .tour-link circle { fill: #ffd60a; }
-  .tour-window { position: fixed; z-index: 501; display: flex; flex-direction: column; border-radius: 12px; background: linear-gradient(var(--panel-solid), var(--panel-solid)), var(--bg); border: 2px solid #ffd60a; box-shadow: 0 18px 50px var(--shadow); color: var(--fg); font-size: 14.5px; max-height: calc(100vh - 24px); }
+  .tour-window { position: fixed; z-index: 501; display: flex; flex-direction: column; border-radius: 12px; background: linear-gradient(var(--panel-solid), var(--panel-solid)), var(--bg); border: 2px solid #ffd60a; box-shadow: 0 18px 50px var(--shadow); color: var(--fg); font-size: 15.5px; max-height: calc(100vh - 24px); }
+  .tour-window.centred { font-size: 17px; }
+  .tour-window.centred .tour-body { padding: 16px 24px 8px; }
+  .tour-window.centred .tour-body h3 { font-size: 22px; }
+  .tour-dim { position: fixed; inset: 0; z-index: 498; background: rgba(0, 0, 0, 0.35); pointer-events: none; }
   .tour-head { display: flex; align-items: center; gap: 10px; padding: 8px 10px 6px 10px; cursor: move; border-bottom: 1px solid var(--line); }
   .tour-tabs { display: inline-flex; }
   .tour-tabs button { font: inherit; font-size: 12.5px; white-space: nowrap; font-weight: 600; padding: 3px 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg-quiet); cursor: pointer; }
@@ -160,10 +170,11 @@
   .tour-tabs button.on { background: #ffd60a; color: #1a1a1a; border-color: transparent; }
   .tour-where { font-size: 11.5px; color: var(--fg-quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tour-body { padding: 10px 14px 4px; overflow-y: auto; min-height: 0; }
-  .tour-body h3 { margin: 0 0 8px; font-size: 17.5px; text-transform: none; letter-spacing: 0; color: var(--fg); }
+  .tour-body h3 { margin: 0 0 8px; font-size: 19px; text-transform: none; letter-spacing: 0; color: var(--fg); }
   .tour-body p { margin: 0 0 8px; line-height: 1.5; }
-  .tour-more { border: 0; background: none; padding: 0; margin: 0 0 6px; font: inherit; font-size: 13.5px; color: var(--accent); cursor: pointer; }
-  .tour-more-text { color: var(--fg-quiet); font-size: 13.5px; }
+  .tour-more { border: 0; background: none; padding: 0; margin: 0 0 6px; font: inherit; font-size: 0.93em; color: var(--accent); cursor: pointer; }
+  .tour-more-text { color: var(--fg-quiet); font-size: 0.93em; margin: 0 0 8px; padding-left: 20px; line-height: 1.5; }
+  .tour-more-text li { margin-bottom: 5px; }
   .tour-keys { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; margin: 4px 0 12px; font-size: 15px; }
   .keycap { display: inline-grid; place-items: center; min-width: 38px; height: 38px; padding: 0 8px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--line); border-bottom-width: 3px; background: var(--panel-strong); font-size: 18px; font-weight: 600; color: var(--fg); justify-self: start; }
   .keycap.wide { font-size: 14px; }

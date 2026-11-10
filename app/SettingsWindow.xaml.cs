@@ -365,6 +365,7 @@ public partial class SettingsWindow : Window
         dataFolderText.Text = (AppPaths.IsPortable ? "Portable mode. " : "") + $"Settings and logs: {AppPaths.DataFolder}";
         openLogsButton.Click += (sender, args) => Process.Start(new ProcessStartInfo(AppPaths.LogsFolder) { UseShellExecute = true });
         copyDiagnosticsButton.Click += (sender, args) => { try { Clipboard.SetText(DiagnosticsReport()); copyDiagnosticsDone.Text = "Copied. Paste it into your report; check it first, as GitHub posts are public."; } catch (Exception error) { copyDiagnosticsDone.Text = "Couldn't copy: " + error.Message; } };
+        resetTourButton.Click += (sender, args) => { App.ResetTour(); resetTourButton.Content = "Done: see the main window"; };
         reportProblemLink.Click += (sender, args) => Process.Start(new ProcessStartInfo(AppUpdater.RepoUrl + "/issues/new") { UseShellExecute = true });
         channelCombo.SelectedItem = channelCombo.Items.Cast<ComboBoxItem>().First(item => (string)item.Tag == Settings.General.UpdateChannel);
         channelCombo.SelectionChanged += async (sender, args) =>

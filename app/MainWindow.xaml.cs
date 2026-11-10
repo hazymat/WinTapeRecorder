@@ -109,6 +109,7 @@ public partial class MainWindow : Window
         App.Tip += (title, text) => Push(JsonSerializer.Serialize(new { type = "tip", title, text }));
         App.SuggestionFound += (sessionId, track) => Push(JsonSerializer.Serialize(new { type = "suggestion", id = sessionId, trackId = track.Id, suggestion = track.Suggestion, looked = track.SuggestionLooked }, camel));
         App.AlbumChecked += (sessionId, check) => Push(JsonSerializer.Serialize(new { type = "albumCheck", id = sessionId, check }, camel));
+        App.TourReset += () => Push("{\"type\":\"resetTour\"}");
         App.RecordingStoppedItself += (sessionId, reason) => Push(JsonSerializer.Serialize(new { type = "recordingStopped", sessionId, reason }));
         App.AlbumProgress += (sessionId, done, total) => Push(JsonSerializer.Serialize(new { type = "albumProgress", id = sessionId, done, total }, camel));
         App.AlbumMatched += (sessionId, matched) => Push(JsonSerializer.Serialize(new { type = "albumMatch", id = sessionId, albums = matched.Albums, tracks = matched.Tracks.Select(track => new { trackId = track.Id, suggestion = track.Suggestion, offAlbum = track.OffAlbum }) }, camel));

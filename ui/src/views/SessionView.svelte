@@ -942,9 +942,10 @@
   </header>
 
   <nav class="steps" aria-label="Steps">
-    <button class="step" class:active={step === 'cuts'} class:done={unchecked.length === 0} onclick={() => step = 'cuts'}><span class="step-number">1</span><span class="step-text"><strong>Albums &amp; cuts</strong><span>{unchecked.length === 0 ? 'all confirmed' : `${unchecked.length} to confirm${doubtful.length ? `, ${doubtful.length} doubtful` : ''}`}</span></span></button>
-    <button class="step" class:active={step === 'tags'} class:done={untagged.length === 0} onclick={() => step = 'tags'}><span class="step-number">2</span><span class="step-text"><strong>Fill gaps &amp; covers</strong><span>{untagged.length === 0 ? 'nothing missing' : `${untagged.length} track${untagged.length === 1 ? '' : 's'} with blanks`}</span></span></button>
-    <button class="step" class:active={step === 'export'} class:done={unexported.length === 0 && exportable.length > 0} onclick={() => step = 'export'}><span class="step-number">3</span><span class="step-text"><strong>Export</strong><span>{exportable.length === 0 ? 'nothing to export' : unexported.length === 0 ? `${exportable.length} exported${unverified.length ? `, ${unverified.length} failed the check` : ', all verified'}` : `${unexported.length} of ${exportable.length} to go`}</span></span></button>
+    <button class="step record-step done" disabled={!!app.status?.recording} onclick={addToRecording} title={app.status?.recording ? 'Another recording is running: finish it first' : 'Go back to recording and add more to the end of this session, for example a track that went wrong. Your cuts and tags stay as they are'}><span class="step-number">1</span><span class="step-text"><strong>Record</strong><span>{formatDuration(session.totalFrames / rate)} · record more</span></span></button>
+    <button class="step" class:active={step === 'cuts'} class:done={unchecked.length === 0} onclick={() => step = 'cuts'}><span class="step-number">2</span><span class="step-text"><strong>Albums &amp; cuts</strong><span>{unchecked.length === 0 ? 'all confirmed' : `${unchecked.length} to confirm${doubtful.length ? `, ${doubtful.length} doubtful` : ''}`}</span></span></button>
+    <button class="step" class:active={step === 'tags'} class:done={untagged.length === 0} onclick={() => step = 'tags'}><span class="step-number">3</span><span class="step-text"><strong>Fill gaps &amp; covers</strong><span>{untagged.length === 0 ? 'nothing missing' : `${untagged.length} track${untagged.length === 1 ? '' : 's'} with blanks`}</span></span></button>
+    <button class="step" class:active={step === 'export'} class:done={unexported.length === 0 && exportable.length > 0} onclick={() => step = 'export'}><span class="step-number">4</span><span class="step-text"><strong>Export</strong><span>{exportable.length === 0 ? 'nothing to export' : unexported.length === 0 ? `${exportable.length} exported${unverified.length ? `, ${unverified.length} failed the check` : ', all verified'}` : `${unexported.length} of ${exportable.length} to go`}</span></span></button>
     <div class="step-actions">
       {#if step === 'cuts'}
         <button class="primary" onclick={checkNext} title="Jump to the next start or end without a ✓, from the track you're on, zoomed in, and play it (C)">Find next to confirm<kbd>C</kbd></button>
@@ -960,7 +961,6 @@
     </div>
   </nav>
   <div class="toolbar">
-    <button class="ghost record-more" disabled={!!app.status?.recording} onclick={addToRecording} title="Go back to recording and add more to the end of this session, for example a track that went wrong. Your cuts and tags stay as they are"><span class="red-dot"></span>Record more</button>
     <button class="ghost" class:on={playing} onclick={() => playing ? stop() : playFrom(cursor)} title="Play from the playhead: click in the wave or on a track to move it (Space)"><Icon name={playing ? 'stop' : 'play'} size={16} />{playing ? 'Stop' : 'Play'}<kbd>Space</kbd></button>
     {#if step === 'cuts'}
     <div class="group">
@@ -1336,8 +1336,6 @@
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .row.playing-now { background: var(--accent-soft); }
-  .record-more { display: inline-flex; align-items: center; gap: 7px; }
-  .red-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--danger); flex: none; }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
   .number, .time, .fades { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
   .edge { background: none; border: 1px solid transparent; border-radius: 5px; padding: 2px 4px; text-align: left; cursor: pointer; }
@@ -1350,6 +1348,7 @@
   .step.active { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
   .step-number { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-strong); font-size: 12px; font-weight: 700; }
   .step.done .step-number { background: #3ecf6e; color: #06200e; }
+  .step.record-step .step-number { background: var(--danger); } .step.record-step:disabled { opacity: 0.5; cursor: default; }
   .step.done .step-number::before { content: "✓"; } .step.done .step-number { font-size: 0; } .step.done .step-number::before { font-size: 13px; }
   .step-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
   .step-text span { font-size: 11.5px; color: var(--fg-quiet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

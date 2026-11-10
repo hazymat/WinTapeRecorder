@@ -209,6 +209,8 @@ public partial class App : Application
     // Auto-stop (SPEC.md › Recording): after the profile's minutes of silence the recording finishes by itself, the last track ending
     // a second after the sound did. Checked by the level timer
     public event Action<string, string>? RecordingStoppedItself;
+    public event Action? TourReset; // Settings › About: the welcome and the tour from the start again
+    public void ResetTour() => TourReset?.Invoke();
     public double SilenceStopIn()
     {
         if (!Recorder.Recording || Recorder.KeepThroughSilence) return -1;
