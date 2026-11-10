@@ -1,0 +1,25 @@
+name: download stats
+# Every hour, saves release download counts to the stats branch (downloads.csv: one row per day; the website draws its graph from it)
+on:
+  schedule: [{ cron: '17 * * * *' }]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: download-stats }
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { sparse-checkout: .github/stats, path: main }
+      - name: Check out the stats branch (created on the first run)
+        run: git clone --branch stats --depth 1 "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" stats || { git init -b stats stats && git -C stats remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}"; }
+      - run: python3 main/.github/stats/snapshot.py stats
+        env: { GITHUB_TOKEN: '${{ github.token }}', OWN_PORTABLE_PER_RELEASE: '1' }
+      - name: Save
+        working-directory: stats
+        run: |
+          git add -A
+          git diff --cached --quiet && exit 0
+          git -c user.name=hazymat -c user.email=7063284+hazymat@users.noreply.github.com commit -q -m "Download counts $(date -u +'%Y-%m-%d %H:%M')"
+          git push -q origin stats
