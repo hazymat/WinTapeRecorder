@@ -11,6 +11,19 @@
   const index = $derived(Math.min(tour.index[key] ?? 0, list.length - 1))
   const step = $derived(list[index])
   let moreOpen = $state(false)
+  // Bits of the app shown inline in the text, so the words match what's on screen
+  type Piece = { kind: 'text' | 'button' | 'tick' | 'step'; text: string; number?: string }
+  function pieces(text: string): Piece[] {
+    const out: Piece[] = []; let last = 0
+    for (const match of text.matchAll(/\[(button|tick|step)(?::([^\]:]+))?(?::([^\]]+))?\]/g)) {
+      if (match.index! > last) out.push({ kind: 'text', text: text.slice(last, match.index) })
+      const kind = match[1] as Piece['kind']
+      out.push(kind === 'step' ? { kind, number: match[2], text: match[3] ?? '' } : { kind, text: match[2] ?? '' })
+      last = match.index! + match[0].length
+    }
+    if (last < text.length) out.push({ kind: 'text', text: text.slice(last) })
+    return out
+  }
 
   // Where the thing being talked about is on screen, followed as the page moves
   let rect = $state<DOMRect | null>(null)
@@ -96,6 +109,8 @@
 
 <svelte:window onkeydowncapture={onKey} />
 
+{#snippet rich(text: string)}{#each pieces(text) as piece}{#if piece.kind === 'button'}<span class="ui-button">{piece.text}</span>{:else if piece.kind === 'tick'}<span class="ui-tick">✓</span>{:else if piece.kind === 'step'}<span class="ui-step"><span class="ui-step-number">{piece.number}</span>{piece.text}</span>{:else}{piece.text}{/if}{/each}{/snippet}
+
 {#if tour.open}
   {#if rect && tour.tab === 'show'}
     <div class="tour-ring" style:left="{rect.left - 5}px" style:top="{rect.top - 5}px" style:width="{rect.width + 10}px" style:height="{rect.height + 10}px"></div>
@@ -121,11 +136,11 @@
             <span class="keycap">→</span><span>Next</span>
             <span class="keycap wide">Esc</span><span>Come back to it later</span>
           </div>
-        {:else}<p>{step.text}</p>{/if}
+        {:else}<p>{@render rich(step.text)}</p>{/if}
         {#if step.image}<img class="tour-image" src={'tour/' + step.image} alt={step.title} />{/if}
         {#if step.more}
           <button class="tour-more" onclick={() => moreOpen = !moreOpen} aria-expanded={moreOpen}>{moreOpen ? '▾' : '▸'} More info</button>
-          {#if moreOpen}{#if Array.isArray(step.more)}<ul class="tour-more-text">{#each step.more as item}<li>{item}</li>{/each}</ul>{:else}<p class="tour-more-text">{step.more}</p>{/if}{/if}
+          {#if moreOpen}{#if Array.isArray(step.more)}<ul class="tour-more-text">{#each step.more as item}<li>{@render rich(item)}</li>{/each}</ul>{:else}<p class="tour-more-text">{@render rich(step.more)}</p>{/if}{/if}
         {/if}
         {#if step.target && !rect}<p class="tour-absent">(It isn't on screen right now{context === 'recording' ? ': it appears once the first track has been marked' : ''}.)</p>{/if}
       </div>
@@ -167,6 +182,11 @@
   .tour-window.centred .tour-body { padding: 16px 24px 8px; }
   .tour-window.centred .tour-body h3 { font-size: 22px; }
   .tour-image { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); margin: 4px 0 10px; }
+  /* The app's own controls, drawn inline */
+  .ui-button { display: inline-block; padding: 0 9px; margin: 0 2px; border-radius: 7px; border: 1px solid color-mix(in srgb, var(--danger) 55%, transparent); color: var(--danger); background: var(--panel); font-size: 0.9em; line-height: 1.6; white-space: nowrap; }
+  .ui-tick { display: inline-grid; place-items: center; width: 1.35em; height: 1.35em; margin: 0 2px; border-radius: 6px; background: #3ecf6e; color: #fff; font-weight: 700; font-size: 0.85em; vertical-align: -0.15em; }
+  .ui-step { display: inline-flex; align-items: center; gap: 6px; padding: 0 9px 0 3px; margin: 0 2px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); font-weight: 600; font-size: 0.9em; line-height: 1.6; white-space: nowrap; vertical-align: 0.05em; }
+  .ui-step-number { display: inline-grid; place-items: center; width: 1.3em; height: 1.3em; border-radius: 50%; background: var(--panel-strong); font-size: 0.85em; font-weight: 700; }
   .tour-dim { position: fixed; inset: 0; z-index: 498; background: rgba(0, 0, 0, 0.35); pointer-events: none; }
   .tour-head { display: flex; align-items: center; gap: 10px; padding: 8px 10px 6px 10px; cursor: move; border-bottom: 1px solid var(--line); }
   .tour-tabs { display: inline-flex; }
