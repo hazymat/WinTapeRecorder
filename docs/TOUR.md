@@ -93,6 +93,20 @@ Mat's notes (he'll add more):
 - **Reassurance:** pressing Enter at any point won't stop the recording. The app is built so recording is resilient. Clicking out of it, or into another view, won't accidentally stop it.
 - **Other sessions can be viewed while recording** (confirmed, see below). Maybe mention this later in the tour rather than here.
 
+### 3f. Leave it going overnight
+
+Mat wants this highlighted in the recording part of the tour:
+
+- "You could leave it going overnight. You don't need to worry about the 4 GB file limit, because we've accounted for that. You could leave it going and turn your speakers down overnight or something. And in most cases, you'll come back the next morning to find everything's been tagged and segmented by album. Intelligently. Then it's just a case of tidying things up and then exporting."
+- "Recording automatically stops by itself after 5 minutes of silence. This can be adjusted in settings. So another reason that it's good to leave it going overnight: you don't have to worry that it's just going to carry on recording."
+
+Facts behind this, for the wording:
+- Past 4 GB the WAV becomes RF64 and stays one file. Only at 256 GB (about 10 days at 24-bit) does the recording carry on into a new session.
+- The silence stop is 5 minutes below -70 dB by default, set per recording profile (Settings › Recording profiles). The silence at the end isn't part of any track.
+- The Record page shows how many hours fit in the free disk space.
+- The app keeps the PC from sleeping while it records. A laptop lid closing, a low battery or a Windows Update restart can still stop it, so the tour should say to set those to never for overnight sessions.
+- "Turn your speakers down" should mean the speakers or amplifier themselves, not the Windows volume. Recording what the PC plays may capture at the Windows volume level (the app already warns about this), so turning Windows down could make the recording quieter. To check before the wording is final.
+
 ## 4. Confirmed facts (checked in the app)
 
 - **Viewing other sessions while recording: yes.** Clicking another session in the list opens it while the recording carries on. Its Albums & cuts, Fill gaps & covers and Export steps all work: you can edit, tag and export. Clicking **Recording…** at the top left goes straight back to the recording. One limit: you can't listen to (audition) another session while recording what the PC plays through the same speakers, because the recording would pick it up. The app says so if you try.
