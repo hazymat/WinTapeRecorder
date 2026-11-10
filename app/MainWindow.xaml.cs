@@ -418,7 +418,16 @@ public partial class MainWindow : Window
                             var track = lastTrack;
                             return track == null || (track.FadeInMs == 0 && track.FadeOutMs == 0) ? 1f : Exporter.FadeGain(frame, track, (long)track.FadeInMs * rate / 1000, (long)track.FadeOutMs * rate / 1000);
                         };
-                        App.Player.Play(playing.session.AudioPath, playing.session.Id, segments, gain, App.Settings.Audio.AuditionDeviceId);
+                        // A device that vanishes or a driver that stalls (a Bluetooth headset dropping, say) must never freeze the app:
+                        // opening it runs off the UI thread with a time limit, and one retry goes to the Windows default (SPEC.md › Auditioning)
+                        var deviceId = App.Settings.Audio.AuditionDeviceId; string? failed = null;
+                        for (var attempt = 0; attempt < 2; attempt++)
+                        {
+                            try { await Task.Run(() => App.Player.Play(playing.session.AudioPath, playing.session.Id, segments, gain, deviceId)).WaitAsync(TimeSpan.FromSeconds(4)); failed = null; break; }
+                            catch (TimeoutException) { failed = "The audio device isn't responding."; App.Player.Stop(); break; }
+                            catch (Exception playError) { failed = playError is System.Runtime.InteropServices.COMException { HResult: unchecked((int)0x88890004) } ? "The audio device went away (unplugged, or a Bluetooth device dropped)." : playError.Message; App.Player.Stop(); deviceId = ""; await Task.Delay(300); }
+                        }
+                        if (failed != null) { App.ShowTip("Couldn't play that", failed + " Check your speakers or headphones, then try again."); Push(App.StatusJson()); break; }
                         playheadTimer.Start(); Push(App.StatusJson());
                     }
                     break;
