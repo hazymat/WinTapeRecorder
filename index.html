@@ -22,7 +22,12 @@ h1{font-size:clamp(32px,5vw,52px);line-height:1.12;margin:0 auto 18px;max-width:
 .stats{display:inline-flex;align-items:center;gap:8px;margin-top:14px;padding:6px 14px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--quiet);font-size:14px;position:relative;cursor:help;outline:none}
 .stats[hidden]{display:none}.stats b{color:var(--text);font-weight:600}.stats svg{width:15px;height:15px;color:var(--accent)}
 .stats .tip{position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);width:max-content;max-width:300px;background:#232935;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.45;text-align:left;box-shadow:0 10px 30px rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:opacity .15s}
-.stats:hover .tip,.stats:focus .tip{opacity:1}.meta a{color:var(--quiet)}
+.stats:hover .tip,.stats:focus .tip{opacity:1}.stats[aria-expanded=true] .tip{opacity:0}.meta a{color:var(--quiet)}.stats{cursor:pointer}.stats:hover{border-color:#3a4252}
+.trend{max-width:640px;margin:14px auto 0;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px 12px;text-align:left}.trend[hidden]{display:none}
+.trend h3{margin:0 0 6px;font-size:15px;font-weight:600}.trend .plot{position:relative}.trend svg{display:block;width:100%;overflow:visible;font:12px "Segoe UI",system-ui,sans-serif}
+.trend .grid-line{stroke:var(--line)}.trend .axis-text{fill:var(--quiet)}.trend .value-text{fill:var(--text);font-weight:600}
+.trend .point-tip{position:absolute;top:0;pointer-events:none;background:#232935;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;line-height:1.4;white-space:nowrap;box-shadow:0 10px 30px rgba(0,0,0,.4)}.trend .point-tip[hidden]{display:none}.trend .point-tip span{color:var(--quiet)}
+.trend .fine{color:var(--quiet);font-size:12.5px;margin:6px 0 0}
 .shot{display:block;width:100%;height:auto;border-radius:12px;border:1px solid var(--line);box-shadow:0 30px 80px rgba(0,0,0,.55)}
 .hero .shot{margin-top:48px}
 .callout{display:flex;gap:14px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:28px auto 0;max-width:760px;text-align:left;font-size:15px;color:var(--quiet)}
@@ -59,7 +64,8 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-betw
 <p class="lede">A free, open-source Windows app for digitising your records and tapes, radio shows and live sets. Leave one album or several playing, and come back to find every track split, named and grouped by album.</p>
 <a class="download" href="https://github.com/hazymat/wintaperecorder/releases/latest/download/WinTapeRecorder-Setup.exe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>Download for Windows</a>
 <div class="meta">Free and open source · <span data-version>Version 0.91.192</span> · <a href="https://github.com/hazymat/wintaperecorder/releases/latest/download/WinTapeRecorder-Portable.exe">Portable version</a> · <a href="https://github.com/hazymat/wintaperecorder/releases">All releases</a></div>
-<div><span class="stats" tabindex="0" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg><span class="stats-text"></span><span class="tip">Counted by GitHub: every download of the installer or the portable version, across all releases. Automatic updates aren’t included. Live from GitHub, refreshed every hour.</span></span></div>
+<div><span class="stats" tabindex="0" role="button" aria-expanded="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg><span class="stats-text"></span><span class="tip">Downloads of the installer or the portable version by people, across all releases. Leaves out the automatic download GitHub logs for every new file, the developer’s own copy of each release, and automatic updates. Refreshed every hour. Click for a graph.</span></span></div>
+<div class="trend" hidden><h3>Downloads over time</h3><div class="plot"><svg role="img" aria-label="Downloads over time"></svg><div class="point-tip" hidden></div></div><p class="fine" hidden></p></div>
 <div class="callout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z"/><path d="M12 8v5m0 3h.01"/></svg><div><b>Windows may say "Windows protected your PC".</b> It's a new app and isn't code-signed yet. Click <b>More info</b> (the small link under the text), then <b>Run anyway</b>.<span class="fine">If you have any concerns, <b>trust your instinct</b>. This is open-source software, so you can <a href="https://github.com/hazymat/WinTapeRecorder">review the source code</a> or test it in your own environment to make sure it behaves as you expect. <a href="#about">More about the developer</a>.</span></div></div>
 <img class="shot" src="img/cuts.webp" alt="A four-hour session split into albums and tracks, ready to check" width="1800" height="1124">
 </div>
@@ -73,29 +79,53 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-betw
 <script>
 // Show the newest release's version on the page; the built-in one stays if GitHub can't be reached
 fetch('https://api.github.com/repos/hazymat/wintaperecorder/releases/latest').then(response => response.ok ? response.json() : null).then(release => { if (release && release.tag_name) document.querySelectorAll('[data-version]').forEach(label => label.textContent = 'Version ' + release.tag_name.replace(/^v/, '')) }).catch(() => { })
-// Downloads badge: first release date and installer + portable downloads over all releases, from GitHub (cached for an hour)
+// Downloads badge and graph: daily counts saved every hour by the stats workflow; click the badge for the graph
 ;(async () => {
-  const badge = document.querySelector('.stats'), cacheKey = 'stats-wintaperecorder'
-  let stats = null
-  try { const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); if (cached && Date.now() - cached.at < 3600000) stats = cached } catch { }
-  if (!stats) {
-    try {
-      let downloads = 0, first = '', page = 1
-      while (page < 20) {
-        const response = await fetch(`https://api.github.com/repos/hazymat/wintaperecorder/releases?per_page=100&page=${page}`)
-        if (!response.ok) break
-        const releases = await response.json()
-        if (!releases.length) break
-        for (const release of releases) { const date = release.published_at || release.created_at; if (!first || date < first) first = date; for (const asset of release.assets) if (asset.name.endsWith('.exe')) downloads += asset.download_count }
-        page++
-      }
-      if (first) { stats = { at: Date.now(), downloads, first }; try { localStorage.setItem(cacheKey, JSON.stringify(stats)) } catch { } }
-    } catch { }
-  }
-  if (!stats) return
-  const launched = new Date(stats.first).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-  badge.querySelector('.stats-text').innerHTML = `<b>${stats.downloads.toLocaleString('en-GB')}</b> downloads since ${launched}`
+  const badge = document.querySelector('.stats'), panel = document.querySelector('.trend'), plot = panel.querySelector('.plot'), svg = plot.querySelector('svg'), pointTip = plot.querySelector('.point-tip'), svgNamespace = 'http://www.w3.org/2000/svg'
+  let days = []
+  try { const response = await fetch('https://raw.githubusercontent.com/hazymat/wintaperecorder/stats/downloads.csv', { cache: 'no-cache' }); if (response.ok) days = (await response.text()).trim().split('\n').slice(1).map(line => line.split(',')).map(cells => ({ date: cells[0], downloads: +cells[1], estimated: cells[5] === '1' })) } catch { }
+  if (!days.length) return
+  const dayLabel = (isoDate, options) => new Date(isoDate + 'T12:00:00Z').toLocaleDateString('en-GB', options || { day: 'numeric', month: 'short' })
+  badge.querySelector('.stats-text').innerHTML = `<b>${days[days.length - 1].downloads.toLocaleString('en-GB')}</b> downloads since ${dayLabel(days[0].date, { day: 'numeric', month: 'short', year: 'numeric' })}`
   badge.hidden = false
+  const firstCounted = days.find(day => !day.estimated), note = panel.querySelector('.fine')
+  if (days[0].estimated && firstCounted) { note.textContent = `Dashed: estimated from release dates, before daily counts started on ${dayLabel(firstCounted.date)}.`; note.hidden = false }
+  const toggle = () => { panel.hidden = !panel.hidden; badge.setAttribute('aria-expanded', String(!panel.hidden)); if (!panel.hidden) draw() }
+  badge.addEventListener('click', toggle); badge.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle() } })
+  addEventListener('resize', () => { if (!panel.hidden) draw() })
+  function add(parent, tag, attributes, text) { const element = document.createElementNS(svgNamespace, tag); for (const name in attributes) element.setAttribute(name, attributes[name]); if (text !== undefined) element.textContent = text; parent.appendChild(element); return element }
+  function draw() {
+    const width = plot.clientWidth, height = 200, padLeft = 34, padRight = 14, padTop = 22, padBottom = 24, plotWidth = width - padLeft - padRight, plotHeight = height - padTop - padBottom
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`); svg.setAttribute('height', height); svg.textContent = ''
+    const most = days.reduce((highest, day) => Math.max(highest, day.downloads), 1), roughStep = most / 4, magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)))
+    const gridStep = Math.max(1, [1, 2, 5, 10].map(factor => factor * magnitude).find(step => step >= roughStep)), axisTop = Math.ceil(most / gridStep) * gridStep
+    const xOf = index => padLeft + (days.length < 2 ? plotWidth / 2 : index * plotWidth / (days.length - 1)), yOf = value => padTop + plotHeight * (1 - value / axisTop)
+    for (let value = 0; value <= axisTop; value += gridStep) { add(svg, 'line', { class: 'grid-line', x1: padLeft, x2: width - padRight, y1: yOf(value), y2: yOf(value) }); add(svg, 'text', { class: 'axis-text', x: padLeft - 8, y: yOf(value) + 4, 'text-anchor': 'end' }, value.toLocaleString('en-GB')) }
+    const labelEvery = Math.max(1, Math.ceil(days.length / Math.max(2, Math.floor(plotWidth / 70))))
+    days.forEach((day, index) => { if ((days.length - 1 - index) % labelEvery === 0) add(svg, 'text', { class: 'axis-text', x: xOf(index), y: height - 6, 'text-anchor': days.length < 2 ? 'middle' : index === 0 ? 'start' : index === days.length - 1 ? 'end' : 'middle' }, dayLabel(day.date)) })
+    const points = days.map((day, index) => [xOf(index), yOf(day.downloads)]), lastEstimated = days.reduce((found, day, index) => day.estimated ? index : found, -1)
+    const pathOf = list => list.map((point, index) => (index ? 'L' : 'M') + point[0].toFixed(1) + ' ' + point[1].toFixed(1)).join('')
+    add(svg, 'path', { d: pathOf(points) + `L${points[points.length - 1][0]} ${yOf(0)}L${points[0][0]} ${yOf(0)}Z`, fill: 'var(--accent)', 'fill-opacity': .1 })
+    if (lastEstimated >= 0) add(svg, 'path', { d: pathOf(points.slice(0, lastEstimated + 2)), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2, 'stroke-dasharray': '4 4', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' })
+    if (lastEstimated < days.length - 1) add(svg, 'path', { d: pathOf(points.slice(Math.max(0, lastEstimated + 1))), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' })
+    const latest = points[points.length - 1]
+    add(svg, 'circle', { cx: latest[0], cy: latest[1], r: 4, fill: 'var(--accent)', stroke: 'var(--panel)', 'stroke-width': 2 })
+    add(svg, 'text', { class: 'value-text', x: latest[0], y: latest[1] - 10, 'text-anchor': 'end' }, days[days.length - 1].downloads.toLocaleString('en-GB'))
+    // Hover or touch: crosshair, dot and the day's figures
+    const crosshair = add(svg, 'line', { class: 'grid-line', y1: padTop, y2: yOf(0), visibility: 'hidden' }), hoverDot = add(svg, 'circle', { r: 4, fill: 'var(--accent)', stroke: 'var(--panel)', 'stroke-width': 2, visibility: 'hidden' })
+    const hitArea = add(svg, 'rect', { x: 0, y: 0, width, height, fill: 'transparent' })
+    const show = event => {
+      const box = svg.getBoundingClientRect(), pointerX = (event.clientX - box.left) * width / box.width
+      const index = days.length < 2 ? 0 : Math.min(days.length - 1, Math.max(0, Math.round((pointerX - padLeft) / plotWidth * (days.length - 1)))), day = days[index], gained = index ? day.downloads - days[index - 1].downloads : day.downloads
+      crosshair.setAttribute('x1', points[index][0]); crosshair.setAttribute('x2', points[index][0]); crosshair.setAttribute('visibility', 'visible'); hoverDot.setAttribute('cx', points[index][0]); hoverDot.setAttribute('cy', points[index][1]); hoverDot.setAttribute('visibility', 'visible')
+      pointTip.innerHTML = `<b>${dayLabel(day.date, { weekday: 'short', day: 'numeric', month: 'short' })}</b><br>${day.downloads.toLocaleString('en-GB')} downloads<br><span>+${gained.toLocaleString('en-GB')} that day${day.estimated ? ' (estimated)' : ''}</span>`
+      pointTip.hidden = false
+      const tipWidth = pointTip.offsetWidth, tipX = points[index][0] * box.width / width
+      pointTip.style.left = Math.min(box.width - tipWidth, Math.max(0, tipX + (tipX + 14 + tipWidth > box.width ? -tipWidth - 14 : 14))) + 'px'
+    }
+    const hide = () => { pointTip.hidden = true; crosshair.setAttribute('visibility', 'hidden'); hoverDot.setAttribute('visibility', 'hidden') }
+    hitArea.addEventListener('pointermove', show); hitArea.addEventListener('pointerdown', show); hitArea.addEventListener('pointerleave', hide)
+  }
 })()
 // Gallery: click a picture to see it full size; click again or Esc to close
 const viewer = document.getElementById('viewer')
