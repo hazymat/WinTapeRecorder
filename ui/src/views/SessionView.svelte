@@ -50,7 +50,10 @@
   const unexported = $derived(tracks.filter(track => !track.skip && !track.exported))
   const unverified = $derived(tracks.filter(track => !track.skip && track.exported && !track.verified))
   const exportable = $derived(tracks.filter(track => !track.skip))
-  let step = $state<'cuts' | 'tags' | 'export'>('cuts')
+  // The step you were on comes back after a restart (an update, say), for the same session
+  const lastStep = readSetting('lastStep', '').split('|')
+  let step = $state<'cuts' | 'tags' | 'export'>(lastStep[0] === sessionId && ['cuts', 'tags', 'export'].includes(lastStep[1]) ? lastStep[1] as 'cuts' | 'tags' | 'export' : 'cuts')
+  $effect(() => { writeSetting('lastStep', sessionId + '|' + step) })
   // The tour knows which step is showing, and can ask for another
   $effect(() => { nav.step = step })
   $effect(() => { if (nav.wantStep) { step = nav.wantStep; nav.wantStep = '' } })
@@ -171,22 +174,39 @@
 
   // ---- Dragging edges (live), committed on release; snapped to a zero crossing when that's on ----
   let dragBefore = ''
+  // Cuts: Linked moves a track's end and the next start together where they meet; Separate moves one at a time.
+  // Holding Alt does the other for that drag or nudge (SPEC.md › Editing)
+  let linked = $state(readSetting('cutsLinked', '1') === '1')
+  function setLinked(on: boolean) { linked = on; writeSetting('cutsLinked', on ? '1' : '0') }
+  let altDown = $state(false)
+  const together = () => linked !== altDown
+  let dragPartner: NonNullable<Grab> | null | undefined = undefined // the edge that moves with the one being dragged, decided when the drag starts
+  function partnerOf(grabbed: NonNullable<Grab>): NonNullable<Grab> | null {
+    if (!together()) return null
+    const index = tracks.findIndex(track => track.id === grabbed.trackId); if (index < 0) return null
+    const track = tracks[index], previous = tracks[index - 1], next = tracks[index + 1]
+    if (grabbed.edge === 'start' && previous && previous.end === track.start) return { trackId: previous.id, edge: 'end' }
+    if (grabbed.edge === 'end' && next && next.start === track.end) return { trackId: next.id, edge: 'start' }
+    return null
+  }
   function onEdge(grabbed: NonNullable<Grab>, frame: number) {
     grab = grabbed
-    if (!dragBefore) dragBefore = JSON.stringify($state.snapshot(tracks))
-    moveEdge(grabbed, frame)
+    if (!dragBefore) { dragBefore = JSON.stringify($state.snapshot(tracks)); dragPartner = partnerOf(grabbed) }
+    moveEdge(grabbed, frame, dragPartner ?? null)
   }
-  function moveEdge(grabbed: NonNullable<Grab>, frame: number) {
+  function moveEdge(grabbed: NonNullable<Grab>, frame: number, partner: NonNullable<Grab> | null = null) {
     const index = tracks.findIndex(track => track.id === grabbed.trackId); if (index < 0) return
     const track = tracks[index], previous = tracks[index - 1], next = tracks[index + 1]
     // Moving an edge doesn't confirm it: that's the user's own ✓ (SPEC.md › Editing)
+    if (partner && grabbed.edge === 'start' && previous) { const at = Math.max(previous.start + 1, Math.min(track.end - 1, frame)); track.start = at; previous.end = at; return }
+    if (partner && grabbed.edge === 'end' && next) { const at = Math.min(next.end - 1, Math.max(track.start + 1, frame)); track.end = at; next.start = at; return }
     if (grabbed.edge === 'start') track.start = Math.max(previous?.end ?? 0, Math.min(track.end - 1, frame))
     else track.end = Math.min(next?.start ?? session!.totalFrames, Math.max(track.start + 1, frame))
   }
   async function onEdgeDone(grabbed: NonNullable<Grab>) {
-    const before = dragBefore; dragBefore = ''
+    const before = dragBefore; dragBefore = ''; const partner = dragPartner ?? null; dragPartner = undefined
     const track = tracks.find(candidate => candidate.id === grabbed.trackId)
-    if (track && snapToZero) moveEdge(grabbed, await request<number>({ type: 'nearestZero', id: sessionId, frame: track[grabbed.edge], radius: Math.max(200, Math.round(view.framesPerPixel * 12)) }))
+    if (track && snapToZero) moveEdge(grabbed, await request<number>({ type: 'nearestZero', id: sessionId, frame: track[grabbed.edge], radius: Math.max(200, Math.round(view.framesPerPixel * 12)) }), partner)
     if (before && before !== JSON.stringify($state.snapshot(tracks))) { past = past.concat([before]).slice(-200); future = []; save() }
   }
   async function snapped(frame: number) { return snapToZero ? await request<number>({ type: 'nearestZero', id: sessionId, frame, radius: Math.max(200, Math.round(view.framesPerPixel * 12)) }) : frame }
@@ -196,8 +216,11 @@
     const frame = await snapped(cursor)
     const next = copy(), edited = next.find(candidate => candidate.id === track.id)!
     if (edge === 'start' && frame >= edited.end || edge === 'end' && frame <= edited.start) { toast(edge === 'start' ? 'The start must be before the end' : 'The end must be after the start'); return false }
+    const partner = partnerOf({ trackId: track.id, edge }), index = next.indexOf(edited)
+    if (partner && edge === 'start' && next[index - 1] && frame > next[index - 1].start) next[index - 1].end = frame
+    if (partner && edge === 'end' && next[index + 1] && frame < next[index + 1].end) next[index + 1].start = frame
     edited[edge] = frame; grab = { trackId: track.id, edge }
-    commit(next, `Track ${tracks.indexOf(track) + 1} ${edge === 'start' ? 'starts' : 'ends'} at ${formatTime(frame, rate)}`)
+    commit(next, `Track ${tracks.indexOf(track) + 1} ${edge === 'start' ? 'starts' : 'ends'} at ${formatTime(frame, rate)}${partner ? ' (with its neighbour)' : ''}`)
     return true
   }
   async function splitAtCursor() {
@@ -824,7 +847,7 @@
     else if (key === ' ') { (document.activeElement as HTMLElement | null)?.blur?.(); if (playing) stop(); else playFrom(cursor) }
     else if (key === 'ArrowLeft' || key === 'ArrowRight') {
       const delta = key === 'ArrowLeft' ? -step : step
-      if (grab && tracks.some(track => track.id === grab!.trackId)) { const track = tracks.find(candidate => candidate.id === grab!.trackId)!; const before = JSON.stringify($state.snapshot(tracks)); moveEdge(grab, track[grab.edge] + delta); past = past.concat([before]).slice(-200); future = []; save(); cursor = track[grab.edge]; showFrame(cursor) }
+      if (grab && tracks.some(track => track.id === grab!.trackId)) { const track = tracks.find(candidate => candidate.id === grab!.trackId)!; const before = JSON.stringify($state.snapshot(tracks)); moveEdge(grab, track[grab.edge] + delta, partnerOf(grab)); past = past.concat([before]).slice(-200); future = []; save(); cursor = track[grab.edge]; showFrame(cursor) }
       else { cursor = Math.max(0, Math.min(session.totalFrames, cursor + delta)); showFrame(cursor) }
     }
     else if (event.ctrlKey || event.altKey) handled = false
@@ -923,7 +946,7 @@
 </script>
 
 <!-- Space is the app's play/stop: it must never also press the button last clicked (that replayed an old audition) -->
-<svelte:window onkeydown={onKey} onkeyup={(event) => { if (event.key === ' ' && !(event.target as HTMLElement)?.matches?.('input, textarea, select')) event.preventDefault() }} />
+<svelte:window onkeydowncapture={(event) => { if (event.key === 'Alt') { altDown = true; event.preventDefault() } }} onkeydown={onKey} onkeyup={(event) => { if (event.key === 'Alt') altDown = false; if (event.key === ' ' && !(event.target as HTMLElement)?.matches?.('input, textarea, select')) event.preventDefault() }} onblur={() => altDown = false} />
 
 {#if loadError}
   <div class="empty"><h2>Can't open this session</h2><p class="quiet">{loadError}</p></div>
@@ -1002,10 +1025,10 @@
   <Hint id="waveform-cuts" text="Find next to confirm (C) jumps to the next start or end without a ✓, from the track you're on, and plays it. Drag the line, nudge it with ← →, or press S / E to set it at the playhead; then tick ✓ beside it in the list. Wheel zooms, Shift+wheel scrolls, Ctrl+wheel sets the height, W switches wave and spectrogram." />
   <div class="wave-host" bind:this={waveHost} style:height="{waveHeight}px">
 
-    <Waveform bind:this={waveform} bind:view {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {autoHeight} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
+    <Waveform bind:this={waveform} bind:view linked={linked !== altDown} {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {autoHeight} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
       onCursor={(frame) => { cursor = frame; grab = null; if (playing) playFrom(frame) }} {onEdge} {onEdgeDone} onRelease={() => grab = null} onPickTrack={(trackId, additive) => { currentId = trackId; if (additive) selectKeys(scope, Array.from(new Set(selectedIds.concat([trackId]))), actions, 'track'); scrollRowIntoView(trackId) }} onZoomTrack={zoomToTrack} />
   </div>
-  <div class="readout"><div class="wave-mode" role="group" aria-label="Wave or spectrogram">
+  <div class="readout"><div class="wave-mode cuts-mode" role="group" aria-label="How cuts move" title="Linked: where a track ends exactly where the next starts, the two move together. Separate: each moves on its own. Hold Alt while dragging to do the other just once"><span class="cuts-label">Cuts</span><button class:on={linked} onclick={() => setLinked(true)}>🔗 Linked</button><button class:on={!linked} onclick={() => setLinked(false)}>Separate</button></div><div class="wave-mode" role="group" aria-label="Wave or spectrogram">
       <button class:on={waveMode === 'wave'} onclick={() => setWaveMode('wave')} title="Waveform: levels, starts and ends (W switches)">Wave</button><button class:on={waveMode === 'spectrogram'} onclick={() => setWaveMode('spectrogram')} title="Spectrogram: frequency over time. A flat top edge means a lossy source; a vertical gap is a dropout (W switches)">Spectrogram</button><kbd>W</kbd>
     </div><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
   <div class="splitter" role="separator" aria-orientation="horizontal" aria-label="Drag to share the height between the wave and the track list" title="Drag to make the wave or the track list bigger" onpointerdown={splitDown} onpointermove={splitMove} onpointerup={splitUp} onpointercancel={splitUp}><span></span></div>
@@ -1336,6 +1359,7 @@
   .row:not(.head):hover { background: var(--hover); }
   .row.current { box-shadow: inset 3px 0 0 var(--accent); }
   .row.playing-now { background: var(--accent-soft); }
+  .cuts-mode { margin-right: 6px; } .cuts-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-quiet); padding: 0 8px 0 2px; align-self: center; }
   .head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; font-size: 11px; color: var(--fg-quiet); text-transform: uppercase; letter-spacing: 0.05em; background: var(--panel-solid); border-radius: 0; }
   .number, .time, .fades { font-family: var(--font-display); font-size: 12px; color: var(--fg-quiet); }
   .edge { background: none; border: 1px solid transparent; border-radius: 5px; padding: 2px 4px; text-align: left; cursor: pointer; }

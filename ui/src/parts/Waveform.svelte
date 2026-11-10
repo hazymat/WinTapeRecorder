@@ -7,8 +7,8 @@
   import { request } from '../bridge'
   import { formatTime, type Track, type NameChange } from '../state.svelte'
   // The session's waveform (SPEC.md › Editing): an overview of the whole session, and a detail view that zooms with the wheel down to single samples
-  let { sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', autoHeight = true, selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onRelease, onPickTrack, onZoomTrack }: {
-    sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; dropouts?: { frame: number; ms: number }[]; mode?: 'wave' | 'spectrogram'; autoHeight?: boolean; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
+  let { linked = false, sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', autoHeight = true, selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onRelease, onPickTrack, onZoomTrack }: {
+    linked?: boolean; sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; dropouts?: { frame: number; ms: number }[]; mode?: 'wave' | 'spectrogram'; autoHeight?: boolean; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
     view: WaveView; onCursor: (frame: number) => void; onEdge: (grab: NonNullable<Grab>, frame: number) => void; onEdgeDone: (grab: NonNullable<Grab>) => void; onRelease?: () => void; onPickTrack: (trackId: string, additive: boolean) => void; onZoomTrack: (trackId: string) => void
   } = $props()
 
@@ -172,6 +172,8 @@
         if (grabbed) { context.fillStyle = colour; context.globalAlpha = 0.1 + 0.3 * (0.5 + 0.5 * Math.sin(performance.now() / 1200 * Math.PI * 2)); context.fillRect(x - 6, 0, 12, waveTop + waveHeight); context.globalAlpha = 1 }
         context.fillStyle = colour; context.fillRect(x - (grabbed ? 1.5 : 0.75), 0, grabbed ? 3 : 1.5, waveTop + waveHeight)
         // The flag: a start's to the right of its line, an end's to the left (grab either by its flag)
+        // Linked: a start that meets the previous end is one cut, marked with a small link
+        if (linked && edge === 'start' && tracks.some(other => other !== track && other.end === track.start)) { context.save(); context.font = '9px "Segoe UI Emoji", sans-serif'; context.textBaseline = 'top'; context.fillText('🔗', x - 6, flagHeight + 1); context.restore() }
         context.beginPath(); if (edge === 'start') { context.moveTo(x, 0); context.lineTo(x + flagWidth, 0); context.lineTo(x + flagWidth - 4, flagHeight / 2); context.lineTo(x + flagWidth, flagHeight); context.lineTo(x, flagHeight) } else { context.moveTo(x, 0); context.lineTo(x - flagWidth, 0); context.lineTo(x - flagWidth + 4, flagHeight / 2); context.lineTo(x - flagWidth, flagHeight); context.lineTo(x, flagHeight) } context.closePath(); context.fill()
       }
     })
