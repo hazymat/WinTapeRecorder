@@ -37,7 +37,9 @@ Without a dot, left-click does the app's normal thing.
 
 The app's own glass cards just above the tray clock, never Windows toasts. Each card carries its colour in three places: the header dot, the primary button and the edge. Header: `<App> · Message` or `<App> · Update`.
 - Update card: the new version, one line of what's new, and a blue primary button **"Update <App> now"**. Never "Restart" or "Restart to update" (reads as restarting Windows).
-- Message card: the message, its own buttons (the primary one amber), ×. Closing it with × keeps the message (and the dot) waiting; only answering it clears it.
+- Message card: the message, its own buttons (the primary one amber), ×.
+- Closing it with × keeps the message (and the dot) waiting; answering it clears it.
+- A message that stops being relevant clears itself at once: dot, menu row and card all go (e.g. a new dock was plugged in, then unplugged before the question was answered; a change in Windows was undone). Never leave a dot asking about something that no longer applies.
 - Plain information cards (no dot behind them) use a neutral or green dot, never amber or blue.
 
 ### Right-click menu
