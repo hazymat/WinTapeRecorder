@@ -2,6 +2,8 @@
 
 Read `SPEC.md` before any work. It is the source of truth; propose changes to it rather than silently diverging.
 
+Read `docs/DESIGN.md` too: the design rules shared by all four apps (tray notifications, dot colours, cards). It is identical in every repo; change it in all four together.
+
 ## Dev environment
 
 - Build and test on Windows (the app can't be built or tested on Linux). The test PC and its details live in the project's private notes, not in this public repo.
