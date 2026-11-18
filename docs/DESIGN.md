@@ -36,11 +36,11 @@ Without a dot, left-click does the app's normal thing.
 ### The cards
 
 The app's own glass cards just above the tray clock, never Windows toasts. Each card carries its colour in three places: the header dot, the primary button and the edge.
-- The header dot is a lit LED that breathes, like WinSqueeze's hi-fi standby lamp when an update is ready (the ideal; the tray icon's flash only approximates it): a radial-gradient bulb (light centre, colour, dark rim) whose glow and brightness swell and fade, ease-in-out over 1.6 s, glow 3 px to 10 px, brightness 0.75 to 1.3. Reference: `.standby.update` and `@keyframes update-pulse` in WinSqueeze `ui/src/parts/HiFi.svelte`. Blue LED on the update card, amber LED on the message card; never green, never still. Header: `<App> · Message` or `<App> · Update`.
+- The header dot is a lit LED that breathes, like WinSqueeze's hi-fi standby lamp when an update is ready (the ideal; the tray icon's flash only approximates it): a radial-gradient bulb (light centre, colour, dark rim) whose glow and brightness swell and fade, ease-in-out over 1.6 s, glow 3 px to 10 px, brightness 0.75 to 1.3. Reference: `.standby.update` and `@keyframes update-pulse` in WinSqueeze `ui/src/parts/HiFi.svelte` (glow opacity 0.35 to 0.85); WPF version: `Led()` in WinSwitch `app/Shell/Notices.cs`. Blue LED on the update card, amber LED on the message card; never green, never still. Header: `<App> · Message` or `<App> · Update`.
 - Update card: the new version, one line of what's new, and a blue primary button **"Update <App> now"**. Never "Restart" or "Restart to update" (reads as restarting Windows).
 - Message card: the message, its own buttons (the primary one amber), ×.
 - Closing it with × keeps the message (and the dot) waiting; answering it clears it.
-- A message that stops being relevant clears itself at once: dot, menu row and card all go (e.g. a new dock was plugged in, then unplugged before the question was answered; a change in Windows was undone). Never leave a dot asking about something that no longer applies.
+- A message that stops being relevant clears itself at once: dot, menu row and card all go (e.g. a new dock was plugged in, then unplugged before the question was answered; a change in Windows was undone). Never leave a dot asking about something that no longer applies. Each message carries its own "still relevant?" check, run every few seconds while it waits (WinSwitch: `Notices.Ask(..., stillRelevant)`, every 3 s).
 - Plain information cards (no dot behind them) use a still green or neutral dot, never amber or blue, and never breathing.
 
 ### Right-click menu
