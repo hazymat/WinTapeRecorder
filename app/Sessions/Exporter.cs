@@ -59,14 +59,14 @@ public record ExportProgress(int Done, int Total, string Current, string Error);
 // Verification (SPEC.md › Export): each written file is opened again and must decode, be the right length and carry the right title
 public static class Verifier
 {
-    public static string Check(string path, Track track, int sampleRate)
+    public static string Check(string path, Track track, int sampleRate, long frames = -1)
     {
         try
         {
             var info = new FileInfo(path);
             if (!info.Exists) return "the file is missing";
             if (info.Length < 1024) return "the file is empty";
-            var expected = (track.End - track.Start) / (double)sampleRate;
+            var expected = (frames >= 0 ? frames : track.End - track.Start) / (double)sampleRate; // without any left-out sections
             using (var tagFile = TagLib.File.Create(path))
             {
                 var title = tagFile.Tag.Title ?? "";
@@ -135,6 +135,8 @@ public static class Exporter
             var parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(part => part.Trim()).Where(part => part != "").ToArray();
             if (parts.Length == 0) parts = new[] { $"{number:00}" };
             var path = Path.Combine(new[] { root }.Concat(parts).ToArray()) + NameTemplate.Extension(profile.Format);
+            var keptFrames = Excluding.KeptFrames(track, session.Exclusions);
+            if (keptFrames <= 0) { errors.Add($"{Path.GetFileName(path)}: all of it is left out, so there's nothing to export"); continue; }
             progress(new ExportProgress(done, tracks.Count, Path.GetFileName(path), ""));
             try
             {
@@ -144,7 +146,7 @@ public static class Exporter
                 SaveCoverFile(path, track, profile);
                 track.Exported = true; track.ExportedPath = path; done++;
                 progress(new ExportProgress(done, tracks.Count, "Checking " + Path.GetFileName(path), ""));
-                track.VerifyError = Verifier.Check(path, track, audio.SampleRate); track.Verified = track.VerifyError == "";
+                track.VerifyError = Verifier.Check(path, track, audio.SampleRate, keptFrames); track.Verified = track.VerifyError == "";
                 if (!track.Verified) errors.Add($"{Path.GetFileName(path)} failed the check: {track.VerifyError}");
             }
             catch (Exception exportError) { errors.Add($"{Path.GetFileName(path)}: {exportError.Message}"); try { if (File.Exists(path)) File.Delete(path); } catch { } }
@@ -153,25 +155,26 @@ public static class Exporter
         return done;
     }
 
-    // The track's audio with its fades, as float frames, in chunks
-    static IEnumerable<float[]> Chunks(SessionAudio audio, Track track)
+    // The track's audio with its fades, as float frames, in chunks; left-out sections are skipped, with their own fades either side
+    static IEnumerable<float[]> Chunks(SessionAudio audio, Track track, List<Exclusion> exclusions)
     {
         var channels = audio.Channels; var rate = audio.SampleRate;
         long fadeInFrames = (long)track.FadeInMs * rate / 1000, fadeOutFrames = (long)track.FadeOutMs * rate / 1000;
         var buffer = new float[65536 * channels];
-        for (var frame = track.Start; frame < track.End;)
-        {
-            var read = audio.Read(frame, (int)Math.Min(65536, track.End - frame), buffer);
-            if (read <= 0) yield break;
-            var chunk = new float[read * channels];
-            for (var index = 0; index < read; index++)
+        foreach (var (pieceStart, pieceEnd) in Excluding.Kept(track.Start, track.End, exclusions))
+            for (var frame = pieceStart; frame < pieceEnd;)
             {
-                var gain = FadeGain(frame + index, track, fadeInFrames, fadeOutFrames);
-                for (var channel = 0; channel < channels; channel++) chunk[index * channels + channel] = buffer[index * channels + channel] * gain;
+                var read = audio.Read(frame, (int)Math.Min(65536, pieceEnd - frame), buffer);
+                if (read <= 0) yield break;
+                var chunk = new float[read * channels];
+                for (var index = 0; index < read; index++)
+                {
+                    var gain = FadeGain(frame + index, track, fadeInFrames, fadeOutFrames) * (exclusions.Count > 0 ? Excluding.Gain(frame + index, exclusions, rate) : 1f);
+                    for (var channel = 0; channel < channels; channel++) chunk[index * channels + channel] = buffer[index * channels + channel] * gain;
+                }
+                yield return chunk;
+                frame += read;
             }
-            yield return chunk;
-            frame += read;
-        }
     }
 
     // Equal-power fades (quarter sine), as auditioning plays them
@@ -192,7 +195,7 @@ public static class Exporter
             {
                 using var writer = new WaveFileWriter(path, new WaveFormat(audio.SampleRate, integerBits, audio.Channels));
                 var bytes = Array.Empty<byte>();
-                foreach (var chunk in Chunks(audio, track))
+                foreach (var chunk in Chunks(audio, track, session.Exclusions))
                 {
                     var count = chunk.Length * integerBits / 8; if (bytes.Length < count) bytes = new byte[count];
                     SampleConvert.FromFloat(chunk, bytes.AsSpan(0, count), integerBits); writer.Write(bytes, 0, count);
@@ -206,7 +209,7 @@ public static class Exporter
                 try
                 {
                     using (var writer = new WaveFileWriter(temporary, WaveFormat.CreateIeeeFloatWaveFormat(audio.SampleRate, audio.Channels)))
-                        foreach (var chunk in Chunks(audio, track)) writer.WriteSamples(chunk, 0, chunk.Length);
+                        foreach (var chunk in Chunks(audio, track, session.Exclusions)) writer.WriteSamples(chunk, 0, chunk.Length);
                     using var reader = new AudioFileReader(temporary);
                     ISampleProvider source = reader;
                     if (source.WaveFormat.Channels > 2) source = new MultiplexingSampleProvider(new[] { source }, 2);
@@ -222,7 +225,7 @@ public static class Exporter
             default:
             {
                 using var flac = new FlacWriter(path, audio.SampleRate, audio.Channels, integerBits);
-                foreach (var chunk in Chunks(audio, track)) flac.Write(chunk);
+                foreach (var chunk in Chunks(audio, track, session.Exclusions)) flac.Write(chunk);
                 break;
             }
         }

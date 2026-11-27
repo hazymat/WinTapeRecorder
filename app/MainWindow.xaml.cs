@@ -251,6 +251,7 @@ public partial class MainWindow : Window
                     if (App.TryGetOpen(Text(message, "id"), out var saving))
                     {
                         if (message.TryGetProperty("tracks", out var tracksElement)) saving.session.Tracks = tracksElement.Deserialize<List<Track>>(Session.JsonOptions) ?? saving.session.Tracks;
+                        if (message.TryGetProperty("exclusions", out var exclusionsElement)) saving.session.Exclusions = exclusionsElement.Deserialize<List<Exclusion>>(Session.JsonOptions) ?? saving.session.Exclusions;
                         if (Text(message, "name") is { Length: > 0 } newName) saving.session.Name = newName;
                         if (Text(message, "outputProfileId") is { Length: > 0 } outputProfileId) saving.session.OutputProfileId = outputProfileId;
                         saving.session.Save();
@@ -354,7 +355,7 @@ public partial class MainWindow : Window
                         {
                             var trackId = Text(element, "trackId"); var filePath = Text(element, "path");
                             if (adopting.session.Tracks.FirstOrDefault(track => track.Id == trackId) is not { } track) continue;
-                            var problem = await Task.Run(() => Verifier.Check(filePath, track, adopting.session.SampleRate));
+                            var problem = await Task.Run(() => Verifier.Check(filePath, track, adopting.session.SampleRate, Excluding.KeptFrames(track, adopting.session.Exclusions)));
                             track.ExportedPath = filePath; track.Exported = problem == ""; track.Verified = problem == ""; track.VerifyError = problem;
                             if (problem == "") adopted++; else failed.Add(track.Title);
                         }
@@ -409,14 +410,17 @@ public partial class MainWindow : Window
                     { App.ShowTip("Not while recording", "Another session is recording what this PC plays, so anything you hear now would be recorded too. Tag and export meanwhile; listen once the recording stops, or pick another audition device in Settings › Audio."); break; }
                     if (App.TryGetOpen(Text(message, "id"), out var playing))
                     {
-                        var segments = message.GetProperty("segments").EnumerateArray().Select(segment => (segment[0].GetInt64(), segment[1].GetInt64())).ToList();
+                        // Left-out sections are skipped with no pause, so it plays as if they weren't there (SPEC.md › Editing › Leaving out a section)
+                        var exclusions = playing.session.Exclusions.ToList();
+                        var segments = message.GetProperty("segments").EnumerateArray().SelectMany(segment => Excluding.Kept(segment[0].GetInt64(), segment[1].GetInt64(), exclusions).Select((piece, index) => (piece.start, piece.end, index > 0))).ToList();
                         var tracks = playing.session.Tracks.ToList(); var rate = playing.session.SampleRate;
                         Track? lastTrack = null; // looked up once per track, not per sample (this runs on the audio thread)
                         Func<long, float> gain = frame =>
                         {
                             if (lastTrack == null || frame < lastTrack.Start || frame >= lastTrack.End) lastTrack = tracks.FirstOrDefault(candidate => frame >= candidate.Start && frame < candidate.End);
                             var track = lastTrack;
-                            return track == null || (track.FadeInMs == 0 && track.FadeOutMs == 0) ? 1f : Exporter.FadeGain(frame, track, (long)track.FadeInMs * rate / 1000, (long)track.FadeOutMs * rate / 1000);
+                            var trackGain = track == null || (track.FadeInMs == 0 && track.FadeOutMs == 0) ? 1f : Exporter.FadeGain(frame, track, (long)track.FadeInMs * rate / 1000, (long)track.FadeOutMs * rate / 1000);
+                            return exclusions.Count == 0 ? trackGain : trackGain * Excluding.Gain(frame, exclusions, rate);
                         };
                         // A device that vanishes or a driver that stalls (a Bluetooth headset dropping, say) must never freeze the app:
                         // opening it runs off the UI thread with a time limit, and one retry goes to the Windows default (SPEC.md › Auditioning)
@@ -473,7 +477,7 @@ public partial class MainWindow : Window
     static object SessionDetail(Session session) => new
     {
         id = session.Id, name = session.Name, created = session.Created, device = session.Device, loopback = session.Loopback, sampleRate = session.SampleRate, channels = session.Channels, bitDepth = session.BitDepth,
-        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, clips = session.Clips, quality = session.Quality, albumCheck = session.AlbumCheck, cutOff = session.CutOff, otherSounds = session.OtherSounds, albums = session.Albums, albumLooked = session.AlbumLooked, tracks = session.Tracks, folder = session.Folder,
+        totalFrames = session.TotalFrames, recordingProfileId = session.RecordingProfileId, outputProfileId = session.OutputProfileId, clippedSamples = session.ClippedSamples, changes = session.Changes, dropouts = session.Dropouts, clips = session.Clips, quality = session.Quality, albumCheck = session.AlbumCheck, cutOff = session.CutOff, otherSounds = session.OtherSounds, albums = session.Albums, albumLooked = session.AlbumLooked, tracks = session.Tracks, exclusions = session.Exclusions, folder = session.Folder,
     };
 
     // Waveform data for [start, end) in columns: min/max per column for each channel, or the samples themselves when zoomed in that far

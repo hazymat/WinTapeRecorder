@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { request, sendToShell, onShellMessage } from '../bridge'
-  import { app, nav, toast, formatTime, formatLength, formatDuration, writeSetting, readSetting, describeCutoff, shortCutoff, medianCutoff, type SessionDetail, type Track, type AlbumMatch } from '../state.svelte'
+  import { app, nav, toast, formatTime, formatLength, formatDuration, writeSetting, readSetting, describeCutoff, shortCutoff, medianCutoff, type SessionDetail, type Track, type AlbumMatch, type Exclusion } from '../state.svelte'
   import { selection, selectKeys, clearSelection, type SelectionAction, tickKeys } from '../lib/selection.svelte'
   import { selectable } from '../lib/selectable.svelte'
   import Waveform, { type WaveView, type Grab } from '../parts/Waveform.svelte'
@@ -140,7 +140,7 @@
     session = null; loadError = ''; loadProgress = 0; past = []; future = []; clearSelection()
     try {
       const detail = await request<SessionDetail>({ type: 'openSession', id: sessionId })
-      session = detail; tracks = detail.tracks; currentId = detail.tracks[0]?.id ?? ''; cursor = detail.tracks[0]?.start ?? 0
+      session = detail; tracks = detail.tracks; exclusions = detail.exclusions ?? []; currentId = detail.tracks[0]?.id ?? ''; cursor = detail.tracks[0]?.start ?? 0
       sendToShell({ type: 'snapshot', id: sessionId, label: 'Opened', tracks: $state.snapshot(tracks) }) // the first snapshot is the state as detected
       view = { start: 0, framesPerPixel: Math.max(1, detail.totalFrames / 1000) } // the waveform fits it once it knows its width
       requestAnimationFrame(() => fit())
@@ -165,8 +165,54 @@
     try { const restored = await request<Track[]>({ type: 'restoreSnapshot', id: sessionId, index }); historyOpen = false; commit(restored, `Restored: ${label}`); clearSelection() }
     catch (error) { toast('Could not restore: ' + (error as Error).message) }
   }
-  function undo() { const previous = past.pop(); if (!previous) return; future.push(JSON.stringify($state.snapshot(tracks))); tracks = JSON.parse(previous); save(); toast('Undone', { ms: 2000 }) }
-  function redo() { const next = future.pop(); if (!next) return; past.push(JSON.stringify($state.snapshot(tracks))); tracks = JSON.parse(next); save(); toast('Redone', { undo, ms: 4000 }) }
+  // An undo step is the track list, or (where left-out sections changed) the tracks and the sections together
+  function restoreState(json: string) { const saved = JSON.parse(json); if (Array.isArray(saved)) tracks = saved; else { tracks = saved.tracks; exclusions = saved.exclusions; saveExclusions() } }
+  function undo() { const previous = past.pop(); if (!previous) return; future.push(stateJson()); restoreState(previous); save(); toast('Undone', { ms: 2000 }) }
+  function redo() { const next = future.pop(); if (!next) return; past.push(stateJson()); restoreState(next); save(); toast('Redone', { undo, ms: 4000 }) }
+
+  // ---- Left-out sections (SPEC.md › Editing › Leaving out a section): kept in the recording, skipped when playing and exporting ----
+  let exclusions = $state<Exclusion[]>([])
+  const stateJson = () => JSON.stringify({ tracks: $state.snapshot(tracks), exclusions: $state.snapshot(exclusions) })
+  function saveExclusions() { sendToShell({ type: 'saveSession', id: sessionId, exclusions: $state.snapshot(exclusions) }) }
+  function commitExclusions(next: Exclusion[], label: string, before = stateJson()) {
+    past = past.concat([before]).slice(-200); future = []
+    exclusions = next.slice().sort((first, second) => first.start - second.start); saveExclusions(); toast(label, { undo })
+  }
+  // The hint stays until the first section is left out; after that it shows only while Shift is held
+  let excludeHintDone = $state(readSetting('excludeHintDone', '') === '1'), shiftDown = $state(false)
+  function exclude(start: number, end: number) {
+    if (end - start < 2) return
+    // Overlapping or touching sections become one
+    const merged: Exclusion = { id: Math.random().toString(36).slice(2, 10), start, end, fadeOutMs: 0, fadeInMs: 0 }, rest: Exclusion[] = []
+    for (const other of exclusions) {
+      if (other.end >= merged.start && other.start <= merged.end) { if (other.start < merged.start) merged.fadeOutMs = other.fadeOutMs; if (other.end > merged.end) merged.fadeInMs = other.fadeInMs; merged.start = Math.min(merged.start, other.start); merged.end = Math.max(merged.end, other.end) }
+      else rest.push(other)
+    }
+    commitExclusions(rest.concat([merged]), `Left out ${formatLength(merged.end - merged.start, rate)}: playing skips it and exports leave it out`)
+    if (!excludeHintDone) { excludeHintDone = true; writeSetting('excludeHintDone', '1') }
+  }
+  let exclusionBefore = ''
+  function moveExclusion(id: string, start: number, end: number) {
+    if (!exclusionBefore) exclusionBefore = stateJson()
+    const moving = exclusions.find(exclusion => exclusion.id === id); if (!moving) return
+    moving.start = snapToTrackEdge(start, moving.start); moving.end = snapToTrackEdge(end, moving.end)
+  }
+  function exclusionDone(id: string) {
+    const before = exclusionBefore; exclusionBefore = ''
+    const moved = exclusions.find(exclusion => exclusion.id === id); if (moved && moved.end <= moved.start) moved.end = moved.start + 1
+    if (before && before !== stateJson()) { past = past.concat([before]).slice(-200); future = []; exclusions = exclusions.slice().sort((first, second) => first.start - second.start); saveExclusions() }
+  }
+  function setExclusionFades(id: string, fadeOutMs: number, fadeInMs: number) {
+    commitExclusions(exclusions.map(exclusion => exclusion.id === id ? { id: exclusion.id, start: exclusion.start, end: exclusion.end, fadeOutMs, fadeInMs } : exclusion), `Fade out ${fadeOutMs} ms before it, fade in ${fadeInMs} ms after`)
+  }
+  function includeAgain(id: string) { commitExclusions(exclusions.filter(exclusion => exclusion.id !== id), 'Included again: that section plays and exports once more') }
+  // Track marks snap to a left-out section's start and end (and its edges to the marks), within a few pixels; they can still be dragged right across
+  const snapReach = () => view.framesPerPixel * 8
+  function snapToExclusionEdge(frame: number) { let best = frame, nearest = snapReach(); for (const exclusion of exclusions) for (const at of [exclusion.start, exclusion.end]) { const distance = Math.abs(at - frame); if (distance <= nearest) { nearest = distance; best = at } } return best }
+  function snapToTrackEdge(frame: number, unchanged: number | null) { if (frame === unchanged) return frame; let best = frame, nearest = snapReach(); for (const track of tracks) for (const at of [track.start, track.end]) { const distance = Math.abs(at - frame); if (distance <= nearest) { nearest = distance; best = at } } return best }
+  const onExclusionEdge = (frame: number) => exclusions.some(exclusion => exclusion.start === frame || exclusion.end === frame)
+  // What a track exports: its length without any left-out sections
+  function keptFrames(track: Track) { let kept = track.end - track.start; for (const exclusion of exclusions) kept -= Math.max(0, Math.min(track.end, exclusion.end) - Math.max(track.start, exclusion.start)); return Math.max(0, kept) }
   const copy = () => tracks.map(track => ({ ...$state.snapshot(track) }))
   const trackAt = (frame: number) => tracks.find(track => frame >= track.start && frame < track.end)
   const current = $derived(tracks.find(track => track.id === currentId) ?? trackAt(cursor))
@@ -192,7 +238,7 @@
   function onEdge(grabbed: NonNullable<Grab>, frame: number) {
     grab = grabbed
     if (!dragBefore) { dragBefore = JSON.stringify($state.snapshot(tracks)); dragPartner = partnerOf(grabbed) }
-    moveEdge(grabbed, frame, dragPartner ?? null)
+    moveEdge(grabbed, snapToExclusionEdge(frame), dragPartner ?? null)
   }
   function moveEdge(grabbed: NonNullable<Grab>, frame: number, partner: NonNullable<Grab> | null = null) {
     const index = tracks.findIndex(track => track.id === grabbed.trackId); if (index < 0) return
@@ -206,7 +252,7 @@
   async function onEdgeDone(grabbed: NonNullable<Grab>) {
     const before = dragBefore; dragBefore = ''; const partner = dragPartner ?? null; dragPartner = undefined
     const track = tracks.find(candidate => candidate.id === grabbed.trackId)
-    if (track && snapToZero) moveEdge(grabbed, await request<number>({ type: 'nearestZero', id: sessionId, frame: track[grabbed.edge], radius: Math.max(200, Math.round(view.framesPerPixel * 12)) }), partner)
+    if (track && snapToZero && !onExclusionEdge(track[grabbed.edge])) moveEdge(grabbed, await request<number>({ type: 'nearestZero', id: sessionId, frame: track[grabbed.edge], radius: Math.max(200, Math.round(view.framesPerPixel * 12)) }), partner)
     if (before && before !== JSON.stringify($state.snapshot(tracks))) { past = past.concat([before]).slice(-200); future = []; save() }
   }
   async function snapped(frame: number) { return snapToZero ? await request<number>({ type: 'nearestZero', id: sessionId, frame, radius: Math.max(200, Math.round(view.framesPerPixel * 12)) }) : frame }
@@ -870,6 +916,7 @@
     else if (key === 'Home') { cursor = 0; showFrame(0) }
     else if (key === 'End') { cursor = session.totalFrames; showFrame(cursor) }
     else if (key === 'Delete') deleteTracks(selectedIds)
+    else if (key === 'Escape' && waveform?.cancelSelection()) { }
     else if (key === 'Escape' && grab) grab = null
     else handled = false
     if (handled) event.preventDefault()
@@ -900,7 +947,7 @@
   function estimateBytes(list: Track[]) {
     const channels = session?.channels || 2, bits = session?.bitDepth === 32 ? 24 : session?.bitDepth || 24
     return list.filter(track => !track.skip).reduce((total, track) => {
-      const seconds = (track.end - track.start) / rate, profile = profileFor(track), pcm = seconds * rate * channels * bits / 8
+      const seconds = keptFrames(track) / rate, profile = profileFor(track), pcm = seconds * rate * channels * bits / 8
       return total + (profile?.format === 'wav' ? pcm : profile?.format === 'flac' || !profile?.format ? pcm * 0.6 : seconds * (profile?.bitrateKbps || 320) * 125)
     }, 0)
   }
@@ -946,7 +993,7 @@
 </script>
 
 <!-- Space is the app's play/stop: it must never also press the button last clicked (that replayed an old audition) -->
-<svelte:window onkeydowncapture={(event) => { if (event.key === 'Alt') { altDown = true; event.preventDefault() } }} onkeydown={onKey} onkeyup={(event) => { if (event.key === 'Alt') altDown = false; if (event.key === ' ' && !(event.target as HTMLElement)?.matches?.('input, textarea, select')) event.preventDefault() }} onblur={() => altDown = false} />
+<svelte:window onkeydowncapture={(event) => { if (event.key === 'Alt') { altDown = true; event.preventDefault() } if (event.key === 'Shift') shiftDown = true }} onkeydown={onKey} onkeyup={(event) => { if (event.key === 'Alt') altDown = false; if (event.key === 'Shift') shiftDown = false; if (event.key === ' ' && !(event.target as HTMLElement)?.matches?.('input, textarea, select')) event.preventDefault() }} onblur={() => { altDown = false; shiftDown = false }} />
 
 {#if loadError}
   <div class="empty"><h2>Can't open this session</h2><p class="quiet">{loadError}</p></div>
@@ -1026,11 +1073,12 @@
   <div class="wave-host" bind:this={waveHost} style:height="{waveHeight}px">
 
     <Waveform bind:this={waveform} bind:view linked={linked !== altDown} {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {autoHeight} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
+      {exclusions} showHint={!excludeHintDone || shiftDown} onExclude={exclude} onExclusionMove={moveExclusion} onExclusionDone={exclusionDone} onExclusionFades={setExclusionFades} onExclusionRemove={includeAgain}
       onCursor={(frame) => { cursor = frame; grab = null; if (playing) playFrom(frame) }} {onEdge} {onEdgeDone} onRelease={() => grab = null} onPickTrack={(trackId, additive) => { currentId = trackId; if (additive) selectKeys(scope, Array.from(new Set(selectedIds.concat([trackId]))), actions, 'track'); scrollRowIntoView(trackId) }} onZoomTrack={zoomToTrack} />
   </div>
   <div class="readout"><div class="wave-mode cuts-mode" role="group" aria-label="How cuts move" title="Linked: where a track ends exactly where the next starts, the two move together. Separate: each moves on its own. Hold Alt while dragging to do the other just once"><span class="cuts-label">Cuts</span><button class:on={linked} onclick={() => setLinked(true)}>🔗 Linked</button><button class:on={!linked} onclick={() => setLinked(false)}>Separate</button></div><div class="wave-mode" role="group" aria-label="Wave or spectrogram">
       <button class:on={waveMode === 'wave'} onclick={() => setWaveMode('wave')} title="Waveform: levels, starts and ends (W switches)">Wave</button><button class:on={waveMode === 'spectrogram'} onclick={() => setWaveMode('spectrogram')} title="Spectrogram: frequency over time. A flat top edge means a lossy source; a vertical gap is a dropout (W switches)">Spectrogram</button><kbd>W</kbd>
-    </div><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording</span></div>
+    </div><span>Playhead {formatTime(cursor, rate)}</span>{#if view.framesPerPixel < 2}<span>sample {cursor.toLocaleString()}</span>{/if}{#if current}<span>Track {tracks.indexOf(current) + 1}: {formatTime(current.start, rate)} – {formatTime(current.end, rate)}</span>{/if}{#if grab}<span class="grabbed">{grab.edge === 'start' ? 'Start' : 'End'} grabbed: ← → nudge, Enter hear it, Esc let go</span>{/if}<span class="key"><i class="swatch start"></i>track start <i class="swatch end"></i>track end <i class="swatch change"></i>name changed while recording{#if exclusions.length} <i class="swatch left-out"></i>left out{/if}</span></div>
   <div class="splitter" role="separator" aria-orientation="horizontal" aria-label="Drag to share the height between the wave and the track list" title="Drag to make the wave or the track list bigger" onpointerdown={splitDown} onpointermove={splitMove} onpointerup={splitUp} onpointercancel={splitUp}><span></span></div>
   {/if}
 
@@ -1209,7 +1257,7 @@
       <div class="row" class:lifting={lifting === track.id} class:lifted={lifted === track.id} onpointerdown={(event) => liftDown(track, event)} class:current={track.id === current?.id} class:playing-now={playingPart === track.id} data-select-key={track.id} role="button" tabindex="-1" onclick={() => { currentId = track.id; cursor = track.start; showFrame(track.start) }} ondblclick={() => zoomToTrack(track.id)} onkeydown={() => { }}>
         <span class="number"><input type="checkbox" class="tick no-hold" checked={selectedIds.includes(track.id)} onclick={(event) => { event.stopPropagation(); tick(event, [track.id], !selectedIds.includes(track.id)) }} aria-label="Select track {index + 1}" /> {index + 1}</span>
         <span class="hear no-hold">
-          <button class="hear-start" class:checked={track.startChecked} class:doubt={!track.startSure && !track.startChecked} class:heard={focused?.trackId === track.id && focused.edge === 'start'} class:grabbed={grab?.trackId === track.id && grab.edge === 'start'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }} title={`Hear the start, zoomed in. ${track.startNote || ''}${!track.startSure && !track.startChecked ? '. Amber: no clear gap here, so this cut is a best guess' : ''}`} aria-label="Hear start"><Icon name="play" size={10} /><span class="pill-time">{formatTime(track.start, rate, false)}</span>{#if track.detectedStart != null && track.detectedStart >= 0 && track.start !== track.detectedStart}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'start') }} onkeydown={() => { }} title={`Moved. Click to put the start back where it was detected (${formatTime(track.detectedStart, rate, false)})`}>↺</span>{/if}</button><button class="hear-end" class:checked={track.endChecked} class:doubt={!track.endSure && !track.endChecked} class:heard={focused?.trackId === track.id && focused.edge === 'end'} class:grabbed={grab?.trackId === track.id && grab.edge === 'end'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }} title={`Hear the end, zoomed in. Length ${formatDuration((track.end - track.start) / rate)}. ${track.endNote || ''}${!track.endSure && !track.endChecked ? '. Amber: no clear gap here, so this cut is a best guess' : ''}`} aria-label="Hear end">{#if track.detectedEnd != null && track.detectedEnd >= 0 && track.end !== track.detectedEnd}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'end') }} onkeydown={() => { }} title={`Moved. Click to put the end back where it was detected (${formatTime(track.detectedEnd, rate, false)})`}>↺</span>{/if}<span class="pill-time">{formatLength(track.end - track.start, rate)}</span><Icon name="play" size={10} /></button><button class="ok" class:on={track.startChecked && track.endChecked} class:half={!!track.startChecked !== !!track.endChecked} onclick={(event) => { event.stopPropagation(); confirmTrack(track) }} title={track.startChecked && track.endChecked ? 'Start and end confirmed. Click to undo (Y)' : 'Happy with this start and end? Click to confirm both (Y)'} aria-label="Confirm this track's start and end">✓</button>
+          <button class="hear-start" class:checked={track.startChecked} class:doubt={!track.startSure && !track.startChecked} class:heard={focused?.trackId === track.id && focused.edge === 'start'} class:grabbed={grab?.trackId === track.id && grab.edge === 'start'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'start' }) }} title={`Hear the start, zoomed in. ${track.startNote || ''}${!track.startSure && !track.startChecked ? '. Amber: no clear gap here, so this cut is a best guess' : ''}`} aria-label="Hear start"><Icon name="play" size={10} /><span class="pill-time">{formatTime(track.start, rate, false)}</span>{#if track.detectedStart != null && track.detectedStart >= 0 && track.start !== track.detectedStart}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'start') }} onkeydown={() => { }} title={`Moved. Click to put the start back where it was detected (${formatTime(track.detectedStart, rate, false)})`}>↺</span>{/if}</button><button class="hear-end" class:checked={track.endChecked} class:doubt={!track.endSure && !track.endChecked} class:heard={focused?.trackId === track.id && focused.edge === 'end'} class:grabbed={grab?.trackId === track.id && grab.edge === 'end'} onclick={(event) => { event.stopPropagation(); focusEdge({ trackId: track.id, edge: 'end' }) }} title={`Hear the end, zoomed in. Length ${formatDuration(keptFrames(track) / rate)}${keptFrames(track) < track.end - track.start ? ` (${formatDuration((track.end - track.start - keptFrames(track)) / rate)} of it left out)` : ''}. ${track.endNote || ''}${!track.endSure && !track.endChecked ? '. Amber: no clear gap here, so this cut is a best guess' : ''}`} aria-label="Hear end">{#if track.detectedEnd != null && track.detectedEnd >= 0 && track.end !== track.detectedEnd}<span class="pill-revert" role="button" tabindex="-1" onclick={(event) => { event.stopPropagation(); revertEdge(track, 'end') }} onkeydown={() => { }} title={`Moved. Click to put the end back where it was detected (${formatTime(track.detectedEnd, rate, false)})`}>↺</span>{/if}<span class="pill-time" class:cut-short={keptFrames(track) < track.end - track.start}>{formatLength(keptFrames(track), rate)}</span><Icon name="play" size={10} /></button><button class="ok" class:on={track.startChecked && track.endChecked} class:half={!!track.startChecked !== !!track.endChecked} onclick={(event) => { event.stopPropagation(); confirmTrack(track) }} title={track.startChecked && track.endChecked ? 'Start and end confirmed. Click to undo (Y)' : 'Happy with this start and end? Click to confirm both (Y)'} aria-label="Confirm this track's start and end">✓</button>
         </span>
         <button class="art-cell no-hold" onclick={(event) => { event.stopPropagation(); tagging = selectedIds.includes(track.id) ? selectedIds.slice() : [track.id] }} title="Edit tags and picture">{#if track.artPath && thumbs[track.artPath]}<img src={thumbs[track.artPath]} alt="" />{:else}<span>♪</span>{/if}</button>
         <input class="no-hold" value={track.artist} placeholder="Artist" onchange={(event) => editField(track, 'artist', (event.target as HTMLInputElement).value.trim())} onclick={(event) => event.stopPropagation()} />
@@ -1353,6 +1401,8 @@
   .swatch { display: inline-block; width: 3px; height: 12px; margin-left: 8px; border-radius: 1px; }
   .swatch.start { background: var(--start); } .swatch.end { background: var(--end); }
   .swatch.change { width: 0; border-left: 2px dashed var(--warn); border-radius: 0; }
+  .swatch.left-out { background: repeating-linear-gradient(-45deg, var(--fg-quiet) 0 1px, transparent 1px 4px); border: 1px solid var(--fg-quiet); }
+  .pill-time.cut-short { text-decoration: underline dotted; text-underline-offset: 2px; }
   .group-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-quiet); margin-right: 2px; }
   .list { flex: 1 1 auto; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); }
   .row { display: grid; grid-template-columns: var(--columns); gap: 8px; align-items: center; padding: 0 8px; border-radius: 4px; cursor: default; font-size: 12.5px; min-height: 26px; }

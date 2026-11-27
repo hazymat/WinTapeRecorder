@@ -101,6 +101,47 @@ public class AlbumMatch
     public List<string> TrackIds { get; set; } = new(); // the session's tracks this album covers (a session can hold several albums back to back)
 }
 
+// A section left out (SPEC.md › Editing › Leaving out a section): it stays in the recording, but playing skips it and exports leave it out
+public class Exclusion
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public long Start { get; set; }
+    public long End { get; set; }
+    public int FadeOutMs { get; set; } // a fade out just before it
+    public int FadeInMs { get; set; } // a fade in just after it
+}
+
+public static class Excluding
+{
+    // The parts of [start, end) that are kept, in order
+    public static List<(long start, long end)> Kept(long start, long end, IEnumerable<Exclusion> exclusions)
+    {
+        var pieces = new List<(long start, long end)>(); var from = start;
+        foreach (var exclusion in exclusions.Where(candidate => candidate.End > start && candidate.Start < end).OrderBy(candidate => candidate.Start))
+        {
+            if (exclusion.Start > from) pieces.Add((from, exclusion.Start));
+            from = Math.Max(from, exclusion.End);
+        }
+        if (from < end) pieces.Add((from, end));
+        return pieces;
+    }
+
+    public static long KeptFrames(Track track, IEnumerable<Exclusion> exclusions) => Kept(track.Start, track.End, exclusions).Sum(piece => piece.end - piece.start);
+
+    // The fades either side of each left-out section (equal power, as track fades); at least 5 ms, so a join never clicks
+    public static float Gain(long frame, List<Exclusion> exclusions, int sampleRate)
+    {
+        var gain = 1.0; long shortest = Math.Max(1, sampleRate / 200);
+        foreach (var exclusion in exclusions)
+        {
+            long fadeOut = Math.Max(shortest, (long)exclusion.FadeOutMs * sampleRate / 1000), fadeIn = Math.Max(shortest, (long)exclusion.FadeInMs * sampleRate / 1000);
+            if (frame < exclusion.Start && frame >= exclusion.Start - fadeOut) gain *= Math.Sin(Math.PI / 2 * (exclusion.Start - frame) / fadeOut);
+            else if (frame >= exclusion.End && frame < exclusion.End + fadeIn) gain *= Math.Sin(Math.PI / 2 * (frame - exclusion.End + 1) / fadeIn);
+        }
+        return (float)gain;
+    }
+}
+
 public class Track
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
@@ -173,6 +214,7 @@ public class Session
     public List<AlbumMatch> Albums { get; set; } = new();
     public bool AlbumLooked { get; set; } // the album match has run (found or not)
     public List<Track> Tracks { get; set; } = new();
+    public List<Exclusion> Exclusions { get; set; } = new();
 
     [JsonIgnore] public string Folder { get; set; } = "";
     [JsonIgnore] public string Id => Folder;

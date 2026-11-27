@@ -15,7 +15,7 @@ public sealed class AuditionPlayer : IDisposable
     public bool Playing => output?.PlaybackState == PlaybackState.Playing;
     public event Action? Finished;
 
-    public void Play(string audioPath, string sessionId, List<(long start, long end)> segments, Func<long, float>? gainAt, string deviceId)
+    public void Play(string audioPath, string sessionId, List<(long start, long end, bool joined)> segments, Func<long, float>? gainAt, string deviceId)
     {
         Stop();
         var audio = ownAudio = SessionAudio.Open(audioPath);
@@ -60,11 +60,12 @@ public sealed class AuditionPlayer : IDisposable
     public void Dispose() => Stop();
 }
 
-// Reads the segments in order as one stream, with 400 ms of silence between them, remembering where each output frame came from
+// Reads the segments in order as one stream, with 400 ms of silence between them (none before a joined one: the far side of a
+// left-out section), remembering where each output frame came from
 sealed class SegmentReader : ISampleProvider
 {
     readonly SessionAudio audio;
-    readonly List<(long start, long end)> segments;
+    readonly List<(long start, long end, bool joined)> segments;
     readonly Func<long, float>? gainAt;
     readonly int pauseFrames, edgeFrames; // a few ms of fade at each cut, so jumps don't click
     int segmentIndex; long sourceFrame; long pauseLeft; long outputFrames;
@@ -73,7 +74,7 @@ sealed class SegmentReader : ISampleProvider
     float[] readBuffer = Array.Empty<float>();
     public WaveFormat WaveFormat { get; }
 
-    public SegmentReader(SessionAudio audio, List<(long start, long end)> segments, Func<long, float>? gainAt)
+    public SegmentReader(SessionAudio audio, List<(long start, long end, bool joined)> segments, Func<long, float>? gainAt)
     {
         this.audio = audio; this.segments = segments.Where(segment => segment.end > segment.start).ToList(); this.gainAt = gainAt;
         WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(audio.SampleRate, audio.Channels);
@@ -102,7 +103,7 @@ sealed class SegmentReader : ISampleProvider
             if (take <= 0)
             {
                 segmentIndex++;
-                if (segmentIndex < segments.Count) { sourceFrame = segments[segmentIndex].start; pauseLeft = pauseFrames; }
+                if (segmentIndex < segments.Count) { sourceFrame = segments[segmentIndex].start; pauseLeft = segments[segmentIndex].joined ? 0 : pauseFrames; }
                 continue;
             }
             if (readBuffer.Length < take * channels) readBuffer = new float[take * channels];
