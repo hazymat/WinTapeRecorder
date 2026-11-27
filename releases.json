@@ -33,7 +33,7 @@
    "WinTapeRecorder-0.100.213-stable-full.nupkg": 2,
    "WinTapeRecorder-Portable.exe": 4,
    "WinTapeRecorder-Setup.exe": 1,
-   "releases.dev.json": 4,
+   "releases.dev.json": 7,
    "releases.stable.json": 3
   },
   "prerelease": false,
@@ -47,7 +47,7 @@
    "WinTapeRecorder-0.101.215-stable-full.nupkg": 2,
    "WinTapeRecorder-Portable.exe": 2,
    "WinTapeRecorder-Setup.exe": 1,
-   "releases.dev.json": 3,
+   "releases.dev.json": 6,
    "releases.stable.json": 2
   },
   "prerelease": false,
@@ -56,16 +56,49 @@
  "v0.102.217": {
   "assets": {
    "WinTapeRecorder-0.102.217-dev-delta.nupkg": 2,
-   "WinTapeRecorder-0.102.217-dev-full.nupkg": 1,
+   "WinTapeRecorder-0.102.217-dev-full.nupkg": 4,
    "WinTapeRecorder-0.102.217-stable-delta.nupkg": 2,
    "WinTapeRecorder-0.102.217-stable-full.nupkg": 2,
-   "WinTapeRecorder-Portable.exe": 3,
+   "WinTapeRecorder-Portable.exe": 4,
    "WinTapeRecorder-Setup.exe": 4,
-   "releases.dev.json": 2,
+   "releases.dev.json": 5,
    "releases.stable.json": 2
   },
   "prerelease": false,
   "published": "2026-11-10T14:53:26Z"
+ },
+ "v0.103.220": {
+  "assets": {
+   "WinTapeRecorder-0.103.220-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.103.220-dev-full.nupkg": 1,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 1,
+   "releases.dev.json": 2
+  },
+  "prerelease": true,
+  "published": "2026-11-27T03:13:04Z"
+ },
+ "v0.103.221": {
+  "assets": {
+   "WinTapeRecorder-0.103.221-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.103.221-dev-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 2,
+   "releases.dev.json": 2
+  },
+  "prerelease": true,
+  "published": "2026-11-27T03:31:08Z"
+ },
+ "v0.103.222": {
+  "assets": {
+   "WinTapeRecorder-0.103.222-dev-delta.nupkg": 2,
+   "WinTapeRecorder-0.103.222-dev-full.nupkg": 2,
+   "WinTapeRecorder-Portable.exe": 1,
+   "WinTapeRecorder-Setup.exe": 2,
+   "releases.dev.json": 2
+  },
+  "prerelease": true,
+  "published": "2026-11-27T03:45:30Z"
  },
  "v0.11.22": {
   "assets": {
@@ -1484,7 +1517,7 @@
    "WinTapeRecorder-0.95.203-stable-full.nupkg": 2,
    "WinTapeRecorder-Portable.exe": 1,
    "WinTapeRecorder-Setup.exe": 1,
-   "releases.dev.json": 9,
+   "releases.dev.json": 12,
    "releases.stable.json": 8
   },
   "prerelease": false,
@@ -1498,7 +1531,7 @@
    "WinTapeRecorder-0.96.205-stable-full.nupkg": 2,
    "WinTapeRecorder-Portable.exe": 3,
    "WinTapeRecorder-Setup.exe": 1,
-   "releases.dev.json": 8,
+   "releases.dev.json": 11,
    "releases.stable.json": 7
   },
   "prerelease": false,
@@ -1512,7 +1545,7 @@
    "WinTapeRecorder-0.97.207-stable-full.nupkg": 2,
    "WinTapeRecorder-Portable.exe": 4,
    "WinTapeRecorder-Setup.exe": 1,
-   "releases.dev.json": 7,
+   "releases.dev.json": 10,
    "releases.stable.json": 6
   },
   "prerelease": false,
@@ -1526,7 +1559,7 @@
    "WinTapeRecorder-0.98.209-stable-full.nupkg": 2,
    "WinTapeRecorder-Portable.exe": 5,
    "WinTapeRecorder-Setup.exe": 1,
-   "releases.dev.json": 6,
+   "releases.dev.json": 9,
    "releases.stable.json": 5
   },
   "prerelease": false,
@@ -1540,7 +1573,7 @@
    "WinTapeRecorder-0.99.211-stable-full.nupkg": 2,
    "WinTapeRecorder-Portable.exe": 2,
    "WinTapeRecorder-Setup.exe": 1,
-   "releases.dev.json": 5,
+   "releases.dev.json": 8,
    "releases.stable.json": 4
   },
   "prerelease": false,
