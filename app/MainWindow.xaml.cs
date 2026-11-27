@@ -410,8 +410,10 @@ public partial class MainWindow : Window
                     { App.ShowTip("Not while recording", "Another session is recording what this PC plays, so anything you hear now would be recorded too. Tag and export meanwhile; listen once the recording stops, or pick another audition device in Settings › Audio."); break; }
                     if (App.TryGetOpen(Text(message, "id"), out var playing))
                     {
-                        // Left-out sections are skipped with no pause, so it plays as if they weren't there (SPEC.md › Editing › Leaving out a section)
+                        // Left-out sections are skipped with no pause, so it plays as if they weren't there (SPEC.md › Editing › Leaving out a section);
+                        // starting inside one plays it, so its start, middle or end can be heard, then carries on
                         var exclusions = playing.session.Exclusions.ToList();
+                        if (message.GetProperty("segments").EnumerateArray().FirstOrDefault() is { ValueKind: JsonValueKind.Array } firstSegment) { var startAt = firstSegment[0].GetInt64(); exclusions.RemoveAll(exclusion => startAt >= exclusion.Start && startAt < exclusion.End); }
                         var segments = message.GetProperty("segments").EnumerateArray().SelectMany(segment => Excluding.Kept(segment[0].GetInt64(), segment[1].GetInt64(), exclusions).Select((piece, index) => (piece.start, piece.end, index > 0))).ToList();
                         var tracks = playing.session.Tracks.ToList(); var rate = playing.session.SampleRate;
                         Track? lastTrack = null; // looked up once per track, not per sample (this runs on the audio thread)

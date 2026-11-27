@@ -7,8 +7,8 @@
   import { request } from '../bridge'
   import { formatTime, formatLength, type Track, type NameChange, type Exclusion } from '../state.svelte'
   // The session's waveform (SPEC.md › Editing): an overview of the whole session, and a detail view that zooms with the wheel down to single samples
-  let { exclusions = [], showHint = false, onExclude, onExclusionMove, onExclusionDone, onExclusionFades, onExclusionRemove, linked = false, sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', autoHeight = true, selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onRelease, onPickTrack, onZoomTrack }: {
-    exclusions?: Exclusion[]; showHint?: boolean; onExclude?: (start: number, end: number) => void; onExclusionMove?: (id: string, start: number, end: number) => void; onExclusionDone?: (id: string) => void
+  let { exclusions = [], showHint = false, onHearJoin, onExclude, onExclusionMove, onExclusionDone, onExclusionFades, onExclusionRemove, linked = false, sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', autoHeight = true, selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onRelease, onPickTrack, onZoomTrack }: {
+    exclusions?: Exclusion[]; showHint?: boolean; onHearJoin?: (id: string) => void; onExclude?: (start: number, end: number) => void; onExclusionMove?: (id: string, start: number, end: number) => void; onExclusionDone?: (id: string) => void
     onExclusionFades?: (id: string, fadeOutMs: number, fadeInMs: number) => void; onExclusionRemove?: (id: string) => void
     linked?: boolean; sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; dropouts?: { frame: number; ms: number }[]; mode?: 'wave' | 'spectrogram'; autoHeight?: boolean; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
     view: WaveView; onCursor: (frame: number) => void; onEdge: (grab: NonNullable<Grab>, frame: number) => void; onEdgeDone: (grab: NonNullable<Grab>) => void; onRelease?: () => void; onPickTrack: (trackId: string, additive: boolean) => void; onZoomTrack: (trackId: string) => void
@@ -207,7 +207,7 @@
     // Cursor and playhead
     const cursorX = frameToX(cursor)
     if (cursorX >= 0 && cursorX <= width) { context.fillStyle = css.accent; context.fillRect(cursorX - 0.5, waveTop, 1, waveHeight); context.beginPath(); context.moveTo(cursorX - 5, detailHeight - rulerHeight); context.lineTo(cursorX + 5, detailHeight - rulerHeight); context.lineTo(cursorX, detailHeight - rulerHeight - 6); context.fill() }
-    if (playhead >= 0) { const playX = frameToX(playhead); if (playX >= 0 && playX <= width) { context.fillStyle = css.playhead; context.fillRect(playX - 1, 0, 2, detailHeight - rulerHeight) } }
+    if (playhead >= 0) { const playX = frameToX(playhead); context.globalAlpha = exclusionAt(playhead) ? 0.35 : 1; if (playX >= 0 && playX <= width) { context.fillStyle = css.playhead; context.fillRect(playX - 1, 0, 2, detailHeight - rulerHeight) } }
   }
 
   // Left-out sections (SPEC.md › Editing › Leaving out a section): shaded and crossed out, with each fade drawn as its curve.
@@ -224,6 +224,7 @@
       context.beginPath(); for (let x = left - height; x < right; x += 9) { context.moveTo(x, top + height); context.lineTo(x + height, top) } context.stroke()
       context.restore()
       context.fillStyle = css.quiet; context.fillRect(left - 0.75, top, 1.5, height); context.fillRect(right - 0.75, top, 1.5, height)
+      drawHandle(context, left, top, height, css.quiet); drawHandle(context, right, top, height, css.quiet)
       context.font = '10.5px "Segoe UI Variable Text", "Segoe UI", sans-serif'; context.textBaseline = 'top'
       const label = 'Left out', labelWidth = context.measureText(label).width
       if (right - left > labelWidth + 12) { context.fillStyle = darkSkin() ? 'rgba(8,10,14,0.85)' : 'rgba(255,255,255,0.85)'; const labelX = Math.max(left, 0) + Math.min(right - left, width) / 2 - labelWidth / 2; context.fillRect(labelX - 5, top + 4, labelWidth + 10, 15); context.fillStyle = css.fg; context.fillText(label, labelX, top + 6) }
@@ -238,8 +239,15 @@
       }
       context.globalAlpha = 1
     }
-    // The section being picked (Shift+drag)
-    if (selection) { const left = frameToX(selection.start), right = frameToX(selection.end); context.fillStyle = css.accent; context.globalAlpha = 0.16; context.fillRect(left, top, right - left, height); context.globalAlpha = 1; context.fillRect(left - 0.5, top, 1, height); context.fillRect(right - 0.5, top, 1, height) }
+    // The section being picked (click, then Shift+click), with a handle on each end
+    if (selection) { const left = frameToX(selection.start), right = frameToX(selection.end); context.fillStyle = css.accent; context.globalAlpha = 0.16; context.fillRect(left, top, right - left, height); context.globalAlpha = 1; context.fillRect(left - 0.5, top, 1, height); context.fillRect(right - 0.5, top, 1, height); drawHandle(context, left, top, height, css.accent); drawHandle(context, right, top, height, css.accent) }
+  }
+  // A grip on a section's edge: a small rounded tab across the line, halfway down
+  function drawHandle(context: CanvasRenderingContext2D, x: number, top: number, height: number, colour: string) {
+    if (x < -6 || x > width + 6) return
+    const tabHeight = Math.min(26, height * 0.4), y = top + height / 2 - tabHeight / 2
+    context.fillStyle = colour; context.beginPath(); context.roundRect(x - 4, y, 8, tabHeight, 3); context.fill()
+    context.fillStyle = darkSkin() ? 'rgba(8,10,14,0.7)' : 'rgba(255,255,255,0.85)'; for (const offset of [-4, 0, 4]) context.fillRect(x - 2, y + tabHeight / 2 + offset - 0.5, 4, 1)
   }
 
   // Sample data seen from further out (zooming out before new data arrives)
@@ -276,8 +284,9 @@
 
   // A grabbed edge pulses: redraw on every frame while one is grabbed
   $effect(() => { if (!grab) return; let frame = 0; const loop = () => { drawDetail(); frame = requestAnimationFrame(loop) }; frame = requestAnimationFrame(loop); return () => cancelAnimationFrame(frame) })
-  $effect(() => { detailData; spectroData; mode; tracks; exclusions; selection; openExclusion; changes; dropouts; selectedIds; currentId; cursor; playhead; grab; view.start; view.framesPerPixel; width; detailHeight; css; channels; verticalScale; requestAnimationFrame(drawDetail) })
-  $effect(() => { overviewData; tracks; exclusions; selectedIds; currentId; playhead; view.start; view.framesPerPixel; width; css; requestAnimationFrame(drawOverview) })
+  const exclusionsKey = $derived(exclusions.map(exclusion => `${exclusion.start}-${exclusion.end}-${exclusion.fadeOutMs}-${exclusion.fadeInMs}`).join())
+  $effect(() => { detailData; spectroData; mode; tracks; exclusionsKey; selection; openExclusion; changes; dropouts; selectedIds; currentId; cursor; playhead; grab; view.start; view.framesPerPixel; width; detailHeight; css; channels; verticalScale; requestAnimationFrame(drawDetail) })
+  $effect(() => { overviewData; tracks; exclusionsKey; selectedIds; currentId; playhead; view.start; view.framesPerPixel; width; css; requestAnimationFrame(drawOverview) })
 
   // ---- Mouse ----
   export function zoomAt(factor: number, x: number) { const frame = xToFrame(x); view = clampView({ framesPerPixel: view.framesPerPixel * factor, start: frame - x * view.framesPerPixel * factor }) }
@@ -306,7 +315,8 @@
     for (const track of tracks) for (const edge of ['start', 'end'] as const) { const distance = Math.abs(frameToX(track[edge]) - x); if (distance < bestDistance) { bestDistance = distance; best = { trackId: track.id, edge } } }
     return best
   }
-  // Left-out sections: Shift+drag picks a section (plain drag still moves the wave), an edge of one drags in the wave, a click opens it
+  // Left-out sections: click places the cursor, Shift+click picks from the cursor to there (hold and move to adjust; plain drag still moves
+  // the wave); a handle on either end of the pick or of a left-out section drags it, scrolling past the wave's edges; a click opens one
   let selection = $state<{ start: number; end: number } | null>(null), openExclusion = $state('')
   export function cancelSelection() { const had = !!selection || !!openExclusion; selection = null; openExclusion = ''; return had }
   function exclusionEdgeAt(x: number, y: number): { id: string; edge: 'start' | 'end' } | null {
@@ -316,6 +326,31 @@
     return best
   }
   const exclusionAt = (frame: number) => exclusions.find(exclusion => frame >= exclusion.start && frame < exclusion.end)
+  function selectionEdgeAt(x: number, y: number) {
+    if (!selection || y < flagHeight) return null
+    const toStart = Math.abs(frameToX(selection.start) - x), toEnd = Math.abs(frameToX(selection.end) - x)
+    return Math.min(toStart, toEnd) < 7 ? (toStart <= toEnd ? 'start' : 'end') : null
+  }
+  // Dragging a pick or a left-out section's edge follows the pointer, and past either side of the wave it scrolls
+  let lastPointerX = 0, edgeScrollFrame = 0
+  function dragTo(x: number) {
+    if (!drag) return
+    const frame = Math.round(Math.max(0, Math.min(totalFrames, xToFrame(Math.max(0, Math.min(width, x))))))
+    if (drag.kind === 'select') { if (Math.abs(x - drag.startX) > 3) drag.moved = true; selection = frame === drag.anchor ? null : { start: Math.min(drag.anchor, frame), end: Math.max(drag.anchor, frame) } }
+    else if (drag.kind === 'exclusion') {
+      if (Math.abs(x - drag.startX) > 3) drag.moved = true
+      const draggedId = drag.id, exclusion = exclusions.find(candidate => candidate.id === draggedId)
+      if (drag.moved && exclusion) { if (drag.edge === 'start') onExclusionMove?.(exclusion.id, Math.min(frame, exclusion.end - 1), exclusion.end); else onExclusionMove?.(exclusion.id, exclusion.start, Math.max(frame, exclusion.start + 1)) }
+    }
+  }
+  function edgeScroll() {
+    cancelAnimationFrame(edgeScrollFrame)
+    if (drag?.kind !== 'select' && drag?.kind !== 'exclusion') return
+    const beyond = lastPointerX < 0 ? lastPointerX : lastPointerX > width ? lastPointerX - width : 0
+    if (!beyond) return
+    view = clampView({ start: view.start + Math.max(-60, Math.min(60, beyond)) * view.framesPerPixel * 0.3, framesPerPixel: view.framesPerPixel })
+    dragTo(lastPointerX); edgeScrollFrame = requestAnimationFrame(edgeScroll)
+  }
   let drag: null | { kind: 'select'; startX: number; anchor: number; moved: boolean } | { kind: 'exclusion'; id: string; edge: 'start' | 'end'; startX: number; moved: boolean } | { kind: 'edge'; grab: NonNullable<Grab>; startX: number; wasGrabbed: boolean } | { kind: 'pan'; startX: number; startView: number; moved: boolean } | { kind: 'pin'; grab: NonNullable<Grab>; pinX: number; startX: number; startView: number } = null
   let hoverCursor = $state('default'), hoverTitle = $state('')
   // Hovering a dotted line says what it is
@@ -323,8 +358,12 @@
   function onDown(event: PointerEvent) {
     if (event.button !== 0) return
     detailCanvas?.setPointerCapture(event.pointerId)
-    const exclusionEdge = exclusionEdgeAt(event.offsetX, event.offsetY)
-    if (event.shiftKey && event.offsetY >= flagHeight && !exclusionEdge) { selection = null; openExclusion = ''; drag = { kind: 'select', startX: event.offsetX, anchor: Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX)))), moved: false }; return }
+    const exclusionEdge = exclusionEdgeAt(event.offsetX, event.offsetY), selectionEdge = selectionEdgeAt(event.offsetX, event.offsetY)
+    lastPointerX = event.offsetX
+    // An end of the pick: drag it (the other end stays)
+    if (selection && selectionEdge) { drag = { kind: 'select', startX: event.offsetX, anchor: selectionEdge === 'start' ? selection.end : selection.start, moved: false }; return }
+    // Shift+click: from the cursor to here, backwards or forwards; keep holding and move to adjust
+    if (event.shiftKey && event.offsetY >= flagHeight && !exclusionEdge) { openExclusion = ''; drag = { kind: 'select', startX: event.offsetX, anchor: cursor, moved: true }; dragTo(event.offsetX); return }
     if (exclusionEdge) { drag = { kind: 'exclusion', id: exclusionEdge.id, edge: exclusionEdge.edge, startX: event.offsetX, moved: false }; return }
     const handle = handleAt(event.offsetX, event.offsetY)
     if (handle) { drag = { kind: 'edge', grab: handle, startX: event.offsetX, wasGrabbed: grab?.trackId === handle.trackId && grab.edge === handle.edge }; onEdge(handle, tracks.find(track => track.id === handle.trackId)![handle.edge]); return }
@@ -337,16 +376,11 @@
     if (!drag) {
       const exclusionEdge = exclusionEdgeAt(event.offsetX, event.offsetY), inside = event.offsetY >= flagHeight ? exclusionAt(xToFrame(event.offsetX)) : undefined
       if (exclusionEdge) { hoverCursor = 'ew-resize'; hoverTitle = 'Edge of a left-out section: drag to move it'; return }
-      if (event.shiftKey && event.offsetY >= flagHeight) { hoverCursor = 'crosshair'; hoverTitle = 'Drag to pick a section to leave out'; return }
+      if (selectionEdgeAt(event.offsetX, event.offsetY)) { hoverCursor = 'ew-resize'; hoverTitle = 'End of the selection: drag to move it'; return }
+      if (event.shiftKey && event.offsetY >= flagHeight) { hoverCursor = 'crosshair'; hoverTitle = 'Shift+click: select from the cursor to here (hold and move to adjust)'; return }
       if (inside && !handleAt(event.offsetX, event.offsetY)) { hoverCursor = 'pointer'; hoverTitle = 'Left out: playing skips this and exports leave it out. Click it for fades, or to include it again'; return }
     }
-    if (drag?.kind === 'select') { if (Math.abs(event.offsetX - drag.startX) > 3) drag.moved = true; if (drag.moved) { const frame = Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX)))); selection = { start: Math.min(drag.anchor, frame), end: Math.max(drag.anchor, frame) } } return }
-    if (drag?.kind === 'exclusion') {
-      if (Math.abs(event.offsetX - drag.startX) > 3) drag.moved = true
-      const draggedId = drag.id, exclusion = exclusions.find(candidate => candidate.id === draggedId)
-      if (drag.moved && exclusion) { const frame = Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX)))); if (drag.edge === 'start') onExclusionMove?.(exclusion.id, Math.min(frame, exclusion.end - 1), exclusion.end); else onExclusionMove?.(exclusion.id, exclusion.start, Math.max(frame, exclusion.start + 1)) }
-      return
-    }
+    if (drag?.kind === 'select' || drag?.kind === 'exclusion') { lastPointerX = event.offsetX; dragTo(event.offsetX); edgeScroll(); return }
     if (!drag) { const handle = handleAt(event.offsetX, event.offsetY); hoverCursor = handle ? 'ew-resize' : grab && event.offsetY >= flagHeight ? 'grab' : 'text'; hoverTitle = handle ? (grab?.trackId === handle.trackId && grab.edge === handle.edge ? 'Grabbed: drag the audio under it, or click it to let go' : handle.edge === 'start' ? 'Track start: click to grab it, or drag to move' : 'Track end: click to grab it, or drag to move') : changeTitle(event.offsetX); return }
     if (drag.kind === 'edge') { if (Math.abs(event.offsetX - drag.startX) < 3) return; onEdge(drag.grab, Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX))))); return }
     if (drag.kind === 'pin') { hoverCursor = 'grabbing'; view = clampView({ start: drag.startView - (event.offsetX - drag.startX) * view.framesPerPixel, framesPerPixel: view.framesPerPixel }); onEdge(drag.grab, Math.round(Math.max(0, Math.min(totalFrames, xToFrame(drag.pinX))))); return }
@@ -356,17 +390,18 @@
   function onUp(event: PointerEvent) {
     const finished = drag; drag = null
     if (!finished) return
-    if (finished.kind === 'select') { if (finished.moved) return; selection = null }
+    cancelAnimationFrame(edgeScrollFrame)
+    if (finished.kind === 'select') return
     if (finished.kind === 'exclusion') { if (finished.moved) onExclusionDone?.(finished.id); else openExclusion = finished.id; return }
     // Clicking the grabbed line again (without moving it) lets go of it
     if (finished.kind === 'edge' && finished.wasGrabbed && Math.abs(event.offsetX - finished.startX) < 3 && onRelease) { hoverCursor = 'ew-resize'; onRelease(); return }
     if (finished.kind === 'edge' || finished.kind === 'pin') { hoverCursor = 'grab'; onEdgeDone(finished.grab); return }
-    if (finished.kind === 'select' || !finished.moved) {
+    if (!finished.moved) {
       const frame = Math.round(Math.max(0, Math.min(totalFrames, xToFrame(event.offsetX))))
       selection = null; openExclusion = event.offsetY >= flagHeight ? exclusionAt(frame)?.id ?? '' : ''
       onCursor(frame)
       const track = tracks.find(candidate => frame >= candidate.start && frame < candidate.end)
-      if (track && event.offsetY >= flagHeight) onPickTrack(track.id, event.ctrlKey || event.shiftKey)
+      if (track && event.offsetY >= flagHeight) onPickTrack(track.id, event.ctrlKey)
     }
     hoverCursor = 'text'
   }
@@ -396,11 +431,12 @@
         <span class="pop-length">Left out · {formatLength(exclusion.end - exclusion.start, sampleRate)}</span>
         <label title="Fades out over this long just before the left-out section">Fade out <input type="number" min="0" max="20000" step="50" value={exclusion.fadeOutMs} onchange={(event) => onExclusionFades?.(exclusion.id, Math.max(0, Math.round(Number((event.target as HTMLInputElement).value) || 0)), exclusion.fadeInMs)} /> ms</label>
         <label title="Fades in over this long just after the left-out section">Fade in <input type="number" min="0" max="20000" step="50" value={exclusion.fadeInMs} onchange={(event) => onExclusionFades?.(exclusion.id, exclusion.fadeOutMs, Math.max(0, Math.round(Number((event.target as HTMLInputElement).value) || 0)))} /> ms</label>
+        <button class="ghost pop-button" onclick={() => onHearJoin?.(exclusion.id)} title="Plays 3 s before and 3 s after, without the left-out part: how it will sound once exported. Playing from anywhere before it does the same; playing from inside it plays the left-out audio">▶ Hear the join</button>
         <button class="ghost pop-button" onclick={() => { onExclusionRemove?.(exclusion.id); openExclusion = '' }} title="Put this section back: it plays and exports again">Include again</button>
         <button class="ghost pop-close" onclick={() => openExclusion = ''} aria-label="Close" title="Close (Esc)">×</button>
       </div>
     {/if}
-    {#if showHint && !selection}<div class="wave-hint" style:bottom="{rulerHeight + 4}px">Shift+drag to leave out a section</div>{/if}
+    {#if showHint && !selection}<div class="wave-hint" style:bottom="{rulerHeight + 4}px">Click, then Shift+click to select a section to leave out</div>{/if}
   </div>
 </div>
 

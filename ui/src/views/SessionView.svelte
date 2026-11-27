@@ -205,6 +205,12 @@
   function setExclusionFades(id: string, fadeOutMs: number, fadeInMs: number) {
     commitExclusions(exclusions.map(exclusion => exclusion.id === id ? { id: exclusion.id, start: exclusion.start, end: exclusion.end, fadeOutMs, fadeInMs } : exclusion), `Fade out ${fadeOutMs} ms before it, fade in ${fadeInMs} ms after`)
   }
+  // Hear the join: a few seconds either side, the left-out part skipped and its fades applied, as the export will sound
+  function hearJoin(id: string) {
+    const exclusion = exclusions.find(candidate => candidate.id === id); if (!exclusion || !session) return
+    const around = 3 * rate; auditionRun = null; playingPart = ''
+    sendToShell({ type: 'play', id: sessionId, segments: [[Math.max(0, exclusion.start - around), Math.min(session.totalFrames, exclusion.end + around)]] })
+  }
   function includeAgain(id: string) { commitExclusions(exclusions.filter(exclusion => exclusion.id !== id), 'Included again: that section plays and exports once more') }
   // Track marks snap to a left-out section's start and end (and its edges to the marks), within a few pixels; they can still be dragged right across
   const snapReach = () => view.framesPerPixel * 8
@@ -1073,7 +1079,7 @@
   <div class="wave-host" bind:this={waveHost} style:height="{waveHeight}px">
 
     <Waveform bind:this={waveform} bind:view linked={linked !== altDown} {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {autoHeight} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
-      {exclusions} showHint={!excludeHintDone || shiftDown} onExclude={exclude} onExclusionMove={moveExclusion} onExclusionDone={exclusionDone} onExclusionFades={setExclusionFades} onExclusionRemove={includeAgain}
+      {exclusions} showHint={!excludeHintDone || shiftDown} onHearJoin={hearJoin} onExclude={exclude} onExclusionMove={moveExclusion} onExclusionDone={exclusionDone} onExclusionFades={setExclusionFades} onExclusionRemove={includeAgain}
       onCursor={(frame) => { cursor = frame; grab = null; if (playing) playFrom(frame) }} {onEdge} {onEdgeDone} onRelease={() => grab = null} onPickTrack={(trackId, additive) => { currentId = trackId; if (additive) selectKeys(scope, Array.from(new Set(selectedIds.concat([trackId]))), actions, 'track'); scrollRowIntoView(trackId) }} onZoomTrack={zoomToTrack} />
   </div>
   <div class="readout"><div class="wave-mode cuts-mode" role="group" aria-label="How cuts move" title="Linked: where a track ends exactly where the next starts, the two move together. Separate: each moves on its own. Hold Alt while dragging to do the other just once"><span class="cuts-label">Cuts</span><button class:on={linked} onclick={() => setLinked(true)}>🔗 Linked</button><button class:on={!linked} onclick={() => setLinked(false)}>Separate</button></div><div class="wave-mode" role="group" aria-label="Wave or spectrogram">
