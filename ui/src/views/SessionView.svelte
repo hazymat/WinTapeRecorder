@@ -4,7 +4,7 @@
   import { app, nav, toast, formatTime, formatLength, formatDuration, writeSetting, readSetting, describeCutoff, shortCutoff, medianCutoff, type SessionDetail, type Track, type AlbumMatch, type Exclusion } from '../state.svelte'
   import { selection, selectKeys, clearSelection, type SelectionAction, tickKeys } from '../lib/selection.svelte'
   import { selectable } from '../lib/selectable.svelte'
-  import Waveform, { type WaveView, type Grab } from '../parts/Waveform.svelte'
+  import Waveform, { type WaveView, type Grab, type SectionAudition } from '../parts/Waveform.svelte'
   import CoverCompare, { type CompareItem } from '../parts/CoverCompare.svelte'
   import CutoffInfo from '../parts/CutoffInfo.svelte'
   import Icon from '../parts/Icon.svelte'
@@ -205,11 +205,14 @@
   function setExclusionFades(id: string, fadeOutMs: number, fadeInMs: number) {
     commitExclusions(exclusions.map(exclusion => exclusion.id === id ? { id: exclusion.id, start: exclusion.start, end: exclusion.end, fadeOutMs, fadeInMs } : exclusion), `Fade out ${fadeOutMs} ms before it, fade in ${fadeInMs} ms after`)
   }
-  // Hear the join: a few seconds either side, the left-out part skipped and its fades applied, as the export will sound
-  function hearJoin(id: string) {
+  // A left-out section's Audition menu: the join as it will export (3 s either side, the section skipped, its fades applied),
+  // the section itself, from its first sample on, or its last 3 s up to its end (playing from inside a section plays it)
+  function auditionSection(id: string, choice: SectionAudition) {
     const exclusion = exclusions.find(candidate => candidate.id === id); if (!exclusion || !session) return
-    const around = 3 * rate; auditionRun = null; playingPart = ''
-    sendToShell({ type: 'play', id: sessionId, segments: [[Math.max(0, exclusion.start - around), Math.min(session.totalFrames, exclusion.end + around)]] })
+    const around = 3 * rate, total = session.totalFrames
+    const segment = choice === 'join' ? [Math.max(0, exclusion.start - around), Math.min(total, exclusion.end + around)] : choice === 'section' ? [exclusion.start, exclusion.end] : choice === 'from-start' ? [exclusion.start, total] : [Math.max(exclusion.start, exclusion.end - around), exclusion.end]
+    auditionRun = null; playingPart = ''
+    sendToShell({ type: 'play', id: sessionId, segments: [segment] })
   }
   function includeAgain(id: string) { commitExclusions(exclusions.filter(exclusion => exclusion.id !== id), 'Included again: that section plays and exports once more') }
   // Track marks snap to a left-out section's start and end (and its edges to the marks), within a few pixels; they can still be dragged right across
@@ -1079,7 +1082,7 @@
   <div class="wave-host" bind:this={waveHost} style:height="{waveHeight}px">
 
     <Waveform bind:this={waveform} bind:view linked={linked !== altDown} {sessionId} sampleRate={rate} channels={session.channels} totalFrames={session.totalFrames} {tracks} changes={session.changes} dropouts={session.dropouts ?? []} mode={waveMode} {autoHeight} {selectedIds} currentId={current?.id ?? ''} {cursor} playhead={playing ? app.playhead : -1} {grab}
-      {exclusions} showHint={!excludeHintDone || shiftDown} onHearJoin={hearJoin} onExclude={exclude} onExclusionMove={moveExclusion} onExclusionDone={exclusionDone} onExclusionFades={setExclusionFades} onExclusionRemove={includeAgain}
+      {exclusions} showHint={!excludeHintDone || shiftDown} onAuditionSection={auditionSection} onExclude={exclude} onExclusionMove={moveExclusion} onExclusionDone={exclusionDone} onExclusionFades={setExclusionFades} onExclusionRemove={includeAgain}
       onCursor={(frame) => { cursor = frame; grab = null; if (playing) playFrom(frame) }} {onEdge} {onEdgeDone} onRelease={() => grab = null} onPickTrack={(trackId, additive) => { currentId = trackId; if (additive) selectKeys(scope, Array.from(new Set(selectedIds.concat([trackId]))), actions, 'track'); scrollRowIntoView(trackId) }} onZoomTrack={zoomToTrack} />
   </div>
   <div class="readout"><div class="wave-mode cuts-mode" role="group" aria-label="How cuts move" title="Linked: where a track ends exactly where the next starts, the two move together. Separate: each moves on its own. Hold Alt while dragging to do the other just once"><span class="cuts-label">Cuts</span><button class:on={linked} onclick={() => setLinked(true)}>🔗 Linked</button><button class:on={!linked} onclick={() => setLinked(false)}>Separate</button></div><div class="wave-mode" role="group" aria-label="Wave or spectrogram">
@@ -1393,6 +1396,7 @@
   .export { display: inline-flex; align-items: center; gap: 6px; }
   .export-status { flex: 0 1 380px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg-quiet); text-align: right; } /* fixed place in the toolbar: a changing file name never moves anything */
   .wave-host { flex: none; min-height: 200px; position: relative; overflow: hidden; }
+  .wave-host:has(:global(.wave-pop)) { overflow: visible; } /* a left-out section's Audition menu can hang below the wave */
   .splitter { flex: none; height: 9px; margin: -4px 0; cursor: row-resize; display: grid; place-items: center; touch-action: none; }
   .splitter span { width: 48px; height: 4px; border-radius: 2px; background: var(--line); }
   .splitter:hover span { background: var(--accent); }

@@ -1,14 +1,16 @@
 <script lang="ts" module>
   export type WaveView = { start: number; framesPerPixel: number }
+  export type SectionAudition = 'join' | 'section' | 'from-start' | 'to-end'
   export type Grab = { trackId: string; edge: 'start' | 'end' } | null
 </script>
 <script lang="ts">
   import { untrack } from 'svelte'
   import { request } from '../bridge'
+  import Dropdown from './Dropdown.svelte'
   import { formatTime, formatLength, type Track, type NameChange, type Exclusion } from '../state.svelte'
   // The session's waveform (SPEC.md › Editing): an overview of the whole session, and a detail view that zooms with the wheel down to single samples
-  let { exclusions = [], showHint = false, onHearJoin, onExclude, onExclusionMove, onExclusionDone, onExclusionFades, onExclusionRemove, linked = false, sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', autoHeight = true, selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onRelease, onPickTrack, onZoomTrack }: {
-    exclusions?: Exclusion[]; showHint?: boolean; onHearJoin?: (id: string) => void; onExclude?: (start: number, end: number) => void; onExclusionMove?: (id: string, start: number, end: number) => void; onExclusionDone?: (id: string) => void
+  let { exclusions = [], showHint = false, onAuditionSection, onExclude, onExclusionMove, onExclusionDone, onExclusionFades, onExclusionRemove, linked = false, sessionId, sampleRate, channels, totalFrames, tracks, changes, dropouts = [], mode = 'wave', autoHeight = true, selectedIds, currentId, cursor, playhead, grab, view = $bindable(), onCursor, onEdge, onEdgeDone, onRelease, onPickTrack, onZoomTrack }: {
+    exclusions?: Exclusion[]; showHint?: boolean; onAuditionSection?: (id: string, choice: SectionAudition) => void; onExclude?: (start: number, end: number) => void; onExclusionMove?: (id: string, start: number, end: number) => void; onExclusionDone?: (id: string) => void
     onExclusionFades?: (id: string, fadeOutMs: number, fadeInMs: number) => void; onExclusionRemove?: (id: string) => void
     linked?: boolean; sessionId: string; sampleRate: number; channels: number; totalFrames: number; tracks: Track[]; changes: NameChange[]; dropouts?: { frame: number; ms: number }[]; mode?: 'wave' | 'spectrogram'; autoHeight?: boolean; selectedIds: string[]; currentId: string; cursor: number; playhead: number; grab: Grab
     view: WaveView; onCursor: (frame: number) => void; onEdge: (grab: NonNullable<Grab>, frame: number) => void; onEdgeDone: (grab: NonNullable<Grab>) => void; onRelease?: () => void; onPickTrack: (trackId: string, additive: boolean) => void; onZoomTrack: (trackId: string) => void
@@ -431,7 +433,7 @@
         <span class="pop-length">Left out · {formatLength(exclusion.end - exclusion.start, sampleRate)}</span>
         <label title="Fades out over this long just before the left-out section">Fade out <input type="number" min="0" max="20000" step="50" value={exclusion.fadeOutMs} onchange={(event) => onExclusionFades?.(exclusion.id, Math.max(0, Math.round(Number((event.target as HTMLInputElement).value) || 0)), exclusion.fadeInMs)} /> ms</label>
         <label title="Fades in over this long just after the left-out section">Fade in <input type="number" min="0" max="20000" step="50" value={exclusion.fadeInMs} onchange={(event) => onExclusionFades?.(exclusion.id, exclusion.fadeOutMs, Math.max(0, Math.round(Number((event.target as HTMLInputElement).value) || 0)))} /> ms</label>
-        <button class="ghost pop-button" onclick={() => onHearJoin?.(exclusion.id)} title="Plays 3 s before and 3 s after, without the left-out part: how it will sound once exported. Playing from anywhere before it does the same; playing from inside it plays the left-out audio">▶ Hear the join</button>
+        <Dropdown label="Audition" value="▶" align="left" options={[['join', 'Hear the join'], ['section', 'Play the excluded section'], ['from-start', 'Play from start of excluded section'], ['to-end', 'Play to end of excluded section']]} onchange={(choice) => onAuditionSection?.(exclusion.id, choice as SectionAudition)} />
         <button class="ghost pop-button" onclick={() => { onExclusionRemove?.(exclusion.id); openExclusion = '' }} title="Put this section back: it plays and exports again">Include again</button>
         <button class="ghost pop-close" onclick={() => openExclusion = ''} aria-label="Close" title="Close (Esc)">×</button>
       </div>
@@ -446,6 +448,7 @@
   .overview { border-radius: 6px; cursor: pointer; flex: none; }
   .detail { flex: 1; min-height: 120px; position: relative; border-radius: 8px; background: var(--panel); overflow: hidden; }
   .detail canvas { position: absolute; inset: 0; height: 100%; }
+  .detail:has(.wave-pop) { overflow: visible; }
   .wave-pop { position: absolute; display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 10px; border-radius: 8px; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: 0 6px 20px var(--shadow); font-size: 12px; white-space: nowrap; z-index: 2; }
   .wave-pop label { display: flex; align-items: center; gap: 4px; color: var(--fg-quiet); }
   .wave-pop input { width: 58px; padding: 1px 4px; font: inherit; }
