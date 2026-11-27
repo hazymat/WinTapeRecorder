@@ -4,6 +4,8 @@ Read `SPEC.md` before any work. It is the source of truth; propose changes to it
 
 Read `docs/DESIGN.md` too: the design rules shared by all four apps (tray notifications, dot colours, cards). It is identical in every repo; change it in all four together.
 
+UI and UX across all of Mat's apps: follow Rules for every app in https://github.com/hazymat/sift/blob/main/docs/ui-consistency.md (undo and history, the selection bar, press-hold to choose, dragging, keys, hints). A change here that adds or alters a shared pattern updates that section in the same piece of work.
+
 ## Dev environment
 
 - Build and test on Windows (the app can't be built or tested on Linux). The test PC and its details live in the project's private notes, not in this public repo.
